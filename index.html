@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="동네 가게의 오늘을 보고 내일을 함께 만드는 지역 상생 펀딩 플랫폼">
+  <title>모아 | 우리 동네 가게의 내일</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='10' y='10' width='44' height='44' rx='14' fill='%23dc7457'/%3E%3Crect x='21' y='21' width='22' height='22' rx='6' fill='%23fbf9f3'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@700&family=Noto+Sans+KR:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="features.css">
+  <link rel="stylesheet" href="metrics.css">
+</head>
+<body id="top">
+  <div class="noise"></div>
+  <header class="site-header">
+    <a class="brand" href="#top" aria-label="모아 홈">
+      <span class="brand-mark">모아</span><span>모아</span>
+    </a>
+    <nav class="audience-switch" aria-label="사용자 유형">
+      <button class="audience-btn active" data-view="consumer" type="button">소비자</button>
+      <button class="audience-btn" data-view="owner" type="button">소상공인</button>
+      <span class="switch-indicator"></span>
+    </nav>
+    <div class="header-actions">
+      <button class="coupon-header-button" id="couponWalletButton" type="button" aria-label="내 쿠폰함">
+        <span>🎟</span><b id="couponCount">0</b>
+      </button>
+      <button class="icon-button" aria-label="검색" id="searchButton" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4 4"></path></svg>
+      </button>
+      <button class="login-button" id="loginButton" type="button"><span id="loginLabel">로그인</span></button>
+    </div>
+  </header>
+
+  <main>
+    <section class="view active" id="consumerView">
+      <div class="hero consumer-hero">
+        <div class="hero-copy">
+          <p class="eyebrow"><span></span>동네를 바꾸는 가장 가까운 투자</p>
+          <h1>좋아하는 가게의<br><em>내일</em>을 함께 만들어요.</h1>
+          <p class="hero-description">사업계획과 데이터, 위험요인을 살펴보고<br>가게의 다음 성장을 함께 만들어 보세요.</p>
+          <div class="hero-actions">
+            <button class="primary-button" data-scroll="#discover" type="button">펀딩 둘러보기 <span>→</span></button>
+            <button class="text-button" id="howItWorks" type="button">어떻게 운영되나요? <span>→</span></button>
+          </div>
+          <div class="trust-row">
+            <div class="avatar-stack"><span>이</span><span>김</span><span>박</span><span>+</span></div>
+            <p><strong>12,840명</strong>의 이웃이<br>함께하고 있어요.</p>
+          </div>
+        </div>
+        <div class="hero-visual featured-store-preview" id="featuredStorePreview" role="button" tabindex="0" aria-label="온기린 식당 펀딩 상세 보기">
+          <div class="sun"></div><div class="leaf leaf-one"></div><div class="leaf leaf-two"></div>
+          <div class="shop-card">
+            <div class="shop-sign"><small>since 2018</small><strong>온기린 식당</strong></div>
+            <div class="awning"><i></i><i></i><i></i><i></i><i></i></div>
+            <div class="shop-window"><span class="plant">♣</span><span class="table"></span><span class="lamp">●</span></div>
+            <div class="shop-door"><span>OPEN</span></div><div class="sidewalk"></div>
+          </div>
+          <div class="floating-note note-top"><span class="pulse-dot"></span><div><small>이번 달 매출</small><strong>+18.2%</strong></div></div>
+          <div class="floating-note note-bottom"><span>♥</span><div><small>펀딩 달성</small><strong>92%</strong></div></div>
+          <span class="featured-open-hint">온기린 식당 펀딩 보기 →</span>
+        </div>
+      </div>
+
+      <section class="discover section-wrap" id="discover">
+        <div class="section-heading">
+          <div><p class="eyebrow"><span></span>지금 모집 중</p><h2>이웃이 발견한 가게</h2></div>
+          <button class="all-button" type="button">전체 펀딩 보기 <span>→</span></button>
+        </div>
+        <div class="discovery-tools">
+          <label class="search-field" for="storeSearch">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"></circle><path d="m16 16 4 4"></path></svg>
+            <input id="storeSearch" type="search" placeholder="가게 이름, 지역, 메뉴를 검색해 보세요" autocomplete="off">
+            <button type="button" id="clearSearch" aria-label="검색어 지우기">×</button>
+          </label>
+          <button class="favorite-filter" type="button" id="favoritesFilter" aria-pressed="false"><span>♡</span> 찜한 가게</button>
+        </div>
+        <div class="filter-row" role="group" aria-label="업종 필터">
+          <button class="filter active" data-filter="all" type="button">전체</button>
+          <button class="filter" data-filter="한식" type="button">한식</button>
+          <button class="filter" data-filter="카페" type="button">카페·디저트</button>
+          <button class="filter" data-filter="양식" type="button">양식</button>
+          <button class="filter" data-filter="생활" type="button">생활·서비스</button>
+        </div>
+        <p class="result-summary" id="resultSummary" aria-live="polite"></p>
+        <div class="store-grid" id="storeGrid"></div>
+      </section>
+
+      <section class="recommendation-section section-wrap" id="recommendations">
+        <div class="section-heading compact"><div><p class="eyebrow"><span></span>데이터 기반 비교</p><h2>투자자 탐색 추천</h2></div><span class="model-pill">SCB 방향 반영 · 설명형 PoC</span></div>
+        <p class="section-description">매출 성장, 현금흐름, 부채 회복력, 상권 경쟁력과 쿠폰 혜택을 함께 비교합니다. 추천은 투자 권유나 수익 보장이 아닙니다.</p>
+        <div class="recommendation-grid" id="recommendationGrid"><div class="data-loading">추천 근거를 불러오는 중…</div></div>
+      </section>
+
+      <section class="process section-wrap" id="process">
+        <div class="process-intro">
+          <p class="eyebrow light"><span></span>모아의 방식</p><h2>맛보고, 살펴보고,<br>함께 키워요.</h2>
+          <p>막연한 응원이 되지 않도록<br>경험과 숫자를 함께 봅니다.</p>
+        </div>
+        <div class="process-steps">
+          <article><span>01</span><div class="step-icon">⌂</div><h3>직접 경험하기</h3><p>내가 사는 동네에서 좋은 가게를 직접 발견해요.</p></article>
+          <article><span>02</span><div class="step-icon">◎</div><h3>정보 살펴보기</h3><p>매출, 사업계획, 위험과 AI 분석을 함께 확인해요.</p></article>
+          <article><span>03</span><div class="step-icon">♥</div><h3>성장에 참여하기</h3><p>위험을 이해하고 참여하면 단계별 집행을 확인해요.</p></article>
+        </div>
+      </section>
+    </section>
+
+    <section class="view" id="ownerView">
+      <div class="owner-dashboard section-wrap">
+        <div class="owner-welcome">
+          <div>
+            <p class="eyebrow"><span></span>소상공인 펀딩 스튜디오</p>
+            <h1><span id="ownerGreeting">사장님</span>의 판단에<br><em>근거</em>를 더해드려요.</h1>
+            <p>사업계획을 등록하고 매출·상권·리뷰와 자금 집행을 한곳에서 관리하세요.</p>
+          </div>
+          <div class="owner-welcome-actions">
+            <button class="secondary-button" id="createCampaignButton" type="button">펀딩 만들기 <span>＋</span></button>
+            <button class="primary-button" id="registerBusinessButton" type="button">사업체 등록하기 <span>→</span></button>
+          </div>
+        </div>
+
+        <div class="owner-status-strip" id="ownerStatusStrip">
+          <span class="status-dot"></span>
+          <p><strong>데모 사업체</strong> · 정보를 등록하면 대시보드와 AI 분석에 반영됩니다.</p>
+          <button type="button" id="editBusinessInline">정보 등록</button>
+        </div>
+
+        <div class="dashboard-grid">
+          <article class="metric-card featured"><div class="card-top"><span>우리 가게 성장 지수</span><i>이번 달</i></div><strong>78.4<small>점</small></strong><p><b>↑ 6.2</b> 지난달보다 좋아졌어요.</p><div class="sparkline"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></article>
+          <article class="metric-card"><div class="card-top"><span>고객 만족도</span><i>반경 1km</i></div><strong>82.1<small>%</small></strong><p>동일 지역 3개월 기준</p><div class="progress"><span style="width:82%"></span></div></article>
+          <article class="metric-card"><div class="card-top"><span>동종업계 폐업률</span><i>최근 1년</i></div><strong>7.8<small>%</small></strong><p><b class="safe">↓ 1.4%</b> 지역 평균보다 낮아요.</p><div class="progress coral"><span style="width:34%"></span></div></article>
+        </div>
+
+        <div class="owner-content-grid">
+          <article class="insight-panel">
+            <div class="panel-heading"><div><small>고객 흐름</small><h2>월별 방문 추이</h2></div><button id="regionButton" type="button">서울 성동구 ▾</button></div>
+            <div class="chart-area"><div class="chart-labels"><span>100</span><span>75</span><span>50</span><span>25</span></div><svg viewBox="0 0 700 220" preserveAspectRatio="none" aria-label="고객 지수 차트"><defs><linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#dc7457" stop-opacity=".25"/><stop offset="1" stop-color="#dc7457" stop-opacity="0"/></linearGradient></defs><path class="chart-fill" d="M0 185 C70 165 90 180 145 145 S240 165 285 112 S380 130 430 90 S525 110 570 55 S650 75 700 28 L700 220 L0 220Z"/><path class="chart-line" d="M0 185 C70 165 90 180 145 145 S240 165 285 112 S380 130 430 90 S525 110 570 55 S650 75 700 28"/></svg><div class="chart-months"><span>1월</span><span>3월</span><span>5월</span><span>7월</span><span>9월</span><span>11월</span></div></div>
+          </article>
+          <aside class="disclosure-panel">
+            <div class="panel-heading"><div><small>내 사업 정보</small><h2>공시 완성도</h2></div><strong id="disclosurePercent">68%</strong></div>
+            <div class="ring" id="disclosureRing" style="--value:68"><div><strong id="disclosureDone">4</strong><small>/ 6 항목</small></div></div>
+            <p>정보가 충실할수록 이웃에게<br>더 신뢰 있게 소개돼요.</p>
+            <button class="secondary-button" id="editDisclosureButton" type="button">공시 내용 작성하기 <span>→</span></button>
+          </aside>
+        </div>
+
+        <section class="intelligence-section" id="intelligenceSection">
+          <div class="section-heading compact"><div><p class="eyebrow"><span></span>DB 근거 진단</p><h2>성장등급 · 지식그래프</h2></div><div class="intelligence-actions"><button type="button" id="openMetricsButton">평가자료 입력</button><span class="model-pill">공식 신용등급 아님</span></div></div>
+          <div class="intelligence-empty" id="intelligenceEmpty"><strong>사업체 자료를 등록하면 진단을 시작합니다.</strong><p>매출·현금흐름·부채·상권 자료를 관계 그래프로 연결해 부족한 기준치를 설명합니다.</p></div>
+          <div class="intelligence-grid hidden" id="intelligenceGrid">
+            <article class="score-panel"><div class="score-orbit"><strong id="growthGrade">-</strong><span id="growthScore">-점</span></div><div><small>설명용 성장등급</small><h3 id="fundingLimit">한도 산정 전</h3><p id="assessmentNotice"></p></div></article>
+            <article class="factor-panel"><h3>평가요인 영향</h3><div id="factorBars"></div></article>
+            <article class="diagnosis-panel"><div class="tool-card-heading"><span class="tool-icon">KG</span><div><small>근거 경로 추적</small><h3>자료 보완 진단</h3></div></div><p id="diagnosisText"></p><div class="graph-summary" id="graphSummary"></div><button type="button" id="askDiagnosisAi">이 진단을 AI에게 질문</button></article>
+          </div>
+        </section>
+
+        <section class="owner-tool-section">
+          <div class="section-heading compact"><div><p class="eyebrow"><span></span>집행 관리</p><h2>AI 증빙 검증 센터</h2></div><span class="api-badge" id="apiStatusBadge">API 확인 중</span></div>
+          <div class="owner-tools-grid">
+            <article class="ocr-panel">
+              <div class="tool-card-heading"><span class="tool-icon">▣</span><div><small>단계별 자금 집행</small><h3>영수증·증빙 OCR</h3></div></div>
+              <p>영수증이나 세금계산서 사진을 올리면 공급자, 금액, 품목을 추출하고 등록한 사용계획과 비교합니다.</p>
+              <label class="plan-label" for="expensePlan">승인된 사용계획</label>
+              <textarea id="expensePlan" rows="3">주방 냉장고 교체 및 설치 비용, 승인 예산 3,000,000원</textarea>
+              <label class="receipt-dropzone" id="receiptDropzone" for="receiptFile">
+                <input id="receiptFile" type="file" accept="image/png,image/jpeg,image/webp">
+                <span class="upload-icon">＋</span><strong>증빙 이미지를 선택하세요</strong><small>PNG, JPG, WebP · 최대 6MB</small>
+                <img id="receiptPreview" alt="업로드한 증빙 미리보기">
+              </label>
+              <button class="primary-button full-button" id="runOcrButton" type="button" disabled>AI로 증빙 분석하기 <span>→</span></button>
+            </article>
+            <article class="ocr-result-panel" id="ocrResultPanel" aria-live="polite">
+              <div class="empty-tool-state"><span>AI</span><h3>분석 결과가 여기에 표시됩니다</h3><p>문서 정보와 계획 일치도, 확인이 필요한 항목을 정리해 드려요.</p></div>
+            </article>
+            <article class="coupon-issuer-panel">
+              <div class="tool-card-heading"><span class="tool-icon coral-icon">%</span><div><small>단골 고객 리워드</small><h3>쿠폰 발행</h3></div></div>
+              <form id="couponIssueForm">
+                <label>쿠폰 이름<input id="couponName" required value="펀딩 참여 감사 10% 할인"></label>
+                <div class="form-row"><label>혜택<input id="couponBenefit" required value="10% 할인"></label><label>수량<input id="couponQuantity" type="number" min="1" max="1000" value="100"></label></div>
+                <label>사용 조건<input id="couponCondition" value="2만원 이상 주문 시"></label>
+                <button class="secondary-button full-button" type="submit">쿠폰 발행하기 <span>→</span></button>
+              </form>
+              <div class="issued-coupon" id="issuedCouponSummary"><span>🎟</span><p><strong>아직 발행된 쿠폰이 없어요.</strong><small>펀딩 참여 리워드로 자동 지급할 수 있습니다.</small></p></div>
+            </article>
+          </div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <button class="ai-fab" id="aiFab" type="button" aria-label="모아 AI 상담 열기"><span>AI</span><b>모아 상담</b></button>
+
+  <aside class="ai-drawer" id="aiDrawer" aria-hidden="true">
+    <div class="ai-drawer-header"><div><span class="ai-avatar">AI</span><div><strong>모아 AI Agent</strong><small><i id="aiStatusDot"></i> SGLLM 연결</small></div></div><button id="closeAiDrawer" type="button" aria-label="AI 상담 닫기">×</button></div>
+    <div class="ai-context" id="aiContextLabel">플랫폼 이용과 펀딩 분석을 도와드려요.</div>
+    <div class="chat-suggestions" id="chatSuggestions"><button type="button">이 가게의 투자 위험을 설명해줘</button><button type="button">사업계획에서 빠진 항목을 알려줘</button><button type="button">OCR 결과를 어떻게 검토해야 해?</button></div>
+    <div class="chat-messages" id="chatMessages" aria-live="polite"><div class="chat-message assistant"><span>AI</span><p>안녕하세요. 모아의 데이터와 현재 화면을 바탕으로 사업계획과 위험요인을 함께 살펴드릴게요. 무엇이 궁금하세요?</p></div></div>
+    <form class="chat-form" id="chatForm"><textarea id="chatInput" rows="1" placeholder="AI에게 질문해 보세요" maxlength="2000"></textarea><button type="submit" aria-label="메시지 보내기">↑</button></form>
+    <p class="ai-disclaimer">AI 답변은 참고용이며 투자 권유가 아닙니다. 중요한 결정은 원자료와 전문가 검토가 필요합니다.</p>
+  </aside>
+  <div class="drawer-backdrop" id="drawerBackdrop"></div>
+
+  <div class="modal" id="infoModal" aria-hidden="true"><div class="modal-backdrop" data-close-modal></div><div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><button class="modal-close" data-close-modal aria-label="닫기">×</button><p class="eyebrow"><span></span>모아 이용 안내</p><h2 id="modalTitle">응원이 투자와 성장으로 이어지는 과정</h2><ol><li><b>가게가 정보를 공개해요.</b><span>매출, 사업계획, 자금 사용처와 위험요인을 공개합니다.</span></li><li><b>이웃이 직접 확인해요.</b><span>AI 설명과 원자료의 기준일을 함께 살펴봅니다.</span></li><li><b>조건을 이해하고 참여해요.</b><span>손실 가능성에 동의한 뒤 참여하고 단계별 집행을 확인합니다.</span></li><li><b>증빙 후 다음 자금이 지급돼요.</b><span>OCR과 운영자 검토를 통과한 마일스톤만 다음 단계로 진행합니다.</span></li></ol><p class="risk-note">현재 서비스는 기능 검증용 프로토타입이며 실제 금융상품이나 결제를 제공하지 않습니다.</p></div></div>
+
+  <div class="modal" id="authModal" aria-hidden="true"><div class="modal-backdrop" data-close-modal></div><div class="modal-card auth-card" role="dialog" aria-modal="true" aria-labelledby="authTitle"><button class="modal-close" data-close-modal aria-label="닫기">×</button><p class="eyebrow"><span></span>모아 시작하기</p><h2 id="authTitle">로그인 · 회원가입</h2><p class="modal-subtitle">처음 사용하는 이메일이면 계정이 생성됩니다. 로그인 세션과 정보는 로컬 SQLite DB에 저장됩니다.</p><form id="authForm"><div class="role-selector"><label><input type="radio" name="authRole" value="consumer" checked><span>소비자</span></label><label><input type="radio" name="authRole" value="owner"><span>소상공인</span></label></div><label>이름<input id="authName" required autocomplete="name" placeholder="홍길동"></label><label>이메일<input id="authEmail" type="email" required autocomplete="email" placeholder="hello@moa.local"></label><label>비밀번호<input id="authPassword" type="password" required minlength="8" autocomplete="current-password" placeholder="8자 이상 입력"></label><button class="primary-button full-button" type="submit">로그인하고 시작하기 <span>→</span></button></form></div></div>
+
+  <div class="modal" id="accountModal" aria-hidden="true"><div class="modal-backdrop" data-close-modal></div><div class="modal-card account-card" role="dialog" aria-modal="true" aria-labelledby="accountTitle"><button class="modal-close" data-close-modal aria-label="닫기">×</button><div class="account-avatar" id="accountAvatar">모</div><h2 id="accountTitle">내 계정</h2><p id="accountSummary"></p><section class="login-history"><div><h3>최근 로그인 기록</h3><small>본인 계정의 보안 활동</small></div><div id="loginHistoryList"><p>로그인 기록이 없습니다.</p></div></section><div class="account-actions"><button class="secondary-button" id="switchRoleButton" type="button">화면 전환</button><button class="danger-button" id="logoutButton" type="button">로그아웃</button></div></div></div>
+
+  <div class="modal wide-modal" id="storeModal" aria-hidden="true"><div class="modal-backdrop" data-close-modal></div><div class="modal-card store-detail-card" role="dialog" aria-modal="true" aria-labelledby="storeDetailTitle"><button class="modal-close" data-close-modal aria-label="닫기">×</button><div id="storeDetailContent"></div></div></div>
+
+  <div class="modal" id="couponModal" aria-hidden="true"><div class="modal-backdrop" data-close-modal></div><div class="modal-card coupon-wallet-card" role="dialog" aria-modal="true" aria-labelledby="couponTitle"><button class="modal-close" data-close-modal aria-label="닫기">×</button><p class="eyebrow"><span></span>단골 혜택</p><h2 id="couponTitle">내 쿠폰함</h2><div id="couponList" class="coupon-list"></div></div></div>
+
+  <div class="modal" id="businessModal" aria-hidden="true"><div class="modal-backdrop" data-close-modal></div><div class="modal-card form-modal-card" role="dialog" aria-modal="true" aria-labelledby="businessTitle"><button class="modal-close" data-close-modal aria-label="닫기">×</button><p class="eyebrow"><span></span>소상공인 온보딩</p><h2 id="businessTitle">사업체 등록</h2><form id="businessForm"><div class="form-row"><label>상호명<input id="businessName" required placeholder="온기린 식당"></label><label>업종<select id="businessCategory"><option>한식</option><option>카페</option><option>양식</option><option>생활</option></select></label></div><label>사업자등록번호<input id="businessNumber" required inputmode="numeric" placeholder="123-45-67890"></label><label>주소<input id="businessAddress" required placeholder="서울 성동구 성수이로 00"></label><div class="form-row"><label>월 평균 매출<input id="businessSales" type="number" min="0" placeholder="30000000"></label><label>업력(년)<input id="businessAge" type="number" min="0" step="0.5" placeholder="3"></label></div><label>가게 소개<textarea id="businessDescription" rows="3" placeholder="가게의 강점과 운영 철학을 적어주세요."></textarea></label><label class="check-line"><input type="checkbox" required> 프로토타입 저장 및 AI 분석 활용에 동의합니다.</label><button class="primary-button full-button" type="submit">사업체 정보 저장 <span>→</span></button></form></div></div>
+
+  <div class="modal" id="campaignModal" aria-hidden="true"><div class="modal-backdrop" data-close-modal></div><div class="modal-card form-modal-card" role="dialog" aria-modal="true" aria-labelledby="campaignTitle"><button class="modal-close" data-close-modal aria-label="닫기">×</button><p class="eyebrow"><span></span>성장 자금 모집</p><h2 id="campaignTitle">새 펀딩 만들기</h2><form id="campaignForm"><label>펀딩 제목<input id="campaignName" required placeholder="오래된 주방을 더 안전하게 바꿉니다"></label><div class="form-row"><label>목표 금액<input id="campaignTarget" type="number" min="100000" required value="30000000"></label><label>모집 기간<select id="campaignDuration"><option value="30">30일</option><option value="45">45일</option><option value="60">60일</option></select></label></div><label>자금 사용계획<textarea id="campaignPlan" required rows="4" placeholder="항목별 금액과 일정을 구체적으로 작성해 주세요."></textarea></label><label>주요 위험요인<textarea id="campaignRisk" required rows="3" placeholder="매출 계절성, 공사 지연, 원가 상승 등을 작성해 주세요."></textarea></label><button class="primary-button full-button" type="submit">펀딩 초안 저장 <span>→</span></button></form></div></div>
+
+  <div class="modal" id="metricsModal" aria-hidden="true"><div class="modal-backdrop" data-close-modal></div><div class="modal-card form-modal-card metrics-modal-card" role="dialog" aria-modal="true" aria-labelledby="metricsTitle"><button class="modal-close" data-close-modal aria-label="닫기">×</button><p class="eyebrow"><span></span>SCB 방향 데이터</p><h2 id="metricsTitle">성장평가 자료 입력</h2><p class="modal-subtitle">가상의 설명형 평가입니다. 실제 주민번호·계좌번호·원본 신용정보는 입력하지 마세요.</p><form id="metricsForm"><label>최근 6개월 월별 매출(원)<input id="metricsSales6m" required placeholder="25000000, 26700000, 27400000, 28900000, 30100000, 31800000"></label><div class="form-row"><label>월 영업현금흐름<input id="metricsCashFlow" type="number" min="0" required></label><label>총 부채<input id="metricsDebtTotal" type="number" min="0" required></label></div><div class="form-row"><label>월 부채 상환액<input id="metricsDebtPayment" type="number" min="0" required></label><label>최근 연체 횟수<input id="metricsOverdue" type="number" min="0" max="50" value="0"></label></div><div class="form-row"><label>상시 근로자 수<input id="metricsEmployees" type="number" min="0" max="100" value="1"></label><label>세금 정상 납부<select id="metricsTax"><option value="true">예</option><option value="false">아니오</option></select></label></div><div class="form-row"><label>상권 유동인구 증감률(%)<input id="metricsFootTraffic" type="number" step="0.1" value="0"></label><label>상권 매출 증감률(%)<input id="metricsLocalGrowth" type="number" step="0.1" value="0"></label></div><div class="form-row"><label>경쟁 밀도(0~1)<input id="metricsCompetition" type="number" min="0" max="1" step="0.01" value="0.5"></label><label>주변 폐업률(%)<input id="metricsClosure" type="number" min="0" max="100" step="0.1" value="10"></label></div><div class="form-row"><label>재방문율(%)<input id="metricsRepeat" type="number" min="0" max="100" step="0.1" value="0"></label><label>온라인 매출 비중(%)<input id="metricsDigital" type="number" min="0" max="100" step="0.1" value="0"></label></div><button class="primary-button full-button" type="submit">저장하고 다시 평가 <span>→</span></button></form></div></div>
+
+  <div class="modal" id="disclosureModal" aria-hidden="true"><div class="modal-backdrop" data-close-modal></div><div class="modal-card form-modal-card" role="dialog" aria-modal="true" aria-labelledby="disclosureTitle"><button class="modal-close" data-close-modal aria-label="닫기">×</button><p class="eyebrow"><span></span>투명한 정보 공개</p><h2 id="disclosureTitle">공시 내용 작성</h2><form id="disclosureForm" class="disclosure-checks"><label><input type="checkbox" name="disclosure" value="sales" checked><span><b>최근 12개월 매출</b><small>월별 매출과 증빙 기준일</small></span></label><label><input type="checkbox" name="disclosure" value="cost" checked><span><b>비용 구조</b><small>원가·인건비·임차료 비중</small></span></label><label><input type="checkbox" name="disclosure" value="debt" checked><span><b>부채와 상환 부담</b><small>기존 차입금과 월 상환액</small></span></label><label><input type="checkbox" name="disclosure" value="plan" checked><span><b>사업계획</b><small>목표와 항목별 예산</small></span></label><label><input type="checkbox" name="disclosure" value="risk"><span><b>주요 위험요인</b><small>계절성·경쟁·운영 위험</small></span></label><label><input type="checkbox" name="disclosure" value="evidence"><span><b>견적·계약 증빙</b><small>단계별 지급 검증 자료</small></span></label><button class="primary-button full-button" type="submit">공시 상태 저장 <span>→</span></button></form></div></div>
+
+  <div class="modal" id="regionModal" aria-hidden="true"><div class="modal-backdrop" data-close-modal></div><div class="modal-card small-modal-card" role="dialog" aria-modal="true" aria-labelledby="regionTitle"><button class="modal-close" data-close-modal aria-label="닫기">×</button><p class="eyebrow"><span></span>상권 기준</p><h2 id="regionTitle">분석 지역 변경</h2><div class="region-list"><button type="button" data-region="서울 성동구">서울 성동구 <span>✓</span></button><button type="button" data-region="서울 마포구">서울 마포구 <span></span></button><button type="button" data-region="서울 종로구">서울 종로구 <span></span></button><button type="button" data-region="경기 수원시">경기 수원시 <span></span></button></div></div></div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

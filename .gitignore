@@ -1,0 +1,13 @@
+.DS_Store
+.vercel/
+dist/
+node_modules/
+.env
+.env.local
+.env.*.local
+__pycache__/
+*.pyc
+소상공인키사용관련/
+data/*.db
+data/*.db-shm
+data/*.db-wal
