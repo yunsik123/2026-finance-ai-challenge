@@ -26,12 +26,16 @@ import moa_db
 
 
 ROOT = Path(__file__).resolve().parent
-GATEWAY_BASE = "https://factchat-cloud.mindlogic.ai/v1/gateway"
-CHAT_MODEL = os.environ.get("MOA_CHAT_MODEL", "gpt-5.6-luna")
-OCR_MODEL = os.environ.get("MOA_OCR_MODEL", "claude-haiku-4-5-20251001")
+OPENAI_BASE = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+CHAT_MODEL = os.environ.get("MOA_CHAT_MODEL") or os.environ.get("OPENAI_CHAT_MODEL") or "gpt-4o-mini"
+if CHAT_MODEL in {"gpt-5.6-luna", "luna"}:
+    CHAT_MODEL = "gpt-4o-mini"
+OCR_MODEL = os.environ.get("MOA_OCR_MODEL") or os.environ.get("OPENAI_OCR_MODEL") or "gpt-4o-mini"
+if OCR_MODEL in {"claude-haiku-4-5-20251001", "gpt-5.6-luna", "luna"}:
+    OCR_MODEL = "gpt-4o-mini"
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434").rstrip("/")
 OLLAMA_OCR_MODEL = os.environ.get("OLLAMA_OCR_MODEL", "qwen2.5vl:7b")
-OCR_ENGINE = os.environ.get("MOA_OCR_ENGINE", "auto").lower()
+OCR_ENGINE = os.environ.get("MOA_OCR_ENGINE", "openai").lower()
 MAX_BODY_BYTES = 8 * 1024 * 1024
 MAX_IMAGE_BYTES = 6 * 1024 * 1024
 
@@ -41,22 +45,41 @@ def build_ssl_context() -> ssl.SSLContext:
     try:
         import certifi
         return ssl.create_default_context(cafile=certifi.where())
-    except ImportError:
-        return ssl.create_default_context()
+    except Exception:
+        try:
+            return ssl.create_default_context()
+        except Exception:
+            return ssl._create_unverified_context()
 
 
 SSL_CONTEXT = build_ssl_context()
 
 
 def load_api_key() -> str:
-    env_key = os.environ.get("SGLLM_API_KEY", "").strip()
-    if env_key:
-        return env_key
+    for env_key in ("OPENAI_API_KEY", "SGLLM_API_KEY", "GPT_API_KEY"):
+        val = os.environ.get(env_key, "").strip()
+        if val:
+            return val
 
-    matches = list(ROOT.rglob("api키.txt"))
-    if not matches:
-        return ""
-    return matches[0].read_text(encoding="utf-8").strip()
+    candidate_files = [".env.gptapi", ".env.local", ".env", ".env.development.local", "api키.txt"]
+    for fname in candidate_files:
+        for file_path in ROOT.rglob(fname):
+            try:
+                content = file_path.read_text(encoding="utf-8").strip()
+                if not content:
+                    continue
+                if content.startswith("sk-"):
+                    return content.split()[0].strip()
+                for line in content.splitlines():
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    for key in ("OPENAI_API_KEY", "SGLLM_API_KEY", "GPT_API_KEY"):
+                        if line.startswith(f"{key}="):
+                            return line.split("=", 1)[1].strip().strip("\"'")
+            except Exception:
+                continue
+    return ""
 
 
 def extract_error_message(body: bytes, fallback: str) -> str:
@@ -70,23 +93,45 @@ def extract_error_message(body: bytes, fallback: str) -> str:
     return fallback
 
 
-def call_gateway(path: str, payload: dict[str, Any], extra_headers: dict[str, str] | None = None) -> dict[str, Any]:
+def call_openai_chat(
+    messages: list[dict[str, Any]],
+    system_prompt: str | None = None,
+    max_tokens: int = 1200,
+    temperature: float = 0.3,
+    response_format: dict[str, Any] | None = None,
+    model: str | None = None,
+) -> dict[str, Any]:
     api_key = load_api_key()
     if not api_key:
-        raise RuntimeError("SGLLM API 키 파일을 찾을 수 없습니다.")
+        raise RuntimeError("OpenAI API 키를 찾을 수 없습니다. .env.gptapi 파일이나 OPENAI_API_KEY 환경변수를 확인해 주세요.")
+
+    target_model = model or CHAT_MODEL
+    if target_model in {"gpt-5.6-luna", "luna"}:
+        target_model = "gpt-4o-mini"
+
+    full_messages: list[dict[str, Any]] = []
+    if system_prompt:
+        full_messages.append({"role": "system", "content": system_prompt})
+    full_messages.extend(messages)
+
+    payload: dict[str, Any] = {
+        "model": target_model,
+        "messages": full_messages,
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+    }
+    if response_format:
+        payload["response_format"] = response_format
 
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
         "Accept": "application/json",
-        # Gateway 보안 계층이 Python 기본 User-Agent를 브라우저 위조로 오인한다.
-        "User-Agent": "curl/8.7.1",
+        "User-Agent": "MoaLocal/1.0",
     }
-    if extra_headers:
-        headers.update(extra_headers)
 
     request = urllib.request.Request(
-        f"{GATEWAY_BASE}{path}",
+        f"{OPENAI_BASE}/chat/completions",
         data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
         headers=headers,
         method="POST",
@@ -96,10 +141,55 @@ def call_gateway(path: str, payload: dict[str, Any], extra_headers: dict[str, st
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         body = exc.read()
-        message = extract_error_message(body, f"SGLLM API 오류 ({exc.code})")
+        message = extract_error_message(body, f"OpenAI API 오류 ({exc.code})")
         raise RuntimeError(message) from exc
     except urllib.error.URLError as exc:
-        raise RuntimeError("SGLLM 서버에 연결하지 못했습니다. 네트워크 상태를 확인해 주세요.") from exc
+        if "CERTIFICATE_VERIFY_FAILED" in str(exc) or "certificate verify" in str(exc):
+            unverified = ssl._create_unverified_context()
+            try:
+                with urllib.request.urlopen(request, timeout=90, context=unverified) as response:
+                    return json.loads(response.read().decode("utf-8"))
+            except Exception as fallback_exc:
+                raise RuntimeError(f"OpenAI 서버 연결 오류: {fallback_exc}") from fallback_exc
+        raise RuntimeError("OpenAI 서버에 연결하지 못했습니다. 네트워크 상태를 확인해 주세요.") from exc
+
+
+def call_openai_vision(
+    image_b64: str,
+    mime_type: str,
+    prompt: str,
+    system_prompt: str = "당신은 한국어 영수증과 사업 증빙을 판독하는 OCR 검증 보조자입니다. 보이는 정보만 JSON으로 구조화하고 절대 지어내지 마세요.",
+) -> tuple[dict[str, Any], str]:
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt},
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{mime_type};base64,{image_b64}"},
+                },
+            ],
+        }
+    ]
+    target_model = OCR_MODEL
+    if target_model in {"claude-haiku-4-5-20251001", "gpt-5.6-luna", "luna"}:
+        target_model = "gpt-4o-mini"
+
+    result = call_openai_chat(
+        messages=messages,
+        system_prompt=system_prompt,
+        max_tokens=1500,
+        temperature=0.1,
+        response_format={"type": "json_object"},
+        model=target_model,
+    )
+    try:
+        content = result["choices"][0]["message"]["content"]
+        model_name = result.get("model", target_model)
+        return parse_json_block(content), model_name
+    except (KeyError, IndexError, TypeError) as exc:
+        raise RuntimeError("OpenAI Vision 응답 형식을 해석하지 못했습니다.") from exc
 
 
 def call_ollama_vision(image_b64: str, prompt: str) -> tuple[dict[str, Any], str]:
@@ -533,16 +623,17 @@ class MoaHandler(SimpleHTTPRequestHandler):
                     + "\n답변에는 어떤 노드·관계·수치가 근거인지 밝히고 부족 자료의 보완 방법을 우선 설명하세요."
                 )
 
-        payload = {
-            "model": CHAT_MODEL,
-            "messages": [{"role": "system", "content": system_prompt}, *messages],
-            "max_completion_tokens": 1200,
-        }
-        result = call_gateway("/chat/completions/", payload)
+        result = call_openai_chat(
+            messages=messages,
+            system_prompt=system_prompt,
+            max_tokens=1200,
+            temperature=0.3,
+            model=CHAT_MODEL,
+        )
         try:
             content = result["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError) as exc:
-            raise RuntimeError("SGLLM 응답 형식을 해석하지 못했습니다.") from exc
+            raise RuntimeError("OpenAI 응답 형식을 해석하지 못했습니다.") from exc
         self.send_json(
             HTTPStatus.OK,
             {
@@ -604,43 +695,10 @@ confidence는 0부터 100 사이 숫자입니다. planMatch는 문서 정보와 
                 if OCR_ENGINE == "ollama":
                     raise
 
-        payload = {
-            "model": OCR_MODEL,
-            "max_tokens": 1400,
-            "system": "당신은 한국어 영수증과 사업 증빙을 판독하는 OCR 검증 보조자입니다. 보이는 정보만 구조화하고 절대 지어내지 마세요.",
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": match.group(1),
-                                "data": image_b64,
-                            },
-                        },
-                        {"type": "text", "text": prompt},
-                    ],
-                }
-            ],
-        }
         if structured is None:
-            result = call_gateway(
-                "/claude/v1/messages/",
-                payload,
-                {"x-api-key": load_api_key(), "anthropic-version": "2023-06-01"},
-            )
-            try:
-                text = "\n".join(block.get("text", "") for block in result["content"] if block.get("type") == "text")
-            except (KeyError, TypeError) as exc:
-                raise RuntimeError("OCR 응답 형식을 해석하지 못했습니다.") from exc
-            if not text.strip():
-                raise RuntimeError("OCR 결과가 비어 있습니다.")
-            structured = parse_json_block(text)
-            model = result.get("model", OCR_MODEL)
+            structured, model = call_openai_vision(image_b64, match.group(1), prompt)
             if ollama_error:
-                structured.setdefault("warnings", []).append("로컬 Ollama를 사용할 수 없어 클라우드 OCR로 대체했습니다.")
+                structured.setdefault("warnings", []).append("로컬 Ollama를 사용할 수 없어 OpenAI Vision으로 대체했습니다.")
         analysis_id = moa_db.save_ocr_analysis(user["id"], filename, plan, structured, model)
         self.send_json(
             HTTPStatus.OK,
@@ -660,7 +718,7 @@ def main() -> None:
     moa_db.initialize()
     server = ThreadingHTTPServer((args.host, args.port), MoaHandler)
     print(f"모아 서버 실행: http://{args.host}:{args.port}")
-    print(f"SGLLM API: {'연결 설정됨' if load_api_key() else '키 없음'}")
+    print(f"OpenAI GPT API: {'연결 설정됨 (' + CHAT_MODEL + ')' if load_api_key() else '키 없음'}")
     print(f"데이터베이스: {moa_db.DB_PATH}")
     try:
         server.serve_forever()

@@ -675,7 +675,7 @@ $('#runOcrButton').addEventListener('click', () => requireLogin('owner', runOcr)
 async function runOcr() {
   if (!receiptDataUrl) { showToast('분석할 증빙 이미지를 선택해 주세요.', 'error'); return; }
   const button = $('#runOcrButton');
-  button.disabled = true; button.innerHTML = '<span class="button-spinner"></span> Ollama 우선으로 문서를 읽는 중…';
+  button.disabled = true; button.innerHTML = '<span class="button-spinner"></span> 문서를 분석하는 중…';
   $('#ocrResultPanel').innerHTML = '<div class="empty-tool-state loading"><span class="scan-icon">▣</span><h3>증빙 내용을 분석하고 있어요</h3><p>금액과 품목을 추출하고 사용계획과 비교합니다.</p></div>';
   try {
     const data = await apiRequest('/api/ai/ocr', { method: 'POST', body: JSON.stringify({ image: receiptDataUrl, filename: receiptFilename, plan: $('#expensePlan').value }) });
@@ -710,7 +710,7 @@ async function checkApiHealth() {
     const response = await fetch('/api/health', { cache: 'no-store' });
     const data = await response.json();
     const configured = response.ok && (data.apiConfigured || ['auto', 'ollama'].includes(data.ocrEngine));
-    $('#apiStatusBadge').textContent = data.ocrEngine === 'ollama' ? `Ollama · ${data.ollamaModel}` : data.ocrEngine === 'auto' ? 'Ollama 우선 OCR' : (configured ? 'SGLLM 연결됨' : 'API 키 필요');
+    $('#apiStatusBadge').textContent = data.ocrEngine === 'ollama' ? `Ollama · ${data.ollamaModel}` : (configured ? `GPT · ${data.chatModel || 'gpt-4o-mini'}` : 'API 키 필요');
     $('#apiStatusBadge').classList.toggle('connected', configured);
     $('#aiStatusDot').classList.toggle('offline', !configured);
   } catch {
@@ -768,7 +768,7 @@ $('#chatForm').addEventListener('submit', async event => {
     if (!response.ok || !data.ok) throw new Error(data.error || 'AI 답변을 받지 못했습니다.');
     loading.remove(); appendChatMessage('assistant', data.message); chatHistory.push({ role: 'assistant', content: data.message });
   } catch (error) {
-    loading.remove(); appendChatMessage('assistant', `연결 오류: ${error.message}\n로컬 페이지를 server.py로 실행했는지 확인해 주세요.`);
+    loading.remove(); appendChatMessage('assistant', `연결 오류: ${error.message}\nAPI 키 설정(.env.gptapi) 또는 서버(server.py) 상태를 확인해 주세요.`);
   } finally { submit.disabled = false; input.focus(); }
 });
 

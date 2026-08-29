@@ -5,6 +5,9 @@ node_modules/
 .env
 .env.local
 .env.*.local
+.env.gptapi
+*.env
+api키.txt
 __pycache__/
 *.pyc
 소상공인키사용관련/
