@@ -904,7 +904,7 @@ begin
   end loop;
 
   if p_force_issue and total_rate >= c.min_coupon_rate then
-    issue_rate := least(total_rate, c.max_discount_rate);
+    issue_rate := round(least(total_rate, c.max_discount_rate), 4);
     insert into public.coupons(campaign_id, owner_id, original_investor_id, discount_rate,
       coupon_type, description, max_discount_amount, expires_at)
     values(c.id, i.investor_id, i.investor_id, issue_rate, p_coupon_type,

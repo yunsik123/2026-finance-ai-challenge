@@ -296,15 +296,19 @@ function investmentDto(row) {
 }
 
 function couponDto(row) {
+  const rawRate = Number(row.discount_rate || 0);
+  const rate = Number(rawRate.toFixed(4));
+  const rawDesc = row.description ? String(row.description) : '';
+  const cleanDesc = rawDesc.replace(/(\d+\.\d{3,})%/g, (m, p) => Number(Number(p).toFixed(4)) + '%');
   return {
     id: row.id,
     campaignId: row.campaign_id,
     ownerId: row.owner_id,
     originalInvestorId: row.original_investor_id,
-    discountRate: Number(Number(row.discount_rate || 0).toFixed(4)),
+    discountRate: rate,
     couponType: row.coupon_type,
     benefitKind: row.benefit_kind || 'percent',
-    description: row.description || '',
+    description: cleanDesc || (rate > 0 ? `${rate}% 할인` : ''),
     maxDiscountAmount: row.max_discount_amount ? Number(row.max_discount_amount) : null,
     status: row.status,
     usedOrderAmount: row.used_order_amount ? Number(row.used_order_amount) : null,

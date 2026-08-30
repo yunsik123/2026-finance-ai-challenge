@@ -16,7 +16,16 @@ import {
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const won = value => Number(value || 0).toLocaleString('ko-KR') + '원';
-const formatRate = (rate, maxDigits = 4) => Number(Number(rate || 0).toFixed(maxDigits)).toLocaleString('ko-KR', { maximumFractionDigits: maxDigits });
+const formatRate = (rate, maxDigits = 4) => {
+  if (rate === null || rate === undefined || isNaN(rate)) return '0';
+  const num = Number(rate);
+  const rounded = Number(num.toFixed(maxDigits));
+  return rounded.toLocaleString('ko-KR', { maximumFractionDigits: maxDigits });
+};
+const cleanCouponText = text => {
+  if (!text) return '';
+  return String(text).replace(/(\d+\.\d{3,})%/g, (match, p1) => formatRate(p1, 4) + '%');
+};
 const shortDate = value => value ? new Intl.DateTimeFormat('ko-KR', {
   year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
 }).format(new Date(value)) : '-';
@@ -473,10 +482,15 @@ function renderPortfolio() {
   const coupons = portfolio.coupons || [];
   wallet.innerHTML = '<div class="panel-heading"><div><h3>내 쿠폰 지갑</h3><p>투자 유지를 통해 발급받은 매장 전용 할인 쿠폰입니다. 매장에서 사용하거나 교환소에서 거래할 수 있습니다.</p></div><strong>' + coupons.length + '장</strong></div>'
     + (queueRows.length ? '<div class="queue-list">' + queueRows.join('') + '</div>' : '')
-    + '<div class="coupon-grid">' + (coupons.length ? coupons.map(item => '<article class="coupon-ticket ' + item.status + '"><small>'
-      + escapeHTML(campaignLabel(item.campaignId)) + '</small><strong>' + (item.benefitKind === 'percent' ? formatRate(item.discountRate) + '% 할인' : escapeHTML(item.description)) + '</strong><span>'
-      + (couponStatusLabels[item.status] || ('상태 ' + escapeHTML(item.status))) + '</span>'
-      + (item.status === 'available' ? '<div class="coupon-actions"><button type="button" data-use-coupon="' + item.id + '">음식점 사용</button><button type="button" data-list-coupon="' + item.id + '">교환 등록</button></div>' : '') + '</article>').join('')
+    + '<div class="coupon-grid">' + (coupons.length ? coupons.map(item => {
+      const discountLabel = item.benefitKind === 'percent'
+        ? formatRate(item.discountRate) + '% 할인'
+        : (cleanCouponText(item.description) || (formatRate(item.discountRate) + '% 할인'));
+      return '<article class="coupon-ticket ' + item.status + '"><small>'
+        + escapeHTML(campaignLabel(item.campaignId)) + '</small><strong>' + escapeHTML(discountLabel) + '</strong><span>'
+        + (couponStatusLabels[item.status] || ('상태 ' + escapeHTML(item.status))) + '</span>'
+        + (item.status === 'available' ? '<div class="coupon-actions"><button type="button" data-use-coupon="' + item.id + '">음식점 사용</button><button type="button" data-list-coupon="' + item.id + '">교환 등록</button></div>' : '') + '</article>';
+    }).join('')
       : '<p class="empty-copy">발급된 쿠폰이 없습니다.</p>') + '</div>'
     + renderCouponMarket(portfolio);
 }
