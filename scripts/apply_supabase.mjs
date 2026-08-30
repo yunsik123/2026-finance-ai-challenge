@@ -86,7 +86,8 @@ async function ensureDemoAccounts() {
   const accounts = [
     { email: adminEmail, password: adminPassword, role: 'admin', name: '모아 운영자' },
     { email: 'owner@moa.local', password: 'MoaPass2026!', role: 'owner', name: '온기식당 사장님' },
-    { email: 'investor@moa.local', password: 'MoaPass2026!', role: 'investor', name: '김투자' }
+    { email: 'investor@moa.local', password: 'MoaPass2026!', role: 'investor', name: '김투자' },
+    { email: 'investor2@moa.local', password: 'MoaPass2026!', role: 'investor', name: '이응원' }
   ];
 
   for (const acc of accounts) {
@@ -131,10 +132,10 @@ async function main() {
   const seedSql = fs.readFileSync(path.join(rootDir, 'db', 'seed.sql'), 'utf8');
   console.log('1/3 데이터베이스 스키마와 접근 정책을 적용합니다.');
   await executeSql(schemaSql);
-  console.log('2/3 투자 검토용 가상 사업체·모집 6건을 적용합니다.');
-  await executeSql(seedSql);
-  console.log('3/3 데모 계정들(운영자, 소상공인, 투자자)을 생성하거나 갱신합니다.');
+  console.log('2/3 데모 계정들(운영자, 소상공인, 투자자)을 생성하거나 갱신합니다.');
   const admin = await ensureDemoAccounts();
+  console.log('3/3 투자·예약·쿠폰이 포함된 가상 사업체·모집 데이터를 적용합니다.');
+  await executeSql(seedSql);
   console.log('완료: 운영자, 소상공인, 투자자 계정 준비 완료');
   console.log('운영자 ID: ' + admin.email);
   console.log('소상공인 ID: owner@moa.local');

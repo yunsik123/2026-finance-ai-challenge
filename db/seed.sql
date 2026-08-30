@@ -54,6 +54,7 @@ insert into public.credit_assessments(
 ('10000000-0000-4000-8000-000000000006',80.2,'S2','low',37400000,'{"매출 지속성":87,"현금흐름 여력":82,"부채 부담":76,"사업 운영 안정성":72,"상권 회복력":82}','{}','moa-risk-v2-demo',false);
 
 alter table public.campaigns disable trigger guard_campaign_status_trigger;
+alter table public.campaigns disable trigger guard_campaign_fund_config_trigger;
 insert into public.campaigns(
   id, user_id, business_id, name, target_amount, duration_days, plan, risk, status, review_note, published_at
 ) values
@@ -68,6 +69,24 @@ on conflict(id) do update set
   risk=excluded.risk, status='published', review_note=excluded.review_note,
   published_at=excluded.published_at, updated_at=now();
 alter table public.campaigns enable trigger guard_campaign_status_trigger;
+alter table public.campaigns enable trigger guard_campaign_fund_config_trigger;
+
+alter table public.campaigns disable trigger guard_campaign_fund_config_trigger;
+update public.campaigns set
+  current_amount = case id
+    when '20000000-0000-4000-8000-000000000001' then 22000000
+    when '20000000-0000-4000-8000-000000000002' then 17760000
+    when '20000000-0000-4000-8000-000000000003' then 12000000
+    when '20000000-0000-4000-8000-000000000004' then 12600000
+    when '20000000-0000-4000-8000-000000000005' then 9900000
+    else 22960000 end,
+  fund_status = case when id in ('20000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000006') then 'closed' else 'fundraising' end,
+  closed_at = case when id in ('20000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000006') then '2026-08-20 18:00:00+09'::timestamptz else null end,
+  max_discount_rate = case when id in ('20000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000006') then 50 when id in ('20000000-0000-4000-8000-000000000002','20000000-0000-4000-8000-000000000004') then 40 else 30 end,
+  min_coupon_rate = 10, coupon_max_amount = 15000,
+  representative_menu = case when business_id in ('10000000-0000-4000-8000-000000000002','10000000-0000-4000-8000-000000000006') then '시그니처 음료·빵 세트' else '대표 메뉴' end,
+  representative_menu_price = case when business_id in ('10000000-0000-4000-8000-000000000002','10000000-0000-4000-8000-000000000006') then 12000 else 29000 end;
+alter table public.campaigns enable trigger guard_campaign_fund_config_trigger;
 
 insert into public.campaign_milestones(id, campaign_id, sequence_no, title, condition_text, release_percent) values
 ('30000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000001',1,'설비 계약','공급계약서와 계약금 세금계산서 확인',20),
@@ -91,5 +110,61 @@ insert into public.campaign_milestones(id, campaign_id, sequence_no, title, cond
 on conflict(campaign_id, sequence_no) do update set
   title=excluded.title, condition_text=excluded.condition_text,
   release_percent=excluded.release_percent, updated_at=now();
+
+insert into public.restaurant_monthly_sales(business_id,year_month,total_sales,coupon_sales,coupon_discount_total,coupons_used,growth_rate,bonus_rate) values
+('10000000-0000-4000-8000-000000000001','2026-07-01',30100000,2100000,260000,18,0,0),
+('10000000-0000-4000-8000-000000000001','2026-08-01',33800000,3500000,420000,31,12.29,2.46),
+('10000000-0000-4000-8000-000000000002','2026-07-01',23600000,1800000,190000,22,0,0),
+('10000000-0000-4000-8000-000000000002','2026-08-01',24100000,2200000,240000,27,2.12,.42)
+on conflict(business_id,year_month) do update set total_sales=excluded.total_sales,coupon_sales=excluded.coupon_sales,
+coupon_discount_total=excluded.coupon_discount_total,coupons_used=excluded.coupons_used,growth_rate=excluded.growth_rate,bonus_rate=excluded.bonus_rate;
+
+insert into public.thematic_funds(id,name,description,region,category) values
+('70000000-0000-4000-8000-000000000001','성수·연남 성장 맛집','상권 성장성과 AI 평가가 좋은 음식점을 묶은 탐색 컬렉션','서울','음식점'),
+('70000000-0000-4000-8000-000000000002','로컬 카페·베이커리','지역 단골과 온라인 매출이 함께 성장하는 카페 테마','전국','카페')
+on conflict(id) do update set name=excluded.name,description=excluded.description,region=excluded.region,category=excluded.category;
+insert into public.thematic_fund_restaurants(thematic_fund_id,campaign_id) values
+('70000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000001'),
+('70000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000002'),
+('70000000-0000-4000-8000-000000000002','20000000-0000-4000-8000-000000000002'),
+('70000000-0000-4000-8000-000000000002','20000000-0000-4000-8000-000000000006')
+on conflict do nothing;
+
+insert into public.ai_contents(id,title,content,content_type,source_metrics) values
+('80000000-0000-4000-8000-000000000001','이번 달 매출 성장 음식점','온기린 식당은 저장된 7월·8월 매출 기준 12.29% 성장했습니다.','growth','{"businessId":"10000000-0000-4000-8000-000000000001","growthRate":12.29}'),
+('80000000-0000-4000-8000-000000000002','최대 쿠폰 할인율이 높은 펀드','온기린 식당과 은행동 빵실험실의 최대 쿠폰 할인율은 저장된 정책 기준 50%입니다.','coupon','{"campaignIds":["20000000-0000-4000-8000-000000000001","20000000-0000-4000-8000-000000000006"],"maxDiscountRate":50}')
+on conflict(id) do update set title=excluded.title,content=excluded.content,source_metrics=excluded.source_metrics;
+
+do $$
+declare investor_one uuid; investor_two uuid; owner_one uuid;
+begin
+  select id into investor_one from public.profiles where email='investor@moa.local';
+  select id into investor_two from public.profiles where email='investor2@moa.local';
+  select id into owner_one from public.profiles where email='owner@moa.local';
+  if owner_one is not null then
+    update public.businesses set user_id=owner_one where id='10000000-0000-4000-8000-000000000001';
+    update public.campaigns set user_id=owner_one where id='20000000-0000-4000-8000-000000000001';
+  end if;
+  if investor_one is not null and investor_two is not null then
+    insert into public.investments(id,campaign_id,investor_id,invested_amount,accrued_discount,last_accrual_at) values
+      ('40000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000001',investor_one,110000,12.5,now()),
+      ('40000000-0000-4000-8000-000000000002','20000000-0000-4000-8000-000000000001',investor_two,190000,7,now()),
+      ('40000000-0000-4000-8000-000000000003','20000000-0000-4000-8000-000000000002',investor_one,100000,17,now()-interval '2 days')
+    on conflict(campaign_id,investor_id) do update set invested_amount=excluded.invested_amount,accrued_discount=excluded.accrued_discount,last_accrual_at=excluded.last_accrual_at,status='active';
+    insert into public.investment_reservations(id,campaign_id,investor_id,reserved_amount,matched_amount,status,created_at) values
+      ('50000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000001',investor_one,50000,10000,'partial','2026-08-25 10:00:00+09')
+    on conflict(id) do update set reserved_amount=excluded.reserved_amount,matched_amount=excluded.matched_amount,status=excluded.status;
+    insert into public.withdrawal_requests(id,campaign_id,investor_id,requested_amount,matched_amount,status,coupon_issued,created_at) values
+      ('51000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000001',investor_two,30000,10000,'partial',true,'2026-08-25 10:01:00+09')
+    on conflict(id) do update set requested_amount=excluded.requested_amount,matched_amount=excluded.matched_amount,status=excluded.status;
+    insert into public.matching_transactions(id,campaign_id,reservation_id,withdrawal_id,incoming_investor_id,outgoing_investor_id,amount,matched_at) values
+      ('52000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000001','50000000-0000-4000-8000-000000000001','51000000-0000-4000-8000-000000000001',investor_one,investor_two,10000,'2026-08-25 10:01:00+09')
+    on conflict(id) do nothing;
+    insert into public.coupons(id,campaign_id,owner_id,original_investor_id,discount_rate,coupon_type,description,status,expires_at) values
+      ('60000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000001',investor_one,investor_one,30,'accrual','온기린 식당 투자 유지 30% 할인','available','2027-08-30'),
+      ('60000000-0000-4000-8000-000000000002','20000000-0000-4000-8000-000000000002',investor_one,investor_one,10,'dividend','로스터 교체 기념 배당 쿠폰','available','2027-02-28')
+    on conflict(id) do update set owner_id=excluded.owner_id,status=excluded.status,expires_at=excluded.expires_at;
+  end if;
+end $$;
 
 commit;

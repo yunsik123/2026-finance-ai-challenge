@@ -3,6 +3,8 @@
   --ink-2: #28584b;
   --coral: #df6f50;
   --coral-dark: #b94e35;
+  --accent: #df6f50;
+  --accent-dark: #b94e35;
   --paper: #fbfaf6;
   --cream: #f2efe6;
   --white: #fff;
@@ -13,6 +15,97 @@
   --warning: #b67525;
   --danger: #a84838;
   --shadow: 0 18px 55px rgba(23, 61, 52, .11);
+}
+
+/* 소비 쿠폰형 펀드 확장 */
+.benefit-flow { padding-top: 18px; }
+.service-flow { display: grid; grid-template-columns: repeat(9, auto); align-items: center; gap: 12px; padding: 26px; border: 1px solid var(--line); border-radius: 24px; background: #fff; }
+.service-flow article { min-width: 0; text-align: center; }
+.service-flow article b { display: grid; place-items: center; width: 28px; height: 28px; margin: 0 auto 10px; border-radius: 50%; background: var(--accent); color: #fff; }
+.service-flow article strong, .service-flow article span { display: block; }
+.service-flow article strong { font-size: 14px; color: var(--ink); }
+.service-flow article span { margin-top: 5px; font-size: 11px; line-height: 1.5; color: var(--muted); }
+.service-flow > i { color: var(--accent); font-style: normal; }
+.portfolio-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
+.portfolio-summary article { padding: 18px; border: 1px solid var(--line); border-radius: 18px; background: #fff; }
+.portfolio-summary small, .portfolio-summary strong { display: block; }
+.portfolio-summary small { color: var(--muted); }
+.portfolio-summary strong { margin-top: 8px; font-size: 20px; }
+.portfolio-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+.portfolio-card { padding: 22px; border: 1px solid var(--line); border-radius: 22px; background: #fff; box-shadow: 0 12px 30px rgba(48,41,33,.05); }
+.portfolio-card h3 { margin: 10px 0 18px; }
+.portfolio-values { display: flex; justify-content: space-between; gap: 16px; }
+.portfolio-values span, .portfolio-values b { display: block; }
+.portfolio-values span { color: var(--muted); font-size: 11px; }
+.portfolio-values b { margin-top: 5px; color: var(--ink); font-size: 16px; }
+.coupon-progress { height: 8px; margin: 16px 0 8px; overflow: hidden; border-radius: 20px; background: #eee9e2; }
+.coupon-progress i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--accent), #f0b85e); }
+.portfolio-card > small { color: var(--muted); }
+.card-actions { display: flex; gap: 8px; margin-top: 18px; }
+.card-actions button, .coupon-ticket button { flex: 1; padding: 10px; border: 1px solid var(--line); border-radius: 12px; background: #fff; color: var(--ink); cursor: pointer; }
+.coupon-wallet { margin-top: 18px; padding: 22px; border: 1px solid var(--line); border-radius: 22px; background: var(--paper); }
+.coupon-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.coupon-ticket { position: relative; display: flex; flex-direction: column; gap: 7px; min-height: 145px; padding: 18px; overflow: hidden; border: 1px solid #e7c9bb; border-radius: 18px; background: #fff8f3; }
+.coupon-ticket::after { content: ''; position: absolute; right: -14px; top: 50%; width: 28px; height: 28px; border-radius: 50%; background: var(--paper); }
+.coupon-ticket strong { font-size: 22px; color: var(--accent-dark, #ad4c35); }
+.coupon-ticket span, .coupon-ticket small { color: var(--muted); }
+.coupon-ticket.used { opacity: .55; filter: grayscale(.5); }
+.queue-list { display: grid; gap: 8px; margin: 0 0 18px; }
+.queue-list > div { display: grid; grid-template-columns: 90px 1fr auto; gap: 12px; padding: 10px 12px; border-radius: 12px; background: #fff; font-size: 12px; }
+.legacy-commitments { margin-top: 18px; color: var(--muted); }
+.legacy-commitments summary { cursor: pointer; }
+.coupon-policy-detail > div { display: flex; justify-content: space-between; gap: 12px; padding: 14px; border-radius: 14px; background: #fff3ed; }
+.coupon-policy-detail > div strong { color: var(--accent); }
+.status-pill.closed { background: #e4e0f2; color: #554979; }
+.assessment-explanation { margin-top: 18px; }
+.explanation-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 16px 0; }
+.explanation-columns > div { padding: 16px; border-radius: 16px; background: var(--paper); }
+.explanation-columns ul { margin: 10px 0 0; padding-left: 18px; color: var(--muted); }
+.owner-fund-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.owner-fund-stats article { padding: 16px; border-radius: 16px; background: var(--paper); }
+.owner-fund-stats small, .owner-fund-stats strong, .owner-fund-stats span { display: block; }
+.owner-fund-stats strong { margin: 6px 0; font-size: 18px; }
+.owner-fund-stats span { color: var(--muted); font-size: 11px; }
+.owner-benefit-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin: 18px 0; }
+.cost-warning { margin-top: 16px; padding: 12px; border-radius: 12px; background: #fff0ec; color: var(--danger); font-weight: 700; }
+.fund-lock-note { margin: 16px 0 0; color: var(--muted); }
+.check-grid.compact label { min-height: 72px; }
+.empty-copy { color: var(--muted); }
+.discovery-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.discovery-grid .panel > h3 { margin-top: 0; }
+.discovery-row { display: grid; grid-template-columns: 28px 1fr auto; align-items: center; width: 100%; gap: 10px; padding: 12px 0; border: 0; border-bottom: 1px solid var(--line); background: transparent; text-align: left; cursor: pointer; }
+.discovery-row > b { color: var(--coral); font-size: 18px; }
+.discovery-row span strong, .discovery-row span small { display: block; }
+.discovery-row span small, .theme-row span, .theme-row p, .insight-row p, .insight-row small { margin-top: 4px; color: var(--muted); font-size: 11px; line-height: 1.6; }
+.discovery-row em { color: var(--ink); font-style: normal; font-weight: 800; }
+.theme-row, .insight-row { padding: 12px 0; border-bottom: 1px solid var(--line); }
+.theme-row strong, .theme-row span, .insight-row strong, .insight-row small { display: block; }
+.theme-row p, .insight-row p { margin-bottom: 0; }
+.coupon-actions { display: flex; gap: 6px; margin-top: auto; }
+.coupon-market { margin-top: 18px; }
+.coupon-market summary { font-weight: 800; cursor: pointer; }
+.trade-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.trade-row span b, .trade-row span small { display: block; }
+.trade-row small, .trade-row em { margin-top: 4px; color: var(--muted); font-size: 11px; font-style: normal; }
+.trade-row button { padding: 9px 12px; border: 1px solid var(--line); border-radius: 12px; background: white; cursor: pointer; }
+.data-guide { margin: 16px 0; }
+.data-guide summary { font-weight: 800; cursor: pointer; }
+.data-guide code { display: inline-block; max-width: 100%; padding: 5px 8px; overflow-x: auto; border-radius: 7px; background: #eeece5; color: var(--ink); font-size: 11px; white-space: nowrap; }
+.photo-guide { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }
+.photo-guide article { padding: 14px; border-radius: 14px; background: var(--paper); }
+.photo-guide b, .photo-guide span { display: block; }
+.photo-guide span { margin-top: 6px; color: var(--muted); font-size: 12px; line-height: 1.7; }
+
+@media (max-width: 900px) {
+  .service-flow { grid-template-columns: 1fr; }
+  .service-flow > i { transform: rotate(90deg); text-align: center; }
+  .portfolio-summary, .portfolio-grid, .coupon-grid, .owner-benefit-actions, .discovery-grid { grid-template-columns: 1fr 1fr; }
+  .owner-fund-stats { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 600px) {
+  .portfolio-summary, .portfolio-grid, .coupon-grid, .owner-benefit-actions, .owner-fund-stats, .explanation-columns, .discovery-grid, .photo-guide { grid-template-columns: 1fr; }
+  .queue-list > div { grid-template-columns: 1fr; }
 }
 
 * { box-sizing: border-box; }

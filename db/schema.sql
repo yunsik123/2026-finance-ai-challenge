@@ -584,4 +584,669 @@ grant execute on function public.review_evidence(uuid, text, text) to authentica
 grant execute on function public.confirm_commitment_escrow(uuid) to authenticated;
 grant execute on function public.release_milestone(uuid) to authenticated;
 
+-- ---------------------------------------------------------------------------
+-- 소비 쿠폰형 펀드 확장: 투자 잔액, FIFO 유동성 매칭, 쿠폰 보상
+-- 기존 심사·예치·마일스톤 구조를 유지하면서 실제 서비스 흐름을 추가한다.
+-- ---------------------------------------------------------------------------
+
+alter table public.businesses add column if not exists representative_name text not null default '';
+alter table public.businesses add column if not exists opening_date date;
+alter table public.businesses add column if not exists restaurant_license_confirmed boolean not null default false;
+alter table public.businesses add column if not exists applicant_is_representative boolean not null default false;
+alter table public.businesses add column if not exists pos_data_consent boolean not null default false;
+alter table public.businesses add column if not exists card_sales_consent boolean not null default false;
+
+alter table public.business_metrics add column if not exists card_sales_6m bigint[] not null default '{}';
+alter table public.business_metrics add column if not exists cash_sales_6m bigint[] not null default '{}';
+alter table public.business_metrics add column if not exists monthly_fixed_cost bigint not null default 0;
+alter table public.business_metrics add column if not exists monthly_rent bigint not null default 0;
+alter table public.business_metrics add column if not exists monthly_labor_cost bigint not null default 0;
+alter table public.business_metrics add column if not exists monthly_material_cost bigint not null default 0;
+alter table public.business_metrics add column if not exists administrative_action_count integer not null default 0;
+alter table public.business_metrics add column if not exists representative_change_count integer not null default 0;
+
+alter table public.campaigns add column if not exists fund_status text not null default 'preparing';
+alter table public.campaigns add column if not exists current_amount bigint not null default 0;
+alter table public.campaigns add column if not exists closes_at timestamptz;
+alter table public.campaigns add column if not exists closed_at timestamptz;
+alter table public.campaigns add column if not exists max_discount_rate numeric not null default 30;
+alter table public.campaigns add column if not exists min_coupon_rate numeric not null default 10;
+alter table public.campaigns add column if not exists coupon_max_amount bigint;
+alter table public.campaigns add column if not exists representative_menu text not null default '';
+alter table public.campaigns add column if not exists representative_menu_price bigint not null default 0;
+alter table public.campaigns add column if not exists image_url text not null default '';
+alter table public.campaigns add column if not exists investor_benefits text not null default '';
+alter table public.campaigns drop constraint if exists campaigns_fund_status_check;
+alter table public.campaigns add constraint campaigns_fund_status_check
+  check (fund_status in ('preparing', 'fundraising', 'closed'));
+alter table public.campaigns drop constraint if exists campaigns_current_amount_check;
+alter table public.campaigns add constraint campaigns_current_amount_check check (current_amount >= 0);
+alter table public.campaigns drop constraint if exists campaigns_coupon_rate_check;
+alter table public.campaigns add constraint campaigns_coupon_rate_check
+  check (max_discount_rate between 30 and 60 and min_coupon_rate between 1 and max_discount_rate);
+update public.campaigns c set
+  current_amount = greatest(c.current_amount, coalesce((
+    select sum(f.amount) from public.funding_commitments f
+    where f.campaign_id=c.id and f.status in ('committed','escrowed')
+  ),0)),
+  fund_status = case
+    when c.status='published' and greatest(c.current_amount,coalesce((select sum(f.amount) from public.funding_commitments f where f.campaign_id=c.id and f.status in ('committed','escrowed')),0))>=c.target_amount then 'closed'
+    when c.status='published' then 'fundraising'
+    else c.fund_status end,
+  closes_at = case when c.status='published' then coalesce(c.closes_at,c.published_at+make_interval(days=>c.duration_days)) else c.closes_at end
+where c.status='published' and c.fund_status='preparing';
+
+create table if not exists public.fund_policies (
+  policy_key text primary key,
+  policy_value jsonb not null,
+  description text not null default '',
+  updated_at timestamptz not null default now()
+);
+insert into public.fund_policies(policy_key, policy_value, description) values
+  ('max_investment_ratio', '{"value":0.01}', '캠페인 목표액 대비 1인 최대 보유 비율'),
+  ('investment_unit', '{"value":1000}', '투자·회수·매칭 최소 거래 단위'),
+  ('daily_coupon_growth_rate', '{"value":0.5}', '10만원 투자 기준 일별 할인율 증가폭'),
+  ('coupon_trade_max_diff', '{"value":10}', '교환 가능한 쿠폰 할인율 차이(미만)'),
+  ('sales_growth_bonus_multiplier', '{"value":0.2}', '월 매출 성장률 1%당 쿠폰 보너스')
+on conflict (policy_key) do nothing;
+
+create table if not exists public.investments (
+  id uuid primary key default gen_random_uuid(),
+  campaign_id uuid not null references public.campaigns(id) on delete cascade,
+  investor_id uuid not null references public.profiles(id) on delete cascade,
+  invested_amount bigint not null default 0 check (invested_amount >= 0),
+  accrued_discount numeric not null default 0 check (accrued_discount >= 0),
+  last_accrual_at timestamptz not null default now(),
+  status text not null default 'active' check (status in ('active', 'withdrawn')),
+  invested_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique(campaign_id, investor_id)
+);
+
+create table if not exists public.investment_reservations (
+  id uuid primary key default gen_random_uuid(),
+  campaign_id uuid not null references public.campaigns(id) on delete cascade,
+  investor_id uuid not null references public.profiles(id) on delete cascade,
+  reserved_amount bigint not null check (reserved_amount >= 1000),
+  matched_amount bigint not null default 0 check (matched_amount >= 0),
+  status text not null default 'pending' check (status in ('pending', 'partial', 'completed', 'cancelled')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  check (matched_amount <= reserved_amount)
+);
+
+create table if not exists public.withdrawal_requests (
+  id uuid primary key default gen_random_uuid(),
+  campaign_id uuid not null references public.campaigns(id) on delete cascade,
+  investor_id uuid not null references public.profiles(id) on delete cascade,
+  requested_amount bigint not null check (requested_amount >= 1000),
+  matched_amount bigint not null default 0 check (matched_amount >= 0),
+  status text not null default 'pending' check (status in ('pending', 'partial', 'completed', 'cancelled')),
+  coupon_issued boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  check (matched_amount <= requested_amount)
+);
+
+create table if not exists public.matching_transactions (
+  id uuid primary key default gen_random_uuid(),
+  campaign_id uuid not null references public.campaigns(id) on delete cascade,
+  reservation_id uuid not null references public.investment_reservations(id) on delete restrict,
+  withdrawal_id uuid not null references public.withdrawal_requests(id) on delete restrict,
+  incoming_investor_id uuid not null references public.profiles(id) on delete restrict,
+  outgoing_investor_id uuid not null references public.profiles(id) on delete restrict,
+  amount bigint not null check (amount >= 1000 and amount % 1000 = 0),
+  matched_at timestamptz not null default now()
+);
+
+create table if not exists public.coupons (
+  id uuid primary key default gen_random_uuid(),
+  campaign_id uuid not null references public.campaigns(id) on delete cascade,
+  owner_id uuid not null references public.profiles(id) on delete restrict,
+  original_investor_id uuid references public.profiles(id) on delete set null,
+  discount_rate numeric not null check (discount_rate > 0 and discount_rate <= 100),
+  coupon_type text not null default 'accrual' check (coupon_type in ('accrual', 'withdrawal', 'dividend', 'sales_bonus')),
+  benefit_kind text not null default 'percent' check (benefit_kind in ('percent', 'fixed', 'menu')),
+  description text not null default '',
+  max_discount_amount bigint,
+  status text not null default 'available' check (status in ('available', 'trade_pending', 'used', 'expired')),
+  used_order_amount bigint,
+  discount_amount bigint,
+  used_at timestamptz,
+  expires_at timestamptz,
+  created_at timestamptz not null default now()
+);
+-- 2026-08 이전 데모 coupons 테이블(user_id/store_name/title/code 중심)이 남아 있어도
+-- 데이터를 삭제하지 않고 투자 쿠폰 원장 컬럼을 확장한다.
+alter table public.coupons add column if not exists campaign_id uuid references public.campaigns(id) on delete cascade;
+alter table public.coupons add column if not exists owner_id uuid references public.profiles(id) on delete restrict;
+alter table public.coupons add column if not exists original_investor_id uuid references public.profiles(id) on delete set null;
+alter table public.coupons add column if not exists discount_rate numeric not null default 1;
+alter table public.coupons add column if not exists coupon_type text not null default 'accrual';
+alter table public.coupons add column if not exists benefit_kind text not null default 'percent';
+alter table public.coupons add column if not exists description text not null default '';
+alter table public.coupons add column if not exists max_discount_amount bigint;
+alter table public.coupons add column if not exists status text not null default 'available';
+alter table public.coupons add column if not exists used_order_amount bigint;
+alter table public.coupons add column if not exists discount_amount bigint;
+do $$ begin
+  if exists(select 1 from information_schema.columns where table_schema='public' and table_name='coupons' and column_name='user_id') then
+    alter table public.coupons alter column user_id drop not null;
+    alter table public.coupons alter column source_type set default 'investment';
+    alter table public.coupons alter column source_id set default '';
+    alter table public.coupons alter column store_name set default '';
+    alter table public.coupons alter column title set default '';
+    alter table public.coupons alter column benefit set default '';
+    alter table public.coupons alter column code set default gen_random_uuid()::text;
+    alter table public.coupons alter column expires_at set default (current_date + 365);
+  end if;
+end $$;
+
+create table if not exists public.coupon_transactions (
+  id bigint generated always as identity primary key,
+  coupon_id uuid not null references public.coupons(id) on delete cascade,
+  actor_id uuid references public.profiles(id) on delete set null,
+  transaction_type text not null check (transaction_type in ('issued', 'used', 'trade_listed', 'traded', 'expired')),
+  from_owner_id uuid references public.profiles(id) on delete set null,
+  to_owner_id uuid references public.profiles(id) on delete set null,
+  detail jsonb not null default '{}',
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.coupon_trades (
+  id uuid primary key default gen_random_uuid(),
+  offered_coupon_id uuid not null references public.coupons(id) on delete restrict,
+  offered_by uuid not null references public.profiles(id) on delete cascade,
+  requested_coupon_id uuid references public.coupons(id) on delete restrict,
+  accepted_by uuid references public.profiles(id) on delete set null,
+  status text not null default 'open' check (status in ('open', 'completed', 'cancelled')),
+  created_at timestamptz not null default now(),
+  completed_at timestamptz
+);
+
+create table if not exists public.dividend_coupons (
+  id uuid primary key default gen_random_uuid(),
+  campaign_id uuid not null references public.campaigns(id) on delete cascade,
+  issuer_id uuid not null references public.profiles(id) on delete cascade,
+  title text not null,
+  description text not null default '',
+  benefit_kind text not null default 'percent' check (benefit_kind in ('percent', 'fixed', 'menu')),
+  discount_value numeric not null check (discount_value > 0),
+  target text not null default 'all' check (target in ('all', 'proportional')),
+  issued_count integer not null default 0,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.restaurant_monthly_sales (
+  id uuid primary key default gen_random_uuid(),
+  business_id uuid not null references public.businesses(id) on delete cascade,
+  year_month date not null,
+  total_sales bigint not null default 0 check (total_sales >= 0),
+  coupon_sales bigint not null default 0 check (coupon_sales >= 0),
+  coupon_discount_total bigint not null default 0 check (coupon_discount_total >= 0),
+  coupons_used integer not null default 0 check (coupons_used >= 0),
+  growth_rate numeric not null default 0,
+  bonus_rate numeric not null default 0,
+  created_at timestamptz not null default now(),
+  unique(business_id, year_month)
+);
+
+create table if not exists public.ai_contents (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  content text not null,
+  content_type text not null default 'insight',
+  source_metrics jsonb not null default '{}',
+  is_published boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists public.thematic_funds (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  description text not null default '',
+  region text not null default '',
+  category text not null default '',
+  image_url text not null default '',
+  is_active boolean not null default true,
+  created_at timestamptz not null default now()
+);
+create table if not exists public.thematic_fund_restaurants (
+  thematic_fund_id uuid not null references public.thematic_funds(id) on delete cascade,
+  campaign_id uuid not null references public.campaigns(id) on delete cascade,
+  weight numeric not null default 1 check (weight > 0),
+  primary key(thematic_fund_id, campaign_id)
+);
+
+create index if not exists investments_investor_idx on public.investments(investor_id, status);
+create index if not exists reservations_fifo_idx on public.investment_reservations(campaign_id, status, created_at, id);
+create index if not exists withdrawals_fifo_idx on public.withdrawal_requests(campaign_id, status, created_at, id);
+create index if not exists matching_campaign_idx on public.matching_transactions(campaign_id, matched_at desc);
+create index if not exists coupons_owner_idx on public.coupons(owner_id, status, created_at desc);
+create index if not exists coupons_campaign_idx on public.coupons(campaign_id, status);
+
+create or replace function public.policy_number(p_key text, p_default numeric)
+returns numeric language sql stable security definer set search_path = public as $$
+  select coalesce((select (policy_value->>'value')::numeric from public.fund_policies where policy_key = p_key), p_default);
+$$;
+
+create or replace function public.settle_investment_coupon(p_investment_id uuid, p_force_issue boolean default false, p_coupon_type text default 'accrual')
+returns numeric language plpgsql security definer set search_path = public as $$
+declare
+  i public.investments;
+  c public.campaigns;
+  elapsed_days numeric;
+  total_rate numeric;
+  issue_rate numeric;
+begin
+  select * into i from public.investments where id = p_investment_id for update;
+  if i.id is null then return 0; end if;
+  select * into c from public.campaigns where id = i.campaign_id;
+  elapsed_days := greatest(0, extract(epoch from (now() - i.last_accrual_at)) / 86400.0);
+  total_rate := i.accrued_discount + (i.invested_amount / 100000.0)
+    * public.policy_number('daily_coupon_growth_rate', 0.5) * elapsed_days;
+
+  while total_rate >= c.max_discount_rate loop
+    insert into public.coupons(campaign_id, owner_id, original_investor_id, discount_rate,
+      coupon_type, description, max_discount_amount, expires_at)
+    values(c.id, i.investor_id, i.investor_id, c.max_discount_rate, 'accrual',
+      c.name || ' 투자 유지 보상', c.coupon_max_amount, now() + interval '1 year');
+    total_rate := total_rate - c.max_discount_rate;
+  end loop;
+
+  if p_force_issue and total_rate >= c.min_coupon_rate then
+    issue_rate := least(total_rate, c.max_discount_rate);
+    insert into public.coupons(campaign_id, owner_id, original_investor_id, discount_rate,
+      coupon_type, description, max_discount_amount, expires_at)
+    values(c.id, i.investor_id, i.investor_id, issue_rate, p_coupon_type,
+      c.name || case when p_coupon_type = 'withdrawal' then ' 회수 보상' else ' 중간 발급' end,
+      c.coupon_max_amount, now() + interval '1 year');
+    total_rate := 0;
+  end if;
+
+  update public.investments set accrued_discount = round(total_rate, 2),
+    last_accrual_at = now(), updated_at = now() where id = i.id;
+  return round(total_rate, 2);
+end;
+$$;
+
+create or replace function public.process_fund_matching(p_campaign_id uuid)
+returns bigint language plpgsql security definer set search_path = public as $$
+declare
+  r public.investment_reservations;
+  w public.withdrawal_requests;
+  chunk bigint;
+  total_matched bigint := 0;
+  outgoing public.investments;
+begin
+  perform pg_advisory_xact_lock(hashtextextended(p_campaign_id::text, 0));
+  perform 1 from public.campaigns where id = p_campaign_id and fund_status = 'closed' for update;
+  loop
+    select * into r from public.investment_reservations
+      where campaign_id = p_campaign_id and status in ('pending','partial')
+      order by created_at, id for update skip locked limit 1;
+    exit when r.id is null;
+    select * into w from public.withdrawal_requests
+      where campaign_id = p_campaign_id and status in ('pending','partial')
+        and investor_id <> r.investor_id
+      order by created_at, id for update skip locked limit 1;
+    exit when w.id is null;
+    chunk := least(r.reserved_amount - r.matched_amount, w.requested_amount - w.matched_amount);
+    chunk := floor(chunk / 1000.0) * 1000;
+    exit when chunk < 1000;
+
+    select * into outgoing from public.investments
+      where campaign_id = p_campaign_id and investor_id = w.investor_id for update;
+    if outgoing.id is null or outgoing.invested_amount < chunk then
+      update public.withdrawal_requests set status = 'cancelled', updated_at = now() where id = w.id;
+      continue;
+    end if;
+    if not w.coupon_issued then
+      perform public.settle_investment_coupon(outgoing.id, true, 'withdrawal');
+      update public.withdrawal_requests set coupon_issued = true where id = w.id;
+    else
+      perform public.settle_investment_coupon(outgoing.id, false, 'accrual');
+    end if;
+    update public.investments set invested_amount = invested_amount - chunk,
+      status = case when invested_amount - chunk = 0 then 'withdrawn' else 'active' end,
+      updated_at = now() where id = outgoing.id;
+    if exists(select 1 from public.investments where campaign_id=p_campaign_id and investor_id=r.investor_id) then
+      perform public.settle_investment_coupon((select id from public.investments where campaign_id=p_campaign_id and investor_id=r.investor_id), false, 'accrual');
+    end if;
+    insert into public.investments(campaign_id, investor_id, invested_amount, status)
+      values(p_campaign_id, r.investor_id, chunk, 'active')
+      on conflict(campaign_id, investor_id) do update set
+        invested_amount = public.investments.invested_amount + excluded.invested_amount,
+        status = 'active', updated_at = now();
+    update public.investment_reservations set matched_amount = matched_amount + chunk,
+      status = case when matched_amount + chunk = reserved_amount then 'completed' else 'partial' end,
+      updated_at = now() where id = r.id;
+    update public.withdrawal_requests set matched_amount = matched_amount + chunk,
+      status = case when matched_amount + chunk = requested_amount then 'completed' else 'partial' end,
+      updated_at = now() where id = w.id;
+    insert into public.matching_transactions(campaign_id, reservation_id, withdrawal_id,
+      incoming_investor_id, outgoing_investor_id, amount)
+    values(p_campaign_id, r.id, w.id, r.investor_id, w.investor_id, chunk);
+    total_matched := total_matched + chunk;
+  end loop;
+  return total_matched;
+end;
+$$;
+
+create or replace function public.invest_fund(p_campaign_id uuid, p_amount bigint, p_risk_consent boolean default true)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  c public.campaigns;
+  unit bigint := public.policy_number('investment_unit', 1000)::bigint;
+  max_amount bigint;
+  holding bigint;
+  queued bigint;
+  reservation_id uuid;
+  matched bigint := 0;
+begin
+  if auth.uid() is null or not exists(select 1 from public.profiles where id = auth.uid() and role in ('investor','admin')) then
+    raise exception '투자자 로그인이 필요합니다.';
+  end if;
+  if not p_risk_consent then raise exception '투자 위험 확인이 필요합니다.'; end if;
+  if p_amount < unit or p_amount % unit <> 0 then raise exception '투자금은 %원 단위여야 합니다.', unit; end if;
+  perform pg_advisory_xact_lock(hashtextextended(p_campaign_id::text, 0));
+  select * into c from public.campaigns where id = p_campaign_id and status = 'published' for update;
+  if c.id is null then raise exception '공개된 펀드를 찾을 수 없습니다.'; end if;
+  max_amount := floor(c.target_amount * public.policy_number('max_investment_ratio', 0.01) / unit) * unit;
+  select coalesce(invested_amount, 0) into holding from public.investments
+    where campaign_id = c.id and investor_id = auth.uid();
+  select coalesce(sum(reserved_amount - matched_amount), 0) into queued
+    from public.investment_reservations where campaign_id = c.id and investor_id = auth.uid()
+      and status in ('pending','partial');
+  if coalesce(holding, 0) + queued + p_amount > max_amount then
+    raise exception '1인 최대 투자금 %원을 초과합니다.', max_amount;
+  end if;
+
+  if c.fund_status = 'fundraising' then
+    if c.current_amount + p_amount > c.target_amount then raise exception '남은 모집금액을 초과합니다.'; end if;
+    if holding > 0 then
+      perform public.settle_investment_coupon((select id from public.investments where campaign_id=c.id and investor_id=auth.uid()), false, 'accrual');
+    end if;
+    insert into public.investments(campaign_id, investor_id, invested_amount, status)
+      values(c.id, auth.uid(), p_amount, 'active')
+      on conflict(campaign_id, investor_id) do update set
+        invested_amount = public.investments.invested_amount + excluded.invested_amount,
+        status = 'active', updated_at = now();
+    insert into public.funding_commitments(campaign_id, investor_id, amount, risk_consent, status)
+      values(c.id, auth.uid(), p_amount, true, 'committed');
+    update public.campaigns set current_amount = current_amount + p_amount,
+      fund_status = case when current_amount + p_amount >= target_amount then 'closed' else fund_status end,
+      closed_at = case when current_amount + p_amount >= target_amount then now() else closed_at end,
+      updated_at = now() where id = c.id;
+    return jsonb_build_object('mode','invested','investedAmount',coalesce(holding,0)+p_amount,
+      'fundClosed',c.current_amount+p_amount>=c.target_amount);
+  elsif c.fund_status = 'closed' then
+    insert into public.investment_reservations(campaign_id, investor_id, reserved_amount)
+      values(c.id, auth.uid(), p_amount) returning id into reservation_id;
+    matched := public.process_fund_matching(c.id);
+    return jsonb_build_object('mode','reserved','reservationId',reservation_id,'matchedNow',matched);
+  end if;
+  raise exception '현재 투자할 수 없는 펀드입니다.';
+end;
+$$;
+
+create or replace function public.withdraw_fund(p_campaign_id uuid, p_amount bigint)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  c public.campaigns;
+  i public.investments;
+  unit bigint := public.policy_number('investment_unit', 1000)::bigint;
+  already_requested bigint;
+  request_id uuid;
+  matched bigint := 0;
+begin
+  if auth.uid() is null then raise exception '로그인이 필요합니다.'; end if;
+  if p_amount < unit or p_amount % unit <> 0 then raise exception '회수금은 %원 단위여야 합니다.', unit; end if;
+  perform pg_advisory_xact_lock(hashtextextended(p_campaign_id::text, 0));
+  select * into c from public.campaigns where id = p_campaign_id and status = 'published' for update;
+  select * into i from public.investments where campaign_id = p_campaign_id and investor_id = auth.uid() for update;
+  if c.id is null or i.id is null then raise exception '회수할 투자잔액이 없습니다.'; end if;
+  select coalesce(sum(requested_amount - matched_amount),0) into already_requested
+    from public.withdrawal_requests where campaign_id=p_campaign_id and investor_id=auth.uid()
+      and status in ('pending','partial');
+  if p_amount + already_requested > i.invested_amount then raise exception '회수 가능한 투자잔액을 초과합니다.'; end if;
+  if c.fund_status = 'fundraising' then
+    perform public.settle_investment_coupon(i.id, true, 'withdrawal');
+    update public.investments set invested_amount=invested_amount-p_amount,
+      status=case when invested_amount-p_amount=0 then 'withdrawn' else 'active' end,
+      updated_at=now() where id=i.id;
+    update public.campaigns set current_amount=current_amount-p_amount, updated_at=now() where id=c.id;
+    insert into public.withdrawal_requests(campaign_id, investor_id, requested_amount, matched_amount, status, coupon_issued)
+      values(c.id,auth.uid(),p_amount,p_amount,'completed',true) returning id into request_id;
+    return jsonb_build_object('mode','withdrawn','requestId',request_id,'remainingAmount',i.invested_amount-p_amount);
+  elsif c.fund_status = 'closed' then
+    insert into public.withdrawal_requests(campaign_id, investor_id, requested_amount)
+      values(c.id,auth.uid(),p_amount) returning id into request_id;
+    matched := public.process_fund_matching(c.id);
+    return jsonb_build_object('mode','queued','requestId',request_id,'matchedNow',matched);
+  end if;
+  raise exception '현재 회수할 수 없는 펀드입니다.';
+end;
+$$;
+
+create or replace function public.close_fund(p_campaign_id uuid)
+returns public.campaigns language plpgsql security definer set search_path = public as $$
+declare c public.campaigns;
+begin
+  select * into c from public.campaigns where id=p_campaign_id for update;
+  if c.id is null or (c.user_id<>auth.uid() and not public.is_admin()) then raise exception '종료할 펀드를 찾을 수 없습니다.'; end if;
+  if c.status<>'published' or c.fund_status<>'fundraising' or c.current_amount<=0 then raise exception '모집 중이며 투자금이 있는 펀드만 종료할 수 있습니다.'; end if;
+  update public.campaigns set fund_status='closed',closed_at=now(),updated_at=now() where id=c.id returning * into c;
+  return c;
+end;
+$$;
+
+create or replace function public.issue_accrued_coupon(p_campaign_id uuid)
+returns public.coupons language plpgsql security definer set search_path = public as $$
+declare i public.investments; before_count bigint; result public.coupons;
+begin
+  select * into i from public.investments where campaign_id=p_campaign_id and investor_id=auth.uid() for update;
+  if i.id is null or i.invested_amount<=0 then raise exception '활성 투자가 없습니다.'; end if;
+  select count(*) into before_count from public.coupons where owner_id=auth.uid() and campaign_id=p_campaign_id;
+  perform public.settle_investment_coupon(i.id,true,'accrual');
+  select * into result from public.coupons where owner_id=auth.uid() and campaign_id=p_campaign_id
+    order by created_at desc limit 1;
+  if (select count(*) from public.coupons where owner_id=auth.uid() and campaign_id=p_campaign_id)<=before_count then
+    raise exception '최소 발급 할인율에 아직 도달하지 않았습니다.';
+  end if;
+  return result;
+end;
+$$;
+
+create or replace function public.use_coupon(p_coupon_id uuid, p_order_amount bigint)
+returns public.coupons language plpgsql security definer set search_path = public as $$
+declare c public.coupons; discounted bigint;
+begin
+  select * into c from public.coupons where id=p_coupon_id for update;
+  if c.id is null or c.owner_id<>auth.uid() or c.status<>'available' then raise exception '사용 가능한 본인 쿠폰이 아닙니다.'; end if;
+  if c.expires_at is not null and c.expires_at<now() then
+    update public.coupons set status='expired' where id=c.id;
+    raise exception '유효기간이 지난 쿠폰입니다.';
+  end if;
+  if p_order_amount<=0 then raise exception '주문금액을 입력해 주세요.'; end if;
+  discounted := floor(p_order_amount*c.discount_rate/100.0);
+  if c.max_discount_amount is not null then discounted:=least(discounted,c.max_discount_amount); end if;
+  update public.coupons set status='used',used_order_amount=p_order_amount,discount_amount=discounted,used_at=now()
+    where id=c.id returning * into c;
+  insert into public.coupon_transactions(coupon_id,actor_id,transaction_type,from_owner_id,to_owner_id,detail)
+    values(c.id,auth.uid(),'used',auth.uid(),auth.uid(),jsonb_build_object('orderAmount',p_order_amount,'discountAmount',discounted));
+  return c;
+end;
+$$;
+
+create or replace function public.issue_dividend_coupon(p_campaign_id uuid,p_title text,p_description text,
+  p_benefit_kind text,p_discount_value numeric,p_target text default 'all')
+returns integer language plpgsql security definer set search_path=public as $$
+declare c public.campaigns; issued integer;
+begin
+  select * into c from public.campaigns where id=p_campaign_id;
+  if c.id is null or c.user_id<>auth.uid() then raise exception '본인 펀드만 배당 쿠폰을 발급할 수 있습니다.'; end if;
+  if p_benefit_kind not in ('percent','fixed','menu') or p_discount_value<=0 then raise exception '쿠폰 혜택값을 확인해 주세요.'; end if;
+  insert into public.dividend_coupons(campaign_id,issuer_id,title,description,benefit_kind,discount_value,target)
+    values(c.id,auth.uid(),left(p_title,80),coalesce(p_description,''),p_benefit_kind,p_discount_value,p_target);
+  insert into public.coupons(campaign_id,owner_id,original_investor_id,discount_rate,coupon_type,benefit_kind,description,max_discount_amount,expires_at)
+    select c.id,i.investor_id,i.investor_id,
+      case when p_benefit_kind='percent' then least(p_discount_value,100) else 1 end,
+      'dividend',p_benefit_kind,left(p_title||case when p_description<>'' then ' · '||p_description else '' end,200),
+      case when p_benefit_kind='fixed' then p_discount_value::bigint else c.coupon_max_amount end,now()+interval '6 months'
+    from public.investments i where i.campaign_id=c.id and i.invested_amount>0;
+  get diagnostics issued=row_count;
+  update public.dividend_coupons set issued_count=issued where campaign_id=c.id and issuer_id=auth.uid()
+    and created_at=(select max(created_at) from public.dividend_coupons where campaign_id=c.id and issuer_id=auth.uid());
+  return issued;
+end;
+$$;
+
+create or replace function public.record_monthly_sales(p_business_id uuid,p_year_month date,p_total_sales bigint,
+  p_coupon_sales bigint default 0,p_coupon_discount_total bigint default 0,p_coupons_used integer default 0)
+returns public.restaurant_monthly_sales language plpgsql security definer set search_path=public as $$
+declare previous_sales bigint; growth numeric:=0; bonus numeric:=0; result public.restaurant_monthly_sales;
+begin
+  if not exists(select 1 from public.businesses where id=p_business_id and user_id=auth.uid()) then raise exception '본인 사업장만 입력할 수 있습니다.'; end if;
+  select total_sales into previous_sales from public.restaurant_monthly_sales where business_id=p_business_id and year_month<p_year_month order by year_month desc limit 1;
+  if coalesce(previous_sales,0)>0 then growth:=round((p_total_sales-previous_sales)*100.0/previous_sales,2); end if;
+  if growth>0 then bonus:=least(10,round(growth*public.policy_number('sales_growth_bonus_multiplier',0.2),2)); end if;
+  insert into public.restaurant_monthly_sales(business_id,year_month,total_sales,coupon_sales,coupon_discount_total,coupons_used,growth_rate,bonus_rate)
+    values(p_business_id,date_trunc('month',p_year_month)::date,p_total_sales,p_coupon_sales,p_coupon_discount_total,p_coupons_used,growth,bonus)
+    on conflict(business_id,year_month) do update set total_sales=excluded.total_sales,coupon_sales=excluded.coupon_sales,
+      coupon_discount_total=excluded.coupon_discount_total,coupons_used=excluded.coupons_used,growth_rate=excluded.growth_rate,bonus_rate=excluded.bonus_rate
+    returning * into result;
+  if bonus>0 then
+    update public.investments i set accrued_discount=accrued_discount+bonus,updated_at=now()
+      from public.campaigns c where i.campaign_id=c.id and c.business_id=p_business_id and i.invested_amount>0;
+  end if;
+  return result;
+end;
+$$;
+
+create or replace function public.create_coupon_trade(p_coupon_id uuid)
+returns public.coupon_trades language plpgsql security definer set search_path=public as $$
+declare c public.coupons; t public.coupon_trades;
+begin
+  select * into c from public.coupons where id=p_coupon_id for update;
+  if c.id is null or c.owner_id<>auth.uid() or c.status<>'available' then raise exception '교환 등록 가능한 본인 쿠폰이 아닙니다.'; end if;
+  update public.coupons set status='trade_pending' where id=c.id;
+  insert into public.coupon_trades(offered_coupon_id,offered_by) values(c.id,auth.uid()) returning * into t;
+  return t;
+end;
+$$;
+
+create or replace function public.accept_coupon_trade(p_trade_id uuid,p_coupon_id uuid)
+returns public.coupon_trades language plpgsql security definer set search_path=public as $$
+declare t public.coupon_trades; offered public.coupons; requested public.coupons;
+begin
+  select * into t from public.coupon_trades where id=p_trade_id for update;
+  select * into offered from public.coupons where id=t.offered_coupon_id for update;
+  select * into requested from public.coupons where id=p_coupon_id for update;
+  if t.id is null or t.status<>'open' or t.offered_by=auth.uid() then raise exception '교환 가능한 제안이 아닙니다.'; end if;
+  if requested.id is null or requested.owner_id<>auth.uid() or requested.status<>'available' then raise exception '교환할 본인 쿠폰을 확인해 주세요.'; end if;
+  if abs(offered.discount_rate-requested.discount_rate)>=public.policy_number('coupon_trade_max_diff',10) then raise exception '할인율 차이가 10%%p 미만인 쿠폰끼리만 교환할 수 있습니다.'; end if;
+  update public.coupons set owner_id=auth.uid(),status='available' where id=offered.id;
+  update public.coupons set owner_id=t.offered_by,status='available' where id=requested.id;
+  update public.coupon_trades set requested_coupon_id=requested.id,accepted_by=auth.uid(),status='completed',completed_at=now() where id=t.id returning * into t;
+  return t;
+end;
+$$;
+
+create or replace function public.guard_campaign_fund_config()
+returns trigger language plpgsql security definer set search_path=public as $$
+declare assessment_limit bigint;
+begin
+  select funding_limit into assessment_limit from public.credit_assessments where business_id=new.business_id order by created_at desc limit 1;
+  if new.target_amount>coalesce(assessment_limit,0) and not public.is_admin() then raise exception 'AI 심사 최대 펀딩 한도를 초과합니다.'; end if;
+  if tg_op='UPDATE' and old.fund_status='closed' and new.current_amount<>old.current_amount and not public.is_admin() then raise exception '모집 종료 후 펀드 총액은 직접 변경할 수 없습니다.'; end if;
+  return new;
+end;
+$$;
+drop trigger if exists guard_campaign_fund_config_trigger on public.campaigns;
+create trigger guard_campaign_fund_config_trigger before insert or update on public.campaigns
+for each row execute function public.guard_campaign_fund_config();
+
+-- 캠페인 공개 승인 시 실제 모집을 시작하고 종료 예정일을 확정한다.
+create or replace function public.start_fund_after_publish()
+returns trigger language plpgsql security definer set search_path=public as $$
+begin
+  if new.status='published' and old.status is distinct from 'published' then
+    new.fund_status:='fundraising';
+    new.closes_at:=coalesce(new.closes_at,now()+make_interval(days=>new.duration_days));
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists start_fund_after_publish_trigger on public.campaigns;
+create trigger start_fund_after_publish_trigger before update on public.campaigns
+for each row execute function public.start_fund_after_publish();
+
+alter table public.fund_policies enable row level security;
+alter table public.investments enable row level security;
+alter table public.investment_reservations enable row level security;
+alter table public.withdrawal_requests enable row level security;
+alter table public.matching_transactions enable row level security;
+alter table public.coupons enable row level security;
+alter table public.coupon_transactions enable row level security;
+alter table public.coupon_trades enable row level security;
+alter table public.dividend_coupons enable row level security;
+alter table public.restaurant_monthly_sales enable row level security;
+alter table public.ai_contents enable row level security;
+alter table public.thematic_funds enable row level security;
+alter table public.thematic_fund_restaurants enable row level security;
+
+drop policy if exists "fund policies public read" on public.fund_policies;
+drop policy if exists "investments scoped read" on public.investments;
+drop policy if exists "reservations scoped read" on public.investment_reservations;
+drop policy if exists "withdrawals scoped read" on public.withdrawal_requests;
+drop policy if exists "matching scoped read" on public.matching_transactions;
+drop policy if exists "coupons owner or merchant read" on public.coupons;
+drop policy if exists "coupon transactions scoped read" on public.coupon_transactions;
+drop policy if exists "coupon trades public read" on public.coupon_trades;
+drop policy if exists "dividend merchant read" on public.dividend_coupons;
+drop policy if exists "sales scoped read" on public.restaurant_monthly_sales;
+drop policy if exists "ai contents public read" on public.ai_contents;
+drop policy if exists "thematic funds public read" on public.thematic_funds;
+drop policy if exists "thematic links public read" on public.thematic_fund_restaurants;
+create policy "fund policies public read" on public.fund_policies for select using (true);
+create policy "investments scoped read" on public.investments for select using
+  (investor_id=auth.uid() or public.is_admin() or exists(select 1 from public.campaigns c where c.id=campaign_id and c.user_id=auth.uid()));
+create policy "reservations scoped read" on public.investment_reservations for select using
+  (investor_id=auth.uid() or public.is_admin() or exists(select 1 from public.campaigns c where c.id=campaign_id and c.user_id=auth.uid()));
+create policy "withdrawals scoped read" on public.withdrawal_requests for select using
+  (investor_id=auth.uid() or public.is_admin() or exists(select 1 from public.campaigns c where c.id=campaign_id and c.user_id=auth.uid()));
+create policy "matching scoped read" on public.matching_transactions for select using
+  (incoming_investor_id=auth.uid() or outgoing_investor_id=auth.uid() or public.is_admin() or exists(select 1 from public.campaigns c where c.id=campaign_id and c.user_id=auth.uid()));
+create policy "coupons owner or merchant read" on public.coupons for select using
+  (owner_id=auth.uid() or public.is_admin() or exists(select 1 from public.campaigns c where c.id=campaign_id and c.user_id=auth.uid())
+    or exists(select 1 from public.coupon_trades t where t.offered_coupon_id=id and t.status='open'));
+create policy "coupon transactions scoped read" on public.coupon_transactions for select using
+  (actor_id=auth.uid() or from_owner_id=auth.uid() or to_owner_id=auth.uid() or public.is_admin());
+create policy "coupon trades public read" on public.coupon_trades for select using (status='open' or offered_by=auth.uid() or accepted_by=auth.uid() or public.is_admin());
+create policy "dividend merchant read" on public.dividend_coupons for select using
+  (issuer_id=auth.uid() or public.is_admin());
+create policy "sales scoped read" on public.restaurant_monthly_sales for select using
+  (public.is_admin() or exists(select 1 from public.businesses b where b.id=business_id and (b.user_id=auth.uid() or b.verification_status='verified')));
+create policy "ai contents public read" on public.ai_contents for select using (is_published or public.is_admin());
+create policy "thematic funds public read" on public.thematic_funds for select using (is_active or public.is_admin());
+create policy "thematic links public read" on public.thematic_fund_restaurants for select using (true);
+
+revoke all on public.fund_policies,public.investments,public.investment_reservations,public.withdrawal_requests,
+  public.matching_transactions,public.coupons,public.coupon_transactions,public.coupon_trades,public.dividend_coupons,
+  public.restaurant_monthly_sales,public.ai_contents,public.thematic_funds,public.thematic_fund_restaurants from anon,authenticated;
+grant select on public.fund_policies,public.ai_contents,public.thematic_funds,public.thematic_fund_restaurants to anon,authenticated;
+grant select on public.investments,public.investment_reservations,public.withdrawal_requests,public.matching_transactions,
+  public.coupons,public.coupon_transactions,public.coupon_trades,public.dividend_coupons,public.restaurant_monthly_sales to authenticated;
+grant execute on function public.policy_number(text,numeric) to authenticated;
+grant execute on function public.invest_fund(uuid,bigint,boolean) to authenticated;
+grant execute on function public.withdraw_fund(uuid,bigint) to authenticated;
+grant execute on function public.close_fund(uuid) to authenticated;
+grant execute on function public.issue_accrued_coupon(uuid) to authenticated;
+grant execute on function public.use_coupon(uuid,bigint) to authenticated;
+grant execute on function public.issue_dividend_coupon(uuid,text,text,text,numeric,text) to authenticated;
+grant execute on function public.record_monthly_sales(uuid,date,bigint,bigint,bigint,integer) to authenticated;
+grant execute on function public.create_coupon_trade(uuid) to authenticated;
+grant execute on function public.accept_coupon_trade(uuid,uuid) to authenticated;
+
 commit;

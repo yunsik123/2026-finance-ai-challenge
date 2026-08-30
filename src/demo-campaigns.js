@@ -23,6 +23,13 @@ const demo = ({ id, name, category, address, sales, age, description, campaignNa
   plan,
   risk,
   status: 'published',
+  fundStatus: escrowTotal / target >= .8 ? 'closed' : 'fundraising',
+  currentAmount: escrowTotal,
+  maxDiscountRate: score >= 80 ? 50 : score >= 70 ? 40 : 30,
+  minCouponRate: 10,
+  couponMaxAmount: 15000,
+  representativeMenu: category === '카페' ? '시그니처 음료' : '대표 메뉴',
+  representativeMenuPrice: category === '카페' ? 6500 : 29000,
   publishedAt: '2026-08-01T09:00:00+09:00',
   isDemo: true,
   business: {
@@ -149,4 +156,3 @@ export const DEMO_CAMPAIGNS = [
     ]
   })
 ];
-

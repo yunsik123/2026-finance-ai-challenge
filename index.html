@@ -61,6 +61,17 @@
         </div>
       </section>
 
+      <section class="content-section benefit-flow" aria-label="모아 투자와 쿠폰 흐름">
+        <div class="section-title"><div><p class="eyebrow">모아의 차이</p><h2>현금 배당 대신, 오래 응원할수록 커지는 쿠폰</h2></div></div>
+        <div class="service-flow">
+          <article><b>1</b><strong>가게에 투자</strong><span>모집 중에는 바로 참여</span></article><i>→</i>
+          <article><b>2</b><strong>할인율 성장</strong><span>투자금·유지기간에 따라 누적</span></article><i>→</i>
+          <article><b>3</b><strong>매출 성장 보너스</strong><span>가게가 성장하면 추가 적립</span></article><i>→</i>
+          <article><b>4</b><strong>쿠폰 발급·사용</strong><span>실제 음식점 소비 혜택</span></article><i>→</i>
+          <article><b>5</b><strong>회수 대기열</strong><span>모집 종료 후 새 투자자와 매칭</span></article>
+        </div>
+      </section>
+
       <section class="content-section campaign-section" id="campaigns">
         <div class="section-title">
           <div><p class="eyebrow">투자 검토 예시 6건</p><h2>사업과 입지를 함께 비교해 보세요</h2></div>
@@ -90,11 +101,19 @@
         <div class="campaign-grid" id="campaignGrid" aria-live="polite"></div>
       </section>
 
+      <section class="content-section discovery-section">
+        <div class="section-title"><div><p class="eyebrow">실제 저장 지표 기반</p><h2>랭킹·테마·AI 인사이트</h2></div><p>존재하는 음식점과 DB 수치만 사용하며, 없는 숫자를 AI가 만들지 않습니다.</p></div>
+        <div class="discovery-grid"><div class="panel"><h3>종합 성장 랭킹</h3><div id="rankingList"></div></div><div class="panel"><h3>지역·음식 테마</h3><div id="themeList"></div></div><div class="panel"><h3>투자 인사이트</h3><div id="insightList"></div></div></div>
+      </section>
+
       <section class="content-section my-section" id="myCommitmentsSection">
         <div class="section-title">
           <div><p class="eyebrow">내 참여 현황</p><h2>예치와 집행을 계속 확인하세요</h2></div>
         </div>
-        <div class="commitment-list" id="investorCommitments"></div>
+        <div class="portfolio-summary" id="portfolioSummary"></div>
+        <div class="portfolio-grid" id="investorPortfolio"></div>
+        <div class="coupon-wallet" id="couponWallet"></div>
+        <details class="legacy-commitments"><summary>기존 예치·집행 참여 기록</summary><div class="commitment-list" id="investorCommitments"></div></details>
       </section>
     </section>
 
@@ -136,6 +155,8 @@
               </div>
               <div class="field-grid two">
                 <label>사업자등록번호<input id="businessNumber" required inputmode="numeric" placeholder="123-45-67890"></label>
+                <label>대표자명<input id="businessRepresentative" required autocomplete="name" placeholder="홍길동"></label>
+                <label>개업일<input id="businessOpeningDate" required type="date"></label>
                 <label>업력(년)<input id="businessAge" required type="number" min="0" step="0.5" placeholder="3"></label>
               </div>
               <div class="address-analysis-field">
@@ -145,6 +166,12 @@
               <div class="owner-location-result hidden" id="ownerLocationResult" aria-live="polite"></div>
               <label>가게와 성장 계획 소개<textarea id="businessDescription" required rows="4" placeholder="현재 사업의 강점과 이번 자금으로 해결하려는 문제를 적어주세요."></textarea></label>
               <label>최근 월평균 매출<input id="businessSales" required type="number" min="0" step="10000" placeholder="30000000"></label>
+              <fieldset class="field-group"><legend>Mock 사업자 검증 동의</legend><div class="check-grid compact">
+                <label><input id="businessLicense" type="checkbox" required><span><b>영업신고 완료</b><small>Demo에서는 자기확인</small></span></label>
+                <label><input id="businessApplicantMatch" type="checkbox" required><span><b>대표자·신청자 일치</b><small>실서비스 본인확인 연동 예정</small></span></label>
+                <label><input id="businessPosConsent" type="checkbox"><span><b>POS 데이터 제공 동의</b><small>선택</small></span></label>
+                <label><input id="businessCardConsent" type="checkbox"><span><b>카드매출 제공 동의</b><small>선택</small></span></label>
+              </div></fieldset>
               <button class="primary-button" type="submit">사업체 정보 저장 <span>→</span></button>
             </form>
 
@@ -167,14 +194,21 @@
               <div><h3>사기 가능성과 상환·운영 위험을 함께 점검합니다</h3><p>평가 점수 하나로 승인하지 않습니다. 입력값, 빠진 자료, 사업계획과의 모순을 운영자가 함께 확인합니다.</p></div>
             </div>
             <div class="step-tip"><strong>💡 평가 기준 안내</strong> 매출 지속성, 현금흐름, 부채 부담, 사업 안정성, 상권 회복력 5가지 요인을 종합 평가합니다. 빠진 항목이 많을수록 점수가 낮아지고, 운영자가 추가 자료를 요청할 수 있습니다.</div>
+            <details class="panel data-guide"><summary>CSV로 매출 자료를 준비한다면 어떤 형식인가요?</summary><div><p>현재 화면은 6개월 값을 직접 입력하지만, POS·카드 API 연결 시 아래 열을 그대로 사용할 수 있습니다.</p><code>year_month,total_sales,card_sales,cash_sales,operating_cash_flow,fixed_cost,rent,labor_cost,material_cost</code><p>UTF-8 CSV, 금액은 쉼표 없는 원 단위 정수, 월은 YYYY-MM 형식을 권장합니다. 예: <code>2026-08,31800000,25800000,6000000,6400000,12000000,3200000,5400000,3400000</code></p></div></details>
             <form class="panel form-panel" id="metricsForm">
               <fieldset class="field-group"><legend>매출·현금흐름 지표</legend>
               <label>최근 6개월 월별 매출(원)<small class="field-hint">쉼표로 구분하여 6개월치 입력 — 매출 추세를 확인합니다</small><input id="metricsSales6m" required placeholder="22000000, 23500000, 24800000, 26500000, 28400000, 30000000"></label>
+              <label>최근 6개월 카드 매출(원)<small class="field-hint">선택 · 쉼표로 6개</small><input id="metricsCardSales6m" placeholder="18000000, 19000000, 20000000, 21000000, 22000000, 24000000"></label>
+              <label>최근 6개월 현금 매출(원)<small class="field-hint">선택 · 쉼표로 6개</small><input id="metricsCashSales6m" placeholder="4000000, 4500000, 4800000, 5000000, 5200000, 6000000"></label>
               <div class="field-grid two">
                 <label>월 영업현금흐름<small class="field-hint">매출에서 비용을 뺀 실제 현금</small><input id="metricsCashFlow" type="number" min="0" required></label>
                 <label>총 부채<small class="field-hint">대출·미지급금 등 총 부채액</small><input id="metricsDebtTotal" type="number" min="0" required></label>
                 <label>월 부채 상환액<input id="metricsDebtPayment" type="number" min="0" required></label>
                 <label>최근 1년 연체 횟수<input id="metricsOverdue" type="number" min="0" max="50" value="0"></label>
+                <label>월 고정비<input id="metricsFixedCost" type="number" min="0" value="0"></label>
+                <label>월 임대료<input id="metricsRent" type="number" min="0" value="0"></label>
+                <label>월 인건비<input id="metricsLabor" type="number" min="0" value="0"></label>
+                <label>월 원재료비<input id="metricsMaterial" type="number" min="0" value="0"></label>
               </div>
               </fieldset>
               <fieldset class="field-group"><legend>경영 안정성 지표</legend>
@@ -183,6 +217,8 @@
                 <label>세금 정상 납부<select id="metricsTax"><option value="true">예</option><option value="false">아니오</option></select></label>
                 <label>재방문율(%)<small class="field-hint">단골 비율이 높을수록 안정적</small><input id="metricsRepeat" type="number" min="0" max="100" step="0.1" value="0"></label>
                 <label>온라인 매출 비중(%)<input id="metricsDigital" type="number" min="0" max="100" step="0.1" value="0"></label>
+                <label>행정처분 이력(회)<input id="metricsAdministrativeActions" type="number" min="0" value="0"></label>
+                <label>대표자 변경 이력(회)<input id="metricsRepresentativeChanges" type="number" min="0" value="0"></label>
               </div>
               </fieldset>
               <fieldset class="field-group"><legend>상권 환경 지표</legend>
@@ -200,6 +236,7 @@
               <div class="assessment-score"><strong id="assessmentScore">-</strong><span>자료 충실도·지속가능성 점수</span></div>
               <div><span class="risk-badge" id="assessmentRisk">검토 전</span><h3>운영자 심사에서 함께 볼 요인</h3><div id="assessmentFactors"></div><p id="assessmentMissing"></p></div>
             </div>
+            <div class="panel assessment-explanation hidden" id="assessmentExplanation"></div>
           </section>
 
           <section class="owner-step" id="ownerStep-campaign">
@@ -215,6 +252,15 @@
               </div>
               <label>상세 자금 사용계획<textarea id="campaignPlan" required rows="5" placeholder="항목별 견적 금액, 계약 상대방, 예상 일정과 기대 효과를 적어주세요."></textarea></label>
               <label>주요 위험과 대응계획<textarea id="campaignRisk" required rows="4" placeholder="공사 지연, 원가 상승, 매출 감소 등 발생 가능한 위험과 대응 방법을 적어주세요."></textarea></label>
+              <fieldset class="field-group"><legend>투자자 쿠폰 보상 정책</legend>
+                <div class="field-grid two">
+                  <label>최대 할인율<select id="campaignMaxDiscount"><option value="30">30%</option><option value="40">40%</option><option value="50">50%</option><option value="60">60%</option></select></label>
+                  <label>중간 발급 최소 할인율<input id="campaignMinCoupon" type="number" min="1" max="60" step="0.5" value="10"></label>
+                  <label>쿠폰 최대 할인금액<input id="campaignCouponMax" type="number" min="0" step="1000" placeholder="예: 15000"></label>
+                  <label>대표 메뉴와 가격<input id="campaignRepresentativeMenu" placeholder="예: 한우불고기 정식"><input id="campaignRepresentativePrice" type="number" min="0" step="100" placeholder="29000"></label>
+                </div>
+                <label>기타 투자자 혜택<textarea id="campaignBenefits" rows="2" placeholder="예: 예약 우선권, 신메뉴 시식회"></textarea></label>
+              </fieldset>
               <div class="milestone-editor">
                 <div class="panel-heading"><div><h3>단계별 지급 조건</h3><p>지급 비율 합계는 100%여야 합니다.</p></div><strong id="milestoneTotal">0%</strong></div>
                 <div id="milestoneRows"></div>
@@ -233,6 +279,16 @@
               <div><h3>목표 달성 증빙을 제출하고 지급 상태를 확인합니다</h3><p>AI 판독은 검토를 돕는 수단입니다. 운영자가 원본과 계획을 확인해 승인한 뒤에만 지급됩니다.</p></div>
             </div>
             <div class="step-tip"><strong>📋 인정되는 증빙 유형</strong> 세금계산서, 영수증, 매출전표, 계약서, 견적서, 설치 완료 사진 등 — PNG/JPG/WebP 형식 6MB 이하로 제출하세요. AI가 문서를 분석해 계획과의 일치 여부를 사전 검토합니다.</div>
+            <details class="panel data-guide" open><summary>영수증·계약서 사진 촬영 예시와 주의사항</summary><div class="photo-guide"><article><b>좋은 예시</b><span>문서 한 장만 촬영 · 네 모서리 전부 보임 · 글자가 수평 · 그림자와 반사 없음 · 공급자/날짜/품목/합계가 선명</span></article><article><b>다시 촬영</b><span>여러 영수증이 겹침 · 일부 잘림 · 심한 기울어짐 · 손가락이 금액을 가림 · 화면 캡처가 흐림 · 개인정보가 불필요하게 포함됨</span></article></div><p>PNG/JPG/WebP, 파일당 6MB 이하입니다. 주민번호·계좌번호처럼 심사에 불필요한 개인정보는 가리고, 원본은 운영자 확인 때 제시하세요. 현재는 이미지와 OCR 결과를 처리하며 PDF·CSV 원본 보관은 추후 private Storage 연결이 필요합니다.</p></details>
+            <section class="panel fund-operations" id="ownerFundDashboard"></section>
+            <div class="owner-benefit-actions">
+              <form class="panel" id="monthlySalesForm"><div class="panel-heading"><div><h3>월 매출·성장 보너스</h3><p>전월 성장률에 따라 투자자 적립률이 갱신됩니다.</p></div></div>
+                <div class="field-grid two"><label>기준 월<input id="salesYearMonth" type="month" required></label><label>총 매출<input id="salesTotal" type="number" min="0" step="10000" required></label><label>쿠폰 주문 매출<input id="salesCouponRevenue" type="number" min="0" value="0"></label><label>총 할인액<input id="salesDiscountTotal" type="number" min="0" value="0"></label></div><button class="secondary-button" type="submit">매출 저장·보너스 계산</button>
+              </form>
+              <form class="panel" id="dividendCouponForm"><div class="panel-heading"><div><h3>배당 쿠폰 지급</h3><p>현재 투자자 전원에게 추가 혜택을 지급합니다.</p></div></div>
+                <label>지급 사유<input id="dividendTitle" required placeholder="이번 달 매출 신기록 기념"></label><div class="field-grid two"><label>혜택 유형<select id="dividendKind"><option value="percent">전체 메뉴 % 할인</option><option value="fixed">정액 할인</option><option value="menu">특정 메뉴 혜택</option></select></label><label>혜택값<input id="dividendValue" type="number" min="1" required value="10"></label></div><label>설명<input id="dividendDescription" placeholder="예: 아메리카노 무료"></label><button class="secondary-button" type="submit">투자자에게 지급</button>
+              </form>
+            </div>
             <div class="execution-layout">
               <section class="panel"><div class="panel-heading"><div><h3>지급 진행표</h3><p>앞 단계 지급 완료 후 다음 단계가 열립니다.</p></div></div><div class="execution-timeline" id="ownerMilestoneFlow"></div></section>
               <form class="panel evidence-form" id="evidenceForm">
