@@ -1,6 +1,7 @@
 import { cloudConfigured, cloudRequest, cloudSessionHeaders } from './supabase-cloud.js';
 import { DEMO_CAMPAIGNS } from './demo-campaigns.js';
 import { buildSubmissionStatus } from './submission-status.js';
+import { buildRoleKnowledgeGraph } from './knowledge-graph.js';
 import {
   getCommercialAreaByAddress,
   getCommercialInsightCards,
@@ -55,6 +56,7 @@ const state = {
   ownerStep: 'business',
   adminTab: 'campaigns',
   quickRole: 'investor',
+  quickAuthAction: 'signup',
   authRole: null,
   authAction: 'login',
   evidenceImage: '',
@@ -116,15 +118,18 @@ function openModal(id) {
 function closeModal(target) {
   const modal = target?.classList?.contains('modal') ? target : target?.closest?.('.modal');
   if (!modal) return;
-  if (modal.id === 'authModal' && !state.user) return;
   modal.classList.remove('open');
   modal.setAttribute('aria-hidden', 'true');
   if (!$('.modal.open')) document.body.classList.remove('modal-open');
 }
 
-$$('[data-close-modal]').forEach(button => {
-  button.addEventListener('click', () => closeModal(button));
+document.addEventListener('click', event => {
+  const closeButton = event.target.closest('[data-close-modal]');
+  if (closeButton) {
+    closeModal(closeButton);
+  }
 });
+
 document.addEventListener('keydown', event => {
   if (event.key !== 'Escape') return;
   if ($('#aiDrawer').classList.contains('open')) closeChat();
@@ -243,35 +248,78 @@ $$('[data-view]').forEach(button => {
 });
 
 const quickRoleLabels = {
-  investor: '투자자로 바로 시작하기',
-  owner: '소상공인으로 바로 시작하기',
-  admin: '운영자로 바로 시작하기'
+  investor: '투자자',
+  owner: '소상공인',
+  admin: '운영자'
 };
+
+function quickSubmitText() {
+  const role = quickRoleLabels[state.quickRole] || '투자자';
+  if (state.quickRole === 'admin') return '운영자 이메일로 로그인하기';
+  return state.quickAuthAction === 'signup'
+    ? role + ' 계정 만들고 시작하기'
+    : role + '로 로그인하기';
+}
+
+function setQuickAuthAction(action) {
+  state.quickAuthAction = action === 'login' ? 'login' : 'signup';
+  $$('[data-quick-auth-action]').forEach(button => {
+    button.classList.toggle('active', button.dataset.quickAuthAction === state.quickAuthAction);
+  });
+  $('#quickSubmitLabel').textContent = quickSubmitText();
+  if (state.quickRole !== 'admin') {
+    $('#authDescription').textContent = state.quickAuthAction === 'signup'
+      ? '로그인 이름과 비밀번호로 내 계정을 만들고 바로 시작합니다.'
+      : '처음 계정을 만들 때 입력한 로그인 이름과 비밀번호를 입력하세요.';
+  }
+  $('#quickAuthPassword').autocomplete = state.quickAuthAction === 'signup' ? 'new-password' : 'current-password';
+}
 
 function selectQuickRole(role) {
   state.quickRole = role;
   $$('.quick-role-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.quickRole === role);
   });
-  const label = quickRoleLabels[role] || '바로 시작하기';
   const submitLabel = $('#quickSubmitLabel');
-  if (submitLabel) submitLabel.textContent = label;
+  if (submitLabel) submitLabel.textContent = quickSubmitText();
+  const adminSelected = role === 'admin';
+  $('#quickAuthForm')?.classList.toggle('hidden', adminSelected);
+  $('#authDescription').textContent = adminSelected
+    ? '운영자 계정은 공개로 만들 수 없습니다. 사전에 발급된 이메일과 비밀번호로 로그인하세요.'
+    : state.quickAuthAction === 'signup'
+      ? '로그인 이름과 비밀번호로 내 계정을 만들고 바로 시작합니다.'
+      : '처음 계정을 만들 때 입력한 로그인 이름과 비밀번호를 입력하세요.';
+  $('#toggleClassicAuth').textContent = adminSelected
+    ? '운영자 이메일로 로그인하기 ▼'
+    : '이메일 계정으로 로그인·회원가입 ▼';
   const nameInput = $('#quickAuthName');
-  if (nameInput) nameInput.focus();
+  if (nameInput && !adminSelected) nameInput.focus();
 }
 
 $$('.quick-role-btn').forEach(button => {
   button.addEventListener('click', () => selectQuickRole(button.dataset.quickRole));
 });
 
+$$('[data-quick-auth-action]').forEach(button => {
+  button.addEventListener('click', () => setQuickAuthAction(button.dataset.quickAuthAction));
+});
+setQuickAuthAction('signup');
+
 $('#quickAuthForm').addEventListener('submit', async event => {
   event.preventDefault();
   const submit = $('#quickAuthSubmit');
   const nameInput = $('#quickAuthName');
+  const passwordInput = $('#quickAuthPassword');
   const name = nameInput.value.trim();
-  if (!name) {
-    showToast('이름 또는 닉네임을 입력해 주세요.', 'info');
+  const password = passwordInput.value;
+  if (name.length < 2) {
+    showToast('로그인 이름을 2자 이상 입력해 주세요.', 'info');
     nameInput.focus();
+    return;
+  }
+  if (password.length < 8) {
+    showToast('비밀번호를 8자 이상 입력해 주세요.', 'info');
+    passwordInput.focus();
     return;
   }
   submit.disabled = true;
@@ -282,11 +330,14 @@ $('#quickAuthForm').addEventListener('submit', async event => {
       method: 'POST',
       body: JSON.stringify({
         quick: true,
+        action: state.quickAuthAction,
         role: state.quickRole || 'investor',
-        name
+        name,
+        password
       })
     });
     nameInput.value = '';
+    passwordInput.value = '';
     applyBootstrap(data);
     renderAll();
     showToast(state.user.name + '님, 환영합니다.');
@@ -294,7 +345,7 @@ $('#quickAuthForm').addEventListener('submit', async event => {
     showToast(error.message || '로그인에 실패했습니다.', 'error');
   } finally {
     submit.disabled = false;
-    if (submitLabel) submitLabel.textContent = quickRoleLabels[state.quickRole || 'investor'];
+    if (submitLabel) submitLabel.textContent = quickSubmitText();
   }
 });
 
@@ -303,6 +354,9 @@ $('#toggleClassicAuth')?.addEventListener('click', () => {
   $('#quickAuthForm').classList.add('hidden');
   $('#toggleClassicAuth').parentElement.classList.add('hidden');
   $('#authForm').classList.remove('hidden');
+  const adminSelected = state.quickRole === 'admin';
+  $('[data-auth-action="signup"]')?.classList.toggle('hidden', adminSelected);
+  $('#selectedRoleLabel').textContent = (roleLabels[state.quickRole] || '투자자') + ' 계정';
   setAuthAction('login');
 });
 
@@ -311,6 +365,7 @@ $('#backToQuickAuth')?.addEventListener('click', () => {
   $('#quickAuthForm').classList.remove('hidden');
   $('#toggleClassicAuth').parentElement.classList.remove('hidden');
   $('#authForm').classList.add('hidden');
+  selectQuickRole(state.quickRole || 'investor');
 });
 
 function setAuthAction(action) {
@@ -323,6 +378,7 @@ function setAuthAction(action) {
   $('#authName').required = signup;
   $('#authSubmit').textContent = signup ? '회원가입하고 시작하기' : '로그인';
   $('#forgotPassword').classList.toggle('hidden', signup);
+  $('#authPassword').autocomplete = signup ? 'new-password' : 'current-password';
 }
 
 $$('[data-auth-action]').forEach(button => {
@@ -642,6 +698,25 @@ function renderCommitments() {
   }).join('');
 }
 
+function renderDetailMenuList(menuItems, representativeMenu, representativePrice) {
+  const items = (menuItems && menuItems.length) ? menuItems : [
+    { name: representativeMenu || '대표 시그니처 메뉴', price: representativePrice || 15000, description: '가게의 정성과 신뢰가 담긴 대표 메뉴', isSignature: true, category: '대표' }
+  ];
+  return items.map(item =>
+    `<article class="detail-menu-card ${item.isSignature ? 'signature' : ''}">
+      <div class="detail-menu-header">
+        <div>
+          <strong class="detail-menu-name">${escapeHTML(item.name)}</strong>
+          ${item.isSignature ? '<span class="signature-tag">시그니처 ⭐</span>' : ''}
+          ${item.category ? `<small class="menu-cat-pill">${escapeHTML(item.category)}</small>` : ''}
+        </div>
+        <span class="detail-menu-price">${won(item.price)}</span>
+      </div>
+      ${item.description ? `<p class="detail-menu-desc">${escapeHTML(item.description)}</p>` : ''}
+    </article>`
+  ).join('');
+}
+
 function openCampaignDetail(id) {
   const campaign = state.campaigns.find(item => item.id === id)
     || state.admin?.campaigns?.find(item => item.id === id);
@@ -662,7 +737,9 @@ function openCampaignDetail(id) {
   const assessment = campaign.assessment;
   const assessmentHtml = assessment
     ? '<section class="detail-section"><div class="detail-section-title"><h3>지속가능성 점검</h3><strong class="detail-score">'
-      + assessment.score + '점</strong></div><p>점수만으로 승인하지 않습니다. 매출·현금흐름·부채·업력·상권 자료를 함께 본 보조 지표입니다.</p>'
+      + assessment.score + '점</strong></div><p><b>'
+      + (campaign.isDemo ? '가상 검토용 평가 예시' : assessment.isOfficial ? '운영자 원자료 승인 평가' : '미검증 예비평가')
+      + '</b> · 점수만으로 승인하지 않습니다. 매출·현금흐름·부채·업력·상권 자료를 함께 본 보조 지표입니다.</p>'
       + '<div class="detail-factor-chips">' + Object.entries(assessment.components || {}).map(([key, value]) =>
         '<span>' + escapeHTML(key) + ' <b>' + escapeHTML(value) + '</b></span>'
       ).join('') + '</div></section>'
@@ -675,32 +752,167 @@ function openCampaignDetail(id) {
     : '<button class="primary-button full-button" type="submit" ' + (canCommit ? '' : 'disabled')
       + '>' + (canCommit ? (closed ? '투자 예약 등록' : '펀드 투자하기') : '투자자 계정에서 참여 가능') + '</button>';
 
+  const highlights = Array.isArray(campaign.business?.highlights)
+    ? campaign.business.highlights
+    : (typeof campaign.business?.highlights === 'string' ? campaign.business.highlights.split(',').map(s => s.trim()) : []);
+  const highlightsHtml = highlights.map(tag => `<span class="detail-hero-tag">${escapeHTML(tag.startsWith('#') ? tag : '#' + tag)}</span>`).join('');
+
+  const discountPrice = Math.round((campaign.representativeMenuPrice || 15000) * (1 - campaign.maxDiscountRate / 100));
+
   $('#campaignDetailContent').innerHTML =
-    '<div class="detail-hero"><span>' + (campaign.isDemo ? '가상 투자 검토 예시 · 실제 모집 아님' : '운영자 심사 완료 · 조건부 지급') + '</span><h2 id="campaignDetailTitle">'
-    + escapeHTML(campaign.business?.name || campaign.name) + '</h2><p>'
-    + escapeHTML(campaign.name) + '</p></div><div class="detail-body">'
-    + '<div class="detail-summary"><div><small>목표 금액</small><strong>' + won(campaign.target) + '</strong></div>'
-    + '<div><small>현재 펀드 총액</small><strong>' + won(funded) + ' · ' + percent + '%</strong></div>'
-    + '<div><small>참여자</small><strong>' + campaign.investorCount + '명</strong></div>'
-    + '<div><small>지급 완료</small><strong>' + won(released) + '</strong></div></div>'
-    + '<div class="detail-columns"><div>'
-    + '<section class="detail-section"><h3>사업과 자금 사용계획</h3><p>'
-    + escapeHTML(campaign.business?.description || '') + '\n\n' + escapeHTML(campaign.plan) + '</p></section>'
-    + '<section class="detail-section"><h3>공개된 주요 위험</h3><p>' + escapeHTML(campaign.risk) + '</p></section>'
-    + '<section class="detail-section coupon-policy-detail"><h3>현금 배당이 아닌 쿠폰 보상</h3><div><strong>최대 ' + campaign.maxDiscountRate + '% 할인</strong><span>최소 ' + campaign.minCouponRate + '%부터 중간 발급</span></div><p>10만원 투자 기준 하루 +0.5%p가 쌓이며, 최대 할인율 도달 시 쿠폰이 발급되고 다시 0%부터 시작합니다.'
-    + (campaign.representativeMenu ? '<br>' + escapeHTML(campaign.representativeMenu) + ' 기준 예상 최대 ' + won(Math.min(campaign.couponMaxAmount || Infinity, campaign.representativeMenuPrice * campaign.maxDiscountRate / 100)) + ' 할인' : '') + '</p></section>'
-    + assessmentHtml
-    + (area ? '<section class="detail-section commercial-detail-section"><h3>주소로 확인한 입지</h3>'
-      + renderCommercialInsightCards(area, campaign.business?.category) + '</section>' : '')
-    + '<section class="detail-section"><h3>단계별 지급 조건</h3><div class="detail-milestones">'
-    + milestones + '</div></section></div>'
-    + '<aside class="commitment-form"><span class="status-pill ' + (closed ? 'closed' : 'published') + '">' + (closed ? '모집 완료' : '모집 중') + '</span><h3>' + (campaign.isDemo ? '투자 검토 연습' : (closed ? 'FIFO 투자 예약' : '실제 투자')) + '</h3>'
-    + '<p>' + (campaign.isDemo ? '가상 사업체로 계획·위험·입지·지급 조건을 확인하는 예시입니다. 실제 금액은 등록되지 않습니다.' : closed ? '기존 투자자의 회수 요청과 1,000원 단위로 선착순 자동 매칭됩니다. 펀드 총액은 변하지 않습니다.' : '1인 한도는 목표액의 1%이며, 모집 중에는 즉시 투자잔액에 반영됩니다.') + '</p>'
-    + '<form id="commitmentForm"><label>' + (closed ? '예약 금액' : '투자 금액') + '<input id="commitmentAmount" type="number" min="1000" step="1000" value="100000" required></label>'
-    + '<label class="check-line"><input id="commitmentRisk" type="checkbox" required> 원금 손실 가능성과 사업·증빙 위험을 확인했습니다.</label>'
-    + commitButtonHtml + '</form></aside>'
-    + '</div></div>';
+    `<div class="detail-hero">
+      <div class="detail-hero-status-row">
+        <span class="detail-type-badge">${campaign.isDemo ? '가상 투자 검토 예시 · 실제 모집 아님' : '운영자 심사 완료 · 조건부 지급'}</span>
+        <span class="detail-category-badge">${escapeHTML(campaign.business?.category || '외식·음료')}</span>
+      </div>
+      <h2 id="campaignDetailTitle">${escapeHTML(campaign.business?.name || campaign.name)}</h2>
+      <p class="detail-hero-address">📍 ${escapeHTML(campaign.business?.address || '')} · 업력 ${campaign.business?.age || 1}년차</p>
+      ${highlightsHtml ? `<div class="detail-hero-tags">${highlightsHtml}</div>` : ''}
+    </div>
+
+    <div class="detail-tab-nav" role="tablist">
+      <button class="detail-tab-btn active" data-detail-tab="story" type="button">☕ 가게 & 메뉴 소개</button>
+      <button class="detail-tab-btn" data-detail-tab="funding" type="button">💼 펀딩 & 자금 집행</button>
+      <button class="detail-tab-btn" data-detail-tab="assessment" type="button">📊 AI 심사 & 상권 분석</button>
+    </div>
+
+    <div class="detail-body">
+      <div class="detail-columns">
+        <div class="detail-tab-panes">
+
+          <!-- 탭 1: 가게 & 메뉴 소개 -->
+          <div class="detail-tab-pane active" id="detailTab-story">
+            <section class="detail-section owner-quote-section">
+              <div class="owner-quote-header">
+                <span class="quote-symbol">“</span>
+                <h3>사장님의 한마디 & 철학</h3>
+              </div>
+              <blockquote class="owner-quote-body">
+                ${escapeHTML(campaign.business?.ownerStory || '손님 한 분 한 분께 정성과 신뢰를 다해 최고의 식음료 경험을 선물하겠습니다.')}
+              </blockquote>
+              <div class="owner-quote-author">
+                <strong>${escapeHTML(campaign.business?.representativeName || campaign.business?.name || '대표')} 사장님</strong>
+                <small>${escapeHTML(campaign.business?.category || '매장')} 운영 ${campaign.business?.age || 1}년차</small>
+              </div>
+            </section>
+
+            <section class="detail-section store-story-section">
+              <h3>가게 이야기</h3>
+              <p class="store-story-text">${escapeHTML(campaign.business?.description || '매장 정보가 등록되어 있습니다.')}</p>
+            </section>
+
+            <section class="detail-section menu-section">
+              <div class="detail-section-title">
+                <h3>시그니처 메뉴판</h3>
+                <small class="menu-notice">매장 추천 및 대표 메뉴</small>
+              </div>
+              <div class="detail-menu-grid">
+                ${renderDetailMenuList(campaign.business?.menuItems, campaign.representativeMenu, campaign.representativeMenuPrice)}
+              </div>
+            </section>
+
+            <section class="detail-section reward-benefit-section">
+              <div class="reward-benefit-header">
+                <span class="reward-icon">🎁</span>
+                <div>
+                  <h3>단골 투자자 전용 혜택 안내</h3>
+                  <p>펀드에 참여하면 10만원당 매일 +0.5%p씩 누적되어 최대 <b>${campaign.maxDiscountRate}%</b> 쿠폰이 발급됩니다.</p>
+                </div>
+              </div>
+              <div class="reward-simulation-card">
+                <div class="sim-col">
+                  <small>대표 메뉴</small>
+                  <strong>${escapeHTML(campaign.representativeMenu || '시그니처')}</strong>
+                </div>
+                <div class="sim-arrow">→</div>
+                <div class="sim-col">
+                  <small>정상 가격</small>
+                  <del>${won(campaign.representativeMenuPrice || 10000)}</del>
+                </div>
+                <div class="sim-arrow">→</div>
+                <div class="sim-col highlight">
+                  <small>최대 혜택가 (${campaign.maxDiscountRate}% OFF)</small>
+                  <strong class="sim-discount">${won(discountPrice)}</strong>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <!-- 탭 2: 펀딩 목적 & 자금 집행 -->
+          <div class="detail-tab-pane hidden" id="detailTab-funding">
+            <section class="detail-section">
+              <div class="campaign-title-box">
+                <span class="eyebrow">펀딩 목적</span>
+                <h3>${escapeHTML(campaign.name)}</h3>
+              </div>
+              <h4 class="plan-subheading">상세 자금 사용계획</h4>
+              <p>${escapeHTML(campaign.plan)}</p>
+            </section>
+
+            <section class="detail-section coupon-policy-detail">
+              <h3>현금 배당이 아닌 쿠폰 보상 정책</h3>
+              <div><strong>최대 ${campaign.maxDiscountRate}% 할인</strong><span>최소 ${campaign.minCouponRate}%부터 중간 발급</span></div>
+              <p>10만원 투자 기준 하루 +0.5%p가 쌓이며, 최대 할인율 도달 시 쿠폰이 발급되고 다시 0%부터 시작합니다.
+              ${campaign.representativeMenu ? '<br>' + escapeHTML(campaign.representativeMenu) + ' 기준 예상 최대 ' + won(Math.min(campaign.couponMaxAmount || Infinity, campaign.representativeMenuPrice * campaign.maxDiscountRate / 100)) + ' 할인' : ''}</p>
+            </section>
+
+            <section class="detail-section">
+              <h3>단계별(마일스톤) 지급 조건</h3>
+              <p class="milestone-desc">자금을 일괄 지급하지 않고, 각 단계별 공사·구매 증빙(영수증, 세금계산서)을 확인한 뒤 순차 지급합니다.</p>
+              <div class="detail-milestones">${milestones}</div>
+            </section>
+          </div>
+
+          <!-- 탭 3: AI 심사 & 상권 분석 -->
+          <div class="detail-tab-pane hidden" id="detailTab-assessment">
+            ${assessmentHtml}
+            ${area ? `<section class="detail-section commercial-detail-section"><h3>주소로 확인한 입지</h3>${renderCommercialInsightCards(area, campaign.business?.category)}</section>` : ''}
+            <section class="detail-section">
+              <h3>공개된 주요 위험과 대응</h3>
+              <p>${escapeHTML(campaign.risk)}</p>
+            </section>
+          </div>
+
+        </div>
+
+        <aside class="commitment-form">
+          <div class="detail-fund-stat-box">
+            <div class="fund-stat-row">
+              <small>목표 금액</small>
+              <strong>${won(campaign.target)}</strong>
+            </div>
+            <div class="funding-bar"><span style="width:${percent}%"></span></div>
+            <div class="fund-stat-sub">
+              <span>현재 <b>${won(funded)}</b> (${percent}%)</span>
+              <span>참여자 <b>${campaign.investorCount}명</b></span>
+            </div>
+          </div>
+
+          <span class="status-pill ${closed ? 'closed' : 'published'}">${closed ? '모집 완료' : '모집 중'}</span>
+          <h3>${campaign.isDemo ? '투자 검토 연습' : (closed ? 'FIFO 투자 예약' : '실제 투자')}</h3>
+          <p>${campaign.isDemo ? '가상 사업체로 계획·위험·입지·지급 조건을 확인하는 예시입니다. 실제 금액은 등록되지 않습니다.' : closed ? '기존 투자자의 회수 요청과 1,000원 단위로 선착순 자동 매칭됩니다. 펀드 총액은 변하지 않습니다.' : '1인 한도는 목표액의 1%이며, 모집 중에는 즉시 투자잔액에 반영됩니다.'}</p>
+          <form id="commitmentForm">
+            <label>${closed ? '예약 금액' : '투자 금액'}<input id="commitmentAmount" type="number" min="1000" step="1000" value="100000" required></label>
+            <label class="check-line"><input id="commitmentRisk" type="checkbox" required> 원금 손실 가능성과 사업·증빙 위험을 확인했습니다.</label>
+            ${commitButtonHtml}
+          </form>
+        </aside>
+      </div>
+    </div>`;
+
   openModal('campaignModal');
+
+  $$('.detail-tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      $$('.detail-tab-btn').forEach(b => b.classList.toggle('active', b === btn));
+      const targetTab = btn.dataset.detailTab;
+      $$('.detail-tab-pane').forEach(pane => {
+        pane.classList.toggle('active', pane.id === 'detailTab-' + targetTab);
+        pane.classList.toggle('hidden', pane.id !== 'detailTab-' + targetTab);
+      });
+    });
+  });
+
   $('#promptLoginCommit')?.addEventListener('click', () => {
     closeModal($('#campaignModal'));
     selectQuickRole('investor');
@@ -759,6 +971,7 @@ function ownerModel() {
       campaign,
       disclosures: state.owner?.disclosures || [],
       metrics: state.owner?.metrics || null,
+      financialVerification: state.owner?.financialVerification || null,
       assessment: state.owner?.assessment || null,
       readOnly: false
     };
@@ -770,6 +983,7 @@ function ownerModel() {
     campaign,
     disclosures: [],
     metrics: null,
+    financialVerification: null,
     assessment: campaign?.assessment || null,
     readOnly: true
   };
@@ -786,6 +1000,7 @@ function renderOwner() {
   renderDisclosures(model.disclosures);
   fillBusinessForm(model.business);
   fillMetricsForm(model);
+  renderFinancialVerification(model.financialVerification);
   renderAssessment(model.assessment);
   renderAssessmentExplanation(model);
   fillCampaignForm(campaign);
@@ -798,7 +1013,9 @@ function renderOwner() {
 function renderOwnerProgress(model) {
   const campaign = model.campaign;
   $('#businessStepState').textContent = model.business ? '저장 완료' : '시작 전';
-  $('#riskStepState').textContent = model.assessment ? '점검 완료' : '시작 전';
+  const financialApproved = model.financialVerification?.status === 'approved' && model.assessment?.isOfficial;
+  $('#riskStepState').textContent = financialApproved ? '공식 검증 완료'
+    : model.metrics ? '원자료 검증 필요' : '시작 전';
   $('#campaignStepState').textContent = campaign
     ? (campaignStatusLabels[campaign.status] || campaign.status) : '시작 전';
   const releasedCount = campaign?.milestones?.filter(item => item.status === 'released').length || 0;
@@ -809,7 +1026,7 @@ function renderOwnerProgress(model) {
   status.className = 'status-pill ' + (campaign?.status || '');
   const complete = {
     business: Boolean(model.business),
-    risk: Boolean(model.assessment),
+    risk: Boolean(financialApproved),
     campaign: Boolean(campaign),
     execution: Boolean(campaign?.milestones?.some(item => item.status === 'released'))
   };
@@ -839,10 +1056,44 @@ $$('[data-owner-step]').forEach(button => {
 
 function setOwnerReadOnly(readOnly) {
   if (!readOnly) return;
-  ['businessForm', 'metricsForm', 'disclosureForm', 'campaignForm', 'evidenceForm', 'monthlySalesForm', 'dividendCouponForm', 'ownerFundDashboard'].forEach(id => {
+  ['businessForm', 'metricsForm', 'financialVerificationForm', 'disclosureForm', 'campaignForm', 'evidenceForm', 'monthlySalesForm', 'dividendCouponForm', 'ownerFundDashboard'].forEach(id => {
     $$('input, select, textarea, button', $('#' + id)).forEach(element => { element.disabled = true; });
   });
   $('#businessVerificationBadge').textContent = '운영자 미리보기';
+}
+
+function defaultBusinessMenuRows() {
+  return [
+    { name: '', price: '', category: '대표', description: '', isSignature: true }
+  ];
+}
+
+function renderBusinessMenuRows(items) {
+  const rows = (items && items.length) ? items : defaultBusinessMenuRows();
+  const container = $('#businessMenuRows');
+  if (!container) return;
+  container.innerHTML = rows.map((item, index) =>
+    `<div class="menu-edit-row">
+      <div class="menu-edit-top">
+        <label class="menu-name-label"><span>메뉴명</span><input class="menu-edit-name" required placeholder="예: 시그니처 솥밥" value="${escapeHTML(item.name || '')}"></label>
+        <label class="menu-price-label"><span>가격(원)</span><input class="menu-edit-price" type="number" min="0" step="500" required placeholder="14000" value="${item.price || ''}"></label>
+        <label class="menu-cat-label"><span>분류</span><input class="menu-edit-category" placeholder="식사/디저트" value="${escapeHTML(item.category || '')}"></label>
+        <label class="menu-sig-label"><input class="menu-edit-signature" type="checkbox" ${item.isSignature ? 'checked' : ''}><span>시그니처 ⭐</span></label>
+        <button type="button" class="remove-menu-row" aria-label="메뉴 삭제">×</button>
+      </div>
+      <label class="menu-desc-label"><span>메뉴 설명 및 맛 특징</span><input class="menu-edit-desc" placeholder="예: 6가지 제철 버섯과 밤을 넣은 가마솥밥" value="${escapeHTML(item.description || '')}"></label>
+    </div>`
+  ).join('');
+}
+
+function collectBusinessMenuRows() {
+  return $$('.menu-edit-row').map(row => ({
+    name: $('.menu-edit-name', row)?.value.trim() || '',
+    price: Number($('.menu-edit-price', row)?.value || 0),
+    category: $('.menu-edit-category', row)?.value.trim() || '',
+    description: $('.menu-edit-desc', row)?.value.trim() || '',
+    isSignature: Boolean($('.menu-edit-signature', row)?.checked)
+  })).filter(item => item.name);
 }
 
 function fillBusinessForm(business) {
@@ -854,6 +1105,11 @@ function fillBusinessForm(business) {
   $('#businessAge').value = business?.age || '';
   $('#businessAddress').value = business?.address || '';
   $('#businessDescription').value = business?.description || '';
+  $('#businessOwnerStory').value = business?.ownerStory || '';
+  $('#businessHighlights').value = Array.isArray(business?.highlights)
+    ? business.highlights.join(', ')
+    : (typeof business?.highlights === 'string' ? business.highlights : '');
+  renderBusinessMenuRows(business?.menuItems);
   $('#businessSales').value = business?.sales || '';
   $('#businessLicense').checked = Boolean(business?.restaurantLicenseConfirmed);
   $('#businessApplicantMatch').checked = Boolean(business?.applicantIsRepresentative);
@@ -873,6 +1129,54 @@ function fillBusinessForm(business) {
     $('#locationMetricsSource').textContent = '사업체 주소를 분석하면 아래 4개 지표를 자동으로 채울 수 있습니다.';
   }
 }
+
+$('#addBusinessMenuRow')?.addEventListener('click', () => {
+  const rows = collectBusinessMenuRows();
+  rows.push({ name: '', price: '', category: '', description: '', isSignature: false });
+  renderBusinessMenuRows(rows);
+});
+
+$('#businessMenuRows')?.addEventListener('click', event => {
+  const button = event.target.closest('.remove-menu-row');
+  if (!button) return;
+  const rows = collectBusinessMenuRows();
+  if (rows.length <= 1) {
+    showToast('메뉴는 최소 1개 이상 등록해 주세요.', 'info');
+    return;
+  }
+  button.closest('.menu-edit-row').remove();
+});
+
+$('#generateAiStoreStory')?.addEventListener('click', async () => {
+  const name = $('#businessName').value.trim();
+  const category = $('#businessCategory').value;
+  const address = $('#businessAddress').value.trim();
+  const button = $('#generateAiStoreStory');
+  button.disabled = true;
+  button.textContent = '스토리 생성 중... ✨';
+  try {
+    const res = await apiRequest('/api/ai?mode=story-generator', {
+      method: 'POST',
+      body: JSON.stringify({ name, category, address })
+    });
+    if (res.story) {
+      if (res.story.description) $('#businessDescription').value = res.story.description;
+      if (res.story.ownerStory) $('#businessOwnerStory').value = res.story.ownerStory;
+      if (res.story.highlights) {
+        $('#businessHighlights').value = Array.isArray(res.story.highlights)
+          ? res.story.highlights.join(', ')
+          : res.story.highlights;
+      }
+      if (res.story.menuItems?.length) renderBusinessMenuRows(res.story.menuItems);
+      showToast('AI가 매장 소개와 사장님의 한마디, 추천 메뉴판을 작성했습니다!');
+    }
+  } catch (error) {
+    showToast('스토리 생성 중 오류가 발생했습니다: ' + error.message, 'error');
+  } finally {
+    button.disabled = false;
+    button.textContent = 'AI로 스토리·메뉴 채우기 ✨';
+  }
+});
 
 function renderOwnerLocationAnalysis(address, applyMetrics = false) {
   const result = $('#ownerLocationResult');
@@ -936,6 +1240,9 @@ $('#businessForm').addEventListener('submit', async event => {
   const button = $('#businessForm button[type="submit"]');
   button.disabled = true;
   try {
+    const rawHighlights = $('#businessHighlights').value;
+    const highlights = rawHighlights.split(',').map(s => s.trim()).filter(Boolean);
+    const menuItems = collectBusinessMenuRows();
     await apiRequest('/api/business', {
       method: 'POST',
       body: JSON.stringify({
@@ -947,6 +1254,9 @@ $('#businessForm').addEventListener('submit', async event => {
         age: Number($('#businessAge').value),
         address: $('#businessAddress').value.trim(),
         description: $('#businessDescription').value.trim(),
+        ownerStory: $('#businessOwnerStory').value.trim(),
+        highlights,
+        menuItems,
         sales: Number($('#businessSales').value),
         restaurantLicenseConfirmed: $('#businessLicense').checked,
         applicantIsRepresentative: $('#businessApplicantMatch').checked,
@@ -1018,6 +1328,40 @@ function fillMetricsForm(model) {
   $('#metricsRepresentativeChanges').value = metrics.representative_change_count || 0;
 }
 
+function collectMetricClaims() {
+  const sales6m = $('#metricsSales6m').value.split(/[\s,]+/).filter(Boolean).map(Number);
+  const optionalSeries = id => $(id).value.split(/[\s,]+/).filter(Boolean).map(Number);
+  const cardSales6m = optionalSeries('#metricsCardSales6m');
+  const cashSales6m = optionalSeries('#metricsCashSales6m');
+  if (sales6m.length !== 6 || sales6m.some(value => !Number.isFinite(value) || value < 0)) {
+    throw new Error('최근 6개월 매출을 쉼표로 구분해 정확히 6개 입력해 주세요.');
+  }
+  if ([cardSales6m, cashSales6m].some(values => values.length && (values.length !== 6 || values.some(value => !Number.isFinite(value) || value < 0)))) {
+    throw new Error('카드·현금 매출은 비워두거나 각각 6개를 입력해 주세요.');
+  }
+  return {
+    sales6m, cardSales6m, cashSales6m,
+    operatingCashFlow: Number($('#metricsCashFlow').value),
+    debtTotal: Number($('#metricsDebtTotal').value),
+    monthlyDebtPayment: Number($('#metricsDebtPayment').value),
+    overdueCount: Number($('#metricsOverdue').value),
+    employeeCount: Number($('#metricsEmployees').value),
+    taxCompliant: $('#metricsTax').value === 'true',
+    footTrafficGrowth: Number($('#metricsFootTraffic').value),
+    localSalesGrowth: Number($('#metricsLocalGrowth').value),
+    competitorDensity: Number($('#metricsCompetition').value),
+    closureRate: Number($('#metricsClosure').value),
+    repeatRate: Number($('#metricsRepeat').value),
+    digitalSalesRatio: Number($('#metricsDigital').value),
+    monthlyFixedCost: Number($('#metricsFixedCost').value),
+    monthlyRent: Number($('#metricsRent').value),
+    monthlyLaborCost: Number($('#metricsLabor').value),
+    monthlyMaterialCost: Number($('#metricsMaterial').value),
+    administrativeActionCount: Number($('#metricsAdministrativeActions').value),
+    representativeChangeCount: Number($('#metricsRepresentativeChanges').value)
+  };
+}
+
 $('#metricsForm').addEventListener('submit', async event => {
   event.preventDefault();
   if (state.user?.role !== 'owner') return;
@@ -1026,49 +1370,15 @@ $('#metricsForm').addEventListener('submit', async event => {
     showOwnerStep('business');
     return;
   }
-  const sales6m = $('#metricsSales6m').value.split(/[\s,]+/).filter(Boolean).map(Number);
-  const optionalSeries = id => $(id).value.split(/[\s,]+/).filter(Boolean).map(Number);
-  const cardSales6m = optionalSeries('#metricsCardSales6m');
-  const cashSales6m = optionalSeries('#metricsCashSales6m');
-  if (sales6m.length !== 6 || sales6m.some(value => !Number.isFinite(value) || value < 0)) {
-    showToast('최근 6개월 매출을 쉼표로 구분해 정확히 6개 입력해 주세요.', 'error');
-    return;
-  }
-  if ([cardSales6m, cashSales6m].some(values => values.length && (values.length !== 6 || values.some(value => !Number.isFinite(value) || value < 0)))) {
-    showToast('카드·현금 매출은 비워두거나 각각 6개를 입력해 주세요.', 'error');
-    return;
-  }
   const button = $('#metricsForm button[type="submit"]');
   button.disabled = true;
   try {
     await apiRequest('/api/business/metrics', {
       method: 'POST',
-      body: JSON.stringify({
-        sales6m,
-        cardSales6m,
-        cashSales6m,
-        operatingCashFlow: Number($('#metricsCashFlow').value),
-        debtTotal: Number($('#metricsDebtTotal').value),
-        monthlyDebtPayment: Number($('#metricsDebtPayment').value),
-        overdueCount: Number($('#metricsOverdue').value),
-        employeeCount: Number($('#metricsEmployees').value),
-        taxCompliant: $('#metricsTax').value === 'true',
-        footTrafficGrowth: Number($('#metricsFootTraffic').value),
-        localSalesGrowth: Number($('#metricsLocalGrowth').value),
-        competitorDensity: Number($('#metricsCompetition').value),
-        closureRate: Number($('#metricsClosure').value),
-        repeatRate: Number($('#metricsRepeat').value),
-        digitalSalesRatio: Number($('#metricsDigital').value),
-        monthlyFixedCost: Number($('#metricsFixedCost').value),
-        monthlyRent: Number($('#metricsRent').value),
-        monthlyLaborCost: Number($('#metricsLabor').value),
-        monthlyMaterialCost: Number($('#metricsMaterial').value),
-        administrativeActionCount: Number($('#metricsAdministrativeActions').value),
-        representativeChangeCount: Number($('#metricsRepresentativeChanges').value)
-      })
+      body: JSON.stringify(collectMetricClaims())
     });
-    await refreshData('재무·위험 점검을 갱신했습니다.');
-    showOwnerStep('campaign');
+    await refreshData('사업자 주장을 저장했습니다. 근거자료 검증 전에는 공식 심사에 사용할 수 없습니다.');
+    showOwnerStep('risk', false);
   } catch (error) {
     showToast(error.message, 'error');
   } finally {
@@ -1076,11 +1386,88 @@ $('#metricsForm').addEventListener('submit', async event => {
   }
 });
 
+const verificationStatusLabels = {
+  needs_documents: '자료 보완', mismatch: '불일치 확인', ready_for_admin: '운영자 검토 대기',
+  approved: '공식 검증 완료', rejected: '검증 반려'
+};
+
+function renderFinancialVerification(verification) {
+  const badge = $('#financialVerificationBadge');
+  const result = $('#financialVerificationStatus');
+  if (!badge || !result) return;
+  badge.textContent = verificationStatusLabels[verification?.status] || '자료 대기';
+  badge.className = 'status-pill ' + (verification?.status === 'approved' ? 'published' : verification ? 'submitted' : '');
+  result.classList.toggle('hidden', !verification);
+  if (!verification) return;
+  const flow = verification.orchestration || {};
+  const statusLabel = value => ({ passed: '통과', matched: '일치', review: '확인 필요', failed: '실패', pending: '대기' }[value] || value);
+  result.innerHTML = '<div class="verification-summary"><strong>' + escapeHTML(verificationStatusLabels[verification.status] || verification.status)
+    + '</strong><span>문서 ' + Number(flow.documentCount || verification.documents?.length || 0) + '개 · OCR 평균 신뢰도 '
+    + Math.round(Number(flow.averageConfidence || 0) * 100) + '%</span></div>'
+    + '<div class="verification-steps">' + (flow.steps || []).map(step => '<div class="' + escapeHTML(step.status) + '"><b>'
+      + escapeHTML(statusLabel(step.status)) + '</b><span>' + escapeHTML(step.label) + '</span></div>').join('') + '</div>'
+    + (flow.missingDocuments?.length ? '<p class="verification-alert"><b>빠진 자료</b> ' + escapeHTML(flow.missingDocuments.join(', ')) + '</p>' : '')
+    + (flow.mismatches?.length ? '<p class="verification-alert"><b>불일치</b> ' + escapeHTML(flow.mismatches.join(' ')) + '</p>' : '')
+    + (flow.warnings?.length ? '<p class="verification-warning"><b>확인사항</b> ' + escapeHTML(flow.warnings.join(' ')) + '</p>' : '')
+    + '<p class="privacy-note">현재 버전은 개인정보 노출을 줄이기 위해 원본 이미지를 DB에 저장하지 않고 구조화된 판독 결과와 SHA-256 지문만 저장합니다. 운영자 원본 열람용 비공개 스토리지는 후속 연결 항목입니다.</p>';
+}
+
+function fileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error(file.name + ' 파일을 읽지 못했습니다.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+$('#financialVerificationForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  if (state.user?.role !== 'owner') return;
+  if (!state.owner?.metrics) {
+    showToast('먼저 사업자 주장 수치를 저장해 주세요.', 'info');
+    return;
+  }
+  const files = [...$('#financialEvidenceFiles').files];
+  if (!files.length || files.length > 6) {
+    showToast('재무자료 이미지를 1개 이상 6개 이하로 선택해 주세요.', 'error');
+    return;
+  }
+  if (files.some(file => !['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 6 * 1024 * 1024)) {
+    showToast('각 파일은 PNG·JPG·WebP 형식의 6MB 이하여야 합니다.', 'error');
+    return;
+  }
+  if (files.reduce((sum, file) => sum + file.size, 0) > 20 * 1024 * 1024) {
+    showToast('한 번에 올리는 파일 합계는 20MB 이하여야 합니다.', 'error');
+    return;
+  }
+  const button = $('#runFinancialVerification');
+  button.disabled = true;
+  button.textContent = '문서별 판독·대조 중…';
+  try {
+    const documents = await Promise.all(files.map(async file => ({ filename: file.name, image: await fileAsDataUrl(file) })));
+    const data = await apiRequest('/api/ai/financial-verify', {
+      method: 'POST', body: JSON.stringify({ claims: collectMetricClaims(), documents })
+    });
+    renderFinancialVerification({ ...(data.verification || {}), documents: data.documents, orchestration: data.orchestration,
+      status: data.verification?.status || data.orchestration?.recommendedStatus });
+    await refreshData(data.orchestration?.readyForAdminReview
+      ? '교차검증을 마쳤습니다. 운영자 원본 검토 대기열로 보냈습니다.'
+      : '교차검증을 마쳤습니다. 빠진 자료와 불일치 항목을 확인해 주세요.');
+    showOwnerStep('risk', false);
+  } catch (error) {
+    showToast(error.message, 'error');
+  } finally {
+    button.disabled = false;
+    button.innerHTML = '자료 판독·교차검증 <span>→</span>';
+  }
+});
+
 function renderAssessment(assessment) {
   const panel = $('#assessmentPanel');
   panel.classList.toggle('hidden', !assessment);
   if (!assessment) return;
-  $('#assessmentScore').textContent = (assessment.grade || 'S5') + ' · ' + assessment.score;
+  $('#assessmentScore').textContent = (assessment.isOfficial ? '공식 ' : '예비 ') + (assessment.grade || 'S5') + ' · ' + assessment.score;
   const labels = { low: '낮은 보완 위험', review: '추가 확인 필요', high: '집중 확인 필요' };
   $('#assessmentRisk').textContent = labels[assessment.riskLevel] || '추가 확인 필요';
   $('#assessmentRisk').className = 'risk-badge ' + assessment.riskLevel;
@@ -1090,7 +1477,8 @@ function renderAssessment(assessment) {
   ).join('');
   $('#assessmentMissing').textContent = assessment.missing?.length
     ? '추가 확인 자료: ' + assessment.missing.join(', ')
-    : '필수 입력값은 채워졌습니다. 운영자가 원자료와 모순 여부를 별도로 확인합니다.';
+    : assessment.isOfficial ? '원자료 교차검증과 운영자 승인을 마친 공식 평가입니다.'
+      : '입력값 기반 예비점검입니다. 원자료 검증 전에는 모집 승인 근거가 아닙니다.';
 }
 
 function renderAssessmentExplanation(model) {
@@ -1109,11 +1497,12 @@ function renderAssessmentExplanation(model) {
   else positives.push('최근 연체 이력 없음');
   if (Number(metrics.local_sales_growth || 0) > 0) positives.push('상권 매출 +' + metrics.local_sales_growth + '%');
   if (!metrics.tax_compliant) risks.push('세금 납부 상태 확인 필요');
-  panel.innerHTML = '<div class="panel-heading"><div><p class="eyebrow">설명 가능한 AI 심사</p><h3>' + escapeHTML(assessment.grade || 'S5')
+  panel.innerHTML = '<div class="panel-heading"><div><p class="eyebrow">' + (assessment.isOfficial ? '공식 검증 평가' : '사업자 주장 기반 예비점검') + '</p><h3>' + escapeHTML(assessment.grade || 'S5')
     + ' 등급 · 펀딩 ' + (assessment.fundingLimit > 0 ? '가능' : '보완 필요') + '</h3></div><strong>최대 ' + won(assessment.fundingLimit) + '</strong></div>'
     + '<div class="explanation-columns"><div><b>긍정 요인</b><ul>' + (positives.length ? positives : ['입력 자료 추가 확인']).map(item => '<li>' + escapeHTML(item) + '</li>').join('')
     + '</ul></div><div><b>주요 위험</b><ul>' + (risks.length ? risks : ['중대한 정량 위험 신호 없음']).map(item => '<li>' + escapeHTML(item) + '</li>').join('') + '</ul></div></div>'
-    + '<p>최근 매출·현금흐름·부채 상환 부담·운영 안정성·상권 지표를 함께 반영했습니다. 정량 점수에 따라 한도를 월평균 매출의 일정 범위로 제한했으며, 최종 승인은 운영자가 원자료와 입력값의 일치 여부를 확인합니다.</p>';
+    + '<p>최근 매출·현금흐름·부채 상환 부담·운영 안정성·상권 지표를 함께 반영했습니다. '
+    + (assessment.isOfficial ? '운영자가 원자료와 AI 교차검증 결과를 확인한 공식 평가입니다.' : '아직 원자료가 승인되지 않은 참고용 결과이며 모집 제출을 열지 않습니다.') + '</p>';
 }
 
 function defaultMilestones() {
@@ -1156,7 +1545,10 @@ function fillCampaignForm(campaign) {
   $('#campaignBenefits').value = campaign?.investorBenefits || '';
   renderMilestoneRows(campaign?.milestones);
   const editable = !campaign || ['draft', 'needs_changes'].includes(campaign.status);
-  $('#submitCampaign').disabled = !editable || state.user?.role !== 'owner';
+  const officiallyVerified = state.owner?.assessment?.isOfficial
+    && state.owner?.financialVerification?.status === 'approved';
+  $('#submitCampaign').disabled = !editable || state.user?.role !== 'owner' || !officiallyVerified;
+  $('#submitCampaign').title = officiallyVerified ? '' : '재무 원자료 검증과 운영자 승인이 먼저 필요합니다.';
   $('#campaignForm button[type="submit"]').disabled = !editable || state.user?.role !== 'owner';
   const message = $('#campaignReviewMessage');
   message.classList.toggle('hidden', !campaign?.reviewNote);
@@ -1252,6 +1644,9 @@ $('#submitCampaign').addEventListener('click', async () => {
   const button = $('#submitCampaign');
   button.disabled = true;
   try {
+    if (!state.owner?.assessment?.isOfficial || state.owner?.financialVerification?.status !== 'approved') {
+      throw new Error('재무 원자료 교차검증과 운영자 승인을 먼저 완료해 주세요.');
+    }
     const campaignId = await persistCampaign();
     await apiRequest('/api/campaign/submit', {
       method: 'POST',
@@ -1335,7 +1730,7 @@ $('#monthlySalesForm').addEventListener('submit', async event => {
       yearMonth: $('#salesYearMonth').value + '-01', totalSales: Number($('#salesTotal').value),
       couponSales: Number($('#salesCouponRevenue').value), couponDiscountTotal: Number($('#salesDiscountTotal').value), couponsUsed: 0
     }) });
-    await refreshData('월 매출을 저장했습니다. 성장률 ' + Number(result.sales?.growth_rate || 0).toFixed(1) + '%, 쿠폰 보너스 +' + Number(result.sales?.bonus_rate || 0).toFixed(1) + '%p가 반영됐습니다.');
+    await refreshData('월 매출을 미검증 기록으로 저장했습니다. 성장률은 참고값이며 원자료 검증 전에는 쿠폰 보너스를 지급하지 않습니다.');
   } catch (error) { showToast(error.message, 'error'); } finally { button.disabled = false; }
 });
 
@@ -1451,6 +1846,8 @@ function renderAdmin() {
   const campaigns = state.admin.campaigns || [];
   const commitments = state.admin.commitments || [];
   const evidence = state.admin.evidence || [];
+  const financial = state.admin.financialVerifications || [];
+  const financialQueue = financial.filter(item => item.status === 'ready_for_admin');
   const campaignQueue = campaigns.filter(item => item.status === 'submitted');
   const escrowQueue = commitments.filter(item => item.status === 'committed');
   const evidenceQueue = evidence.filter(item => item.status === 'pending');
@@ -1458,17 +1855,52 @@ function renderAdmin() {
     item.milestones.filter(milestone => milestone.status === 'approved')
   );
   $('#adminStats').innerHTML =
-    '<article><small>모집 심사 대기</small><strong>' + campaignQueue.length + '</strong></article>'
+    '<article><small>재무 원자료 대기</small><strong>' + financialQueue.length + '</strong></article>'
+    + '<article><small>모집 심사 대기</small><strong>' + campaignQueue.length + '</strong></article>'
     + '<article><small>예치 확인 대기</small><strong>' + escrowQueue.length + '</strong></article>'
     + '<article><small>증빙·지급 대기</small><strong>' + (evidenceQueue.length + releaseQueue.length) + '</strong></article>';
+  $('#financialQueueCount').textContent = financialQueue.length;
   $('#campaignQueueCount').textContent = campaignQueue.length;
   $('#escrowQueueCount').textContent = escrowQueue.length;
   $('#evidenceQueueCount').textContent = evidenceQueue.length + releaseQueue.length;
+  renderAdminFinancial(financial);
   renderAdminCampaigns(campaigns);
   renderAdminEscrow(commitments, campaigns);
   renderAdminEvidence(evidence, campaigns);
   renderAdminAudit(state.admin.audit || []);
   showAdminTab(state.adminTab);
+}
+
+function renderAdminFinancial(rows) {
+  const list = $('#adminFinancialList');
+  if (!rows.length) {
+    list.innerHTML = '<div class="empty-state"><strong>제출된 재무 원자료 검증이 없습니다</strong></div>';
+    return;
+  }
+  list.innerHTML = rows.map(item => {
+    const flow = item.orchestration || {};
+    const canApprove = item.status === 'ready_for_admin' && flow.readyForAdminReview === true;
+    const final = ['approved', 'rejected'].includes(item.status);
+    return '<article class="review-card"><div class="review-card-header"><div><span class="status-pill '
+      + (item.status === 'approved' ? 'published' : item.status === 'rejected' ? 'rejected' : 'submitted') + '">'
+      + escapeHTML(verificationStatusLabels[item.status] || item.status) + '</span><h3>'
+      + escapeHTML(item.business?.name || '사업체 ' + String(item.businessId).slice(0, 8)) + '</h3><p>'
+      + escapeHTML(item.business?.number || '') + ' · ' + shortDate(item.createdAt) + '</p></div><strong>문서 '
+      + Number(flow.documentCount || item.documents?.length || 0) + '개</strong></div>'
+      + '<div class="review-card-grid"><div><small>사업자 식별</small><strong>'
+      + escapeHTML(flow.steps?.find(step => step.code === 'identity')?.status || '-') + '</strong></div><div><small>매출 대조</small><strong>'
+      + escapeHTML(flow.steps?.find(step => step.code === 'sales')?.status || '-') + '</strong></div><div><small>부채 대조</small><strong>'
+      + escapeHTML(flow.steps?.find(step => step.code === 'debt')?.status || '-') + '</strong></div><div><small>OCR 신뢰도</small><strong>'
+      + Math.round(Number(flow.averageConfidence || 0) * 100) + '%</strong></div></div>'
+      + (flow.missingDocuments?.length ? '<p class="verification-alert">빠진 자료: ' + escapeHTML(flow.missingDocuments.join(', ')) + '</p>' : '')
+      + (flow.mismatches?.length ? '<p class="verification-alert">불일치: ' + escapeHTML(flow.mismatches.join(' ')) + '</p>' : '')
+      + (final ? '<p class="review-note">운영자 기록: ' + escapeHTML(item.reviewNote || '기록 없음') + '</p>'
+        : '<div class="review-actions"><input id="financialNote-' + item.id + '" placeholder="원본 대조 근거와 승인·반려 사유">'
+          + '<button class="reject" type="button" data-financial-review="rejected" data-id="' + item.id + '">반려</button>'
+          + '<button class="approve" type="button" data-financial-review="approved" data-id="' + item.id + '" '
+          + (canApprove ? '' : 'disabled title="AI 교차검증을 모두 통과한 건만 승인할 수 있습니다."') + '>원본 확인·공식 승인</button></div>')
+      + '</article>';
+  }).join('');
 }
 
 function renderAdminCampaigns(campaigns) {
@@ -1488,6 +1920,7 @@ function renderAdminCampaigns(campaigns) {
       + '<div class="review-card-grid"><div><small>사업자 상태</small><strong>'
       + escapeHTML(item.business?.verificationStatus || '미확인') + '</strong></div>'
       + '<div><small>위험 점검</small><strong>' + (assessment ? assessment.score + '점' : '자료 없음') + '</strong></div>'
+      + '<div><small>평가 근거</small><strong>' + (assessment?.isOfficial ? '공식 원자료 승인' : '예비·미검증') + '</strong></div>'
       + '<div><small>목표 금액</small><strong>' + won(item.target) + '</strong></div>'
       + '<div><small>지급 조건</small><strong>' + item.milestones.length + '단계 · '
       + item.milestones.reduce((sum, milestone) => sum + milestone.percent, 0) + '%</strong></div></div>'
@@ -1498,8 +1931,9 @@ function renderAdminCampaigns(campaigns) {
       + '" placeholder="승인 근거 또는 보완 요청 사유" value="' + escapeHTML(item.reviewNote || '') + '">'
       + '<button type="button" data-campaign-review="needs_changes" data-id="' + item.id + '">보완 요청</button>'
       + '<button class="reject" type="button" data-campaign-review="rejected" data-id="' + item.id + '">반려</button>'
-      + '<button class="approve" type="button" data-campaign-review="published" data-id="' + item.id
-      + '">승인하고 공개</button></div></article>';
+      + '<button class="approve" type="button" data-campaign-review="published" data-id="' + item.id + '" '
+      + (assessment?.isOfficial ? '' : 'disabled title="공식 재무검증이 필요합니다."')
+      + '>승인하고 공개</button></div></article>';
   }).join('');
 }
 
@@ -1605,6 +2039,21 @@ $('#adminCampaignList').addEventListener('click', async event => {
   }, '모집 심사 결과를 저장했습니다.');
 });
 
+$('#adminFinancialList').addEventListener('click', async event => {
+  const button = event.target.closest('[data-financial-review]');
+  if (!button) return;
+  const note = $('#financialNote-' + button.dataset.id).value.trim();
+  if (!note) {
+    showToast('원본 대조 결과와 승인·반려 근거를 입력해 주세요.', 'error');
+    return;
+  }
+  await runAdminAction(button, '/api/admin/financial-verification', {
+    verificationId: button.dataset.id,
+    decision: button.dataset.financialReview,
+    note
+  }, '재무 원자료 검토 결과를 저장했습니다.');
+});
+
 $('#adminEscrowList').addEventListener('click', async event => {
   const button = event.target.closest('[data-confirm-escrow]');
   if (!button) return;
@@ -1671,6 +2120,20 @@ function buildAiContext() {
       + '건, 증빙 ' + state.admin.evidence.filter(item => item.status === 'pending').length + '건');
   }
   return parts.join('\n');
+}
+
+function currentKnowledgeGraph() {
+  const role = state.user?.role === 'owner' ? 'owner' : 'investor';
+  const owner = ownerModel();
+  const campaign = role === 'investor' ? state.currentCampaign : owner.campaign;
+  const address = role === 'owner' ? owner.business?.address : campaign?.business?.address;
+  return buildRoleKnowledgeGraph({
+    role,
+    campaign,
+    owner,
+    area: getCommercialAreaByAddress(address),
+    portfolio: state.portfolio?.investments || []
+  });
 }
 
 function updateChatContext() {
@@ -1756,6 +2219,7 @@ $('#chatForm').addEventListener('submit', async event => {
       body: JSON.stringify({
         messages: state.chatHistory,
         context: buildAiContext(),
+        knowledgeGraph: currentKnowledgeGraph(),
         submissionStatus: buildSubmissionStatus(ownerModel(), state.user?.role || '')
       })
     });

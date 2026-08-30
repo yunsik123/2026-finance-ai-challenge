@@ -89,6 +89,8 @@ const sales = await owner.rpc('record_monthly_sales', {
   p_coupon_sales: 1200000, p_coupon_discount_total: 120000, p_coupons_used: 8
 });
 assert(sales.id && Number(sales.total_sales) === 34000000, '소상공인 월 매출 DB 저장');
+assert(sales.verification_status === 'owner_claimed' && Number(sales.bonus_rate) === 0,
+  '수기 월 매출은 미검증 주장으로 저장되고 쿠폰 보너스를 자동 지급하지 않음');
 const issuedCount = await owner.rpc('issue_dividend_coupon', {
   p_campaign_id: campaignClosed, p_title: '실시간 시나리오 검증', p_description: '테스트 배당',
   p_benefit_kind: 'percent', p_discount_value: 10, p_target: 'all'

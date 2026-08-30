@@ -107,10 +107,27 @@ const grouped = (rows, field) => {
 function userDto(row, session = null) {
   return row ? {
     id: row.id,
-    name: session?.custom_name || row.display_name || '사용자',
-    email: row.email,
+    name: row.display_name || '사용자',
+    email: row.email?.endsWith('@accounts.moa.local') ? '' : row.email,
     role: row.role
   } : null;
+}
+
+export function normalizeQuickAccountName(value) {
+  return String(value || '').normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('ko-KR');
+}
+
+export async function quickAccountEmail(name, role) {
+  const normalizedName = normalizeQuickAccountName(name);
+  if (!['investor', 'owner'].includes(role)) throw new Error('간편 계정을 만들 수 없는 역할입니다.');
+  if (normalizedName.length < 2 || normalizedName.length > 40) {
+    throw new Error('로그인 이름은 2자 이상 40자 이하로 입력해 주세요.');
+  }
+  const bytes = new TextEncoder().encode(role + ':' + normalizedName);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  const hash = [...new Uint8Array(digest)]
+    .map(byte => byte.toString(16).padStart(2, '0')).join('').slice(0, 40);
+  return 'q-' + role + '-' + hash + '@accounts.moa.local';
 }
 
 function businessDto(row) {
@@ -132,6 +149,9 @@ function businessDto(row) {
     applicantIsRepresentative: Boolean(row.applicant_is_representative),
     posDataConsent: Boolean(row.pos_data_consent),
     cardSalesConsent: Boolean(row.card_sales_consent),
+    ownerStory: row.owner_story || '',
+    highlights: Array.isArray(row.highlights) ? row.highlights : (typeof row.highlights === 'string' ? (row.highlights.startsWith('[') ? JSON.parse(row.highlights) : row.highlights.split(',').map(s => s.trim())) : []),
+    menuItems: Array.isArray(row.menu_items) ? row.menu_items : (typeof row.menu_items === 'string' && row.menu_items.startsWith('[') ? JSON.parse(row.menu_items) : []),
     isDemo: Boolean(row.is_demo)
   } : null;
 }
@@ -158,6 +178,19 @@ function assessmentDto(row) {
     fundingLimit: Number(row.funding_limit),
     components: row.components || {},
     missing: row.missing_fields || [],
+    isOfficial: Boolean(row.is_official),
+    verificationRunId: row.verification_run_id || null,
+    createdAt: row.created_at
+  } : null;
+}
+
+function financialVerificationDto(row, business = null) {
+  return row ? {
+    id: row.id, businessId: row.business_id, userId: row.user_id,
+    claimedMetrics: row.claimed_metrics || {}, documents: row.document_results || [],
+    orchestration: row.orchestration || {}, status: row.status,
+    reviewNote: row.review_note || '', reviewedAt: row.reviewed_at,
+    business,
     createdAt: row.created_at
   } : null;
 }
@@ -416,12 +449,17 @@ async function ownerData(userId) {
   const metrics = business
     ? first(await rest('business_metrics?select=*&business_id=eq.' + business.id + '&limit=1'))
     : null;
+  const financialVerification = business
+    ? financialVerificationDto(first(await rest(
+      'financial_verification_runs?select=*&business_id=eq.' + business.id + '&order=created_at.desc&limit=1'
+    ))) : null;
   return {
     business,
     campaigns: campaignRows.map(row => campaignDto(row, relations)),
     disclosures: settings?.disclosures || [],
     region: settings?.region || '서울 전체',
     metrics,
+    financialVerification,
     assessment: business
       ? assessmentDto(first(await rest(
         'credit_assessments?select=*&business_id=eq.' + business.id
@@ -432,17 +470,21 @@ async function ownerData(userId) {
 }
 
 async function adminData() {
-  const [campaignRows, commitmentRows, evidenceRows, auditRows] = await Promise.all([
+  const [campaignRows, commitmentRows, evidenceRows, financialRows, businessRows, auditRows] = await Promise.all([
     rest('campaigns?select=*&order=updated_at.desc'),
     rest('funding_commitments?select=*&order=created_at.desc'),
     rest('evidence_submissions?select=*&order=created_at.desc'),
+    rest('financial_verification_runs?select=*&order=created_at.desc'),
+    rest('businesses?select=*'),
     rest('audit_events?select=*&order=created_at.desc&limit=80')
   ]);
   const relations = await campaignRelations(campaignRows, { includePrivate: true });
+  const businesses = byId(businessRows);
   return {
     campaigns: campaignRows.map(row => campaignDto(row, relations)),
     commitments: commitmentRows.map(commitmentDto),
     evidence: evidenceRows.map(evidenceDto),
+    financialVerifications: financialRows.map(row => financialVerificationDto(row, businessDto(businesses.get(row.business_id)))),
     audit: auditRows
   };
 }
@@ -499,34 +541,53 @@ async function authenticate(values) {
   let result;
   if (values.quick) {
     const role = values.role || 'investor';
-    const name = (values.name || '').trim() || (role === 'admin' ? '운영자' : role === 'owner' ? '사장님' : '투자자');
-    let email = 'investor@moa.local';
-    let password = 'MoaPass2026!';
-
-    if (role === 'admin') {
-      email = runtimeEnv.MOA_ADMIN_EMAIL || 'admin@moa.local';
-      password = runtimeEnv.MOA_ADMIN_PASSWORD || 'Moa!_i7sanyKlFgw93a-';
-    } else if (role === 'owner') {
-      email = 'owner@moa.local';
-      password = 'MoaPass2026!';
-    } else {
-      email = 'investor@moa.local';
-      password = 'MoaPass2026!';
+    const name = String(values.name || '').normalize('NFKC').trim().replace(/\s+/g, ' ');
+    const password = String(values.password || '');
+    if (!['investor', 'owner'].includes(role)) {
+      throw new Error('운영자는 발급받은 이메일 계정으로 로그인해 주세요.');
     }
-
-    result = await auth('token?grant_type=password', { email, password });
+    if (password.length < 8 || password.length > 72) {
+      throw new Error('비밀번호는 8자 이상 72자 이하로 입력해 주세요.');
+    }
+    const email = await quickAccountEmail(name, role);
+    if (values.action === 'signup') {
+      try {
+        result = await auth('signup', {
+          email,
+          password,
+          data: { name, role, account_type: 'quick' }
+        });
+      } catch (signupError) {
+        if ([400, 409, 422].includes(signupError.status)) {
+          throw new Error('이미 사용 중인 로그인 이름입니다. 다시 로그인하거나 다른 이름을 사용해 주세요.');
+        }
+        throw signupError;
+      }
+    } else {
+      try {
+        result = await auth('token?grant_type=password', { email, password });
+      } catch (loginError) {
+        if ([400, 401].includes(loginError.status)) {
+          throw new Error('로그인 이름 또는 비밀번호가 일치하지 않습니다. 처음이라면 먼저 계정을 만들어 주세요.');
+        }
+        throw loginError;
+      }
+    }
     const session = result?.access_token ? result : result?.session;
     if (!session?.access_token) {
-      throw new Error('간편 로그인을 완료하지 못했습니다. 다시 시도해 주세요.');
+      if (result?.user?.identities?.length === 0) {
+        throw new Error('이미 사용 중인 로그인 이름입니다. 다시 로그인하거나 다른 이름을 사용해 주세요.');
+      }
+      throw new Error('계정 생성 후 자동 로그인하지 못했습니다. 간편 가입 설정을 확인해 주세요.');
     }
-    session.custom_name = name;
     session.user = result.user || session.user;
     saveSession(session);
 
-    await rest('profiles?id=eq.' + session.user.id, {
-      method: 'PATCH',
-      body: { display_name: name }
-    }).catch(() => {});
+    const profile = first(await rest('profiles?select=*&id=eq.' + session.user.id + '&limit=1'));
+    if (!profile || profile.role !== role) {
+      saveSession(null);
+      throw new Error('계정 정보를 확인하지 못했습니다. 다시 시도해 주세요.');
+    }
 
     await rest('login_events', {
       method: 'POST',
@@ -611,7 +672,10 @@ async function saveBusiness(body) {
       restaurant_license_confirmed: Boolean(body.restaurantLicenseConfirmed),
       applicant_is_representative: Boolean(body.applicantIsRepresentative),
       pos_data_consent: Boolean(body.posDataConsent),
-      card_sales_consent: Boolean(body.cardSalesConsent)
+      card_sales_consent: Boolean(body.cardSalesConsent),
+      owner_story: body.ownerStory || '',
+      highlights: body.highlights || [],
+      menu_items: body.menuItems || []
     },
     prefer: 'resolution=merge-duplicates,return=representation'
   }));
@@ -698,7 +762,7 @@ async function saveMetrics(body) {
       funding_limit: assessment.fundingLimit,
       components: assessment.components,
       missing_fields: assessment.missing,
-      model_version: 'moa-risk-v2',
+      model_version: 'moa-risk-v3-owner-claim',
       is_official: false
     },
     prefer: 'return=minimal'
@@ -1215,6 +1279,14 @@ export async function cloudRequest(path, options = {}) {
   if (path === '/api/admin/evidence') {
     await rpc('review_evidence', {
       p_evidence_id: body.evidenceId,
+      p_decision: body.decision,
+      p_note: body.note || ''
+    });
+    return { ok: true };
+  }
+  if (path === '/api/admin/financial-verification') {
+    await rpc('review_financial_verification', {
+      p_run_id: body.verificationId,
       p_decision: body.decision,
       p_note: body.note || ''
     });

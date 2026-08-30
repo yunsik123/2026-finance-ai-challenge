@@ -66,10 +66,24 @@
         <div class="service-flow">
           <article><b>1</b><strong>가게에 투자</strong><span>모집 중에는 바로 참여</span></article><i>→</i>
           <article><b>2</b><strong>할인율 성장</strong><span>투자금·유지기간에 따라 누적</span></article><i>→</i>
-          <article><b>3</b><strong>매출 성장 보너스</strong><span>가게가 성장하면 추가 적립</span></article><i>→</i>
+          <article><b>3</b><strong>검증 매출 성장 보너스</strong><span>확인된 매출이 성장하면 추가 적립</span></article><i>→</i>
           <article><b>4</b><strong>쿠폰 발급·사용</strong><span>실제 음식점 소비 혜택</span></article><i>→</i>
           <article><b>5</b><strong>회수 대기열</strong><span>모집 종료 후 새 투자자와 매칭</span></article>
         </div>
+      </section>
+
+      <section class="content-section operating-principles" aria-label="모아 운영 원칙">
+        <div class="section-title">
+          <div><p class="eyebrow">검증 가능한 운영 구조</p><h2>투자 화면 밖의 절차까지 설계합니다</h2></div>
+          <p>해외 커뮤니티 펀딩 서비스의 장점과 실패 사례를 함께 반영한 운영 원칙입니다.</p>
+        </div>
+        <div class="principle-grid">
+          <article><span>검증</span><h3>원자료와 주장 분리</h3><p>사업자가 쓴 숫자는 주장으로 표시하고, 자료별 OCR 대조와 운영자 승인을 통과한 값만 공식평가에 씁니다.</p></article>
+          <article><span>변경</span><h3>중요 변경 재확인</h3><p>목표·사용계획·혜택 조건이 크게 바뀌면 참여자에게 알리고 재확인받는 절차를 운영 기준으로 둡니다.</p></article>
+          <article><span>소통</span><h3>모집 이후 업데이트</h3><p>사업 진행과 목표별 증빙을 계속 공개해 참여자가 약속 이행을 추적할 수 있게 합니다.</p></article>
+          <article><span>연속성</span><h3>원장과 결제사업자 분리</h3><p>외부 결제·예치 사업자 장애에도 참여 원장과 감사 기록을 내보내고 대조할 수 있도록 설계합니다.</p></article>
+        </div>
+        <p class="principle-note">최소 모집액 미달 환불·중요 조건 변경 재확인은 결제/알림 연동 전까지 ‘도입 설계’이며, 현재 자동 실행 기능으로 표시하지 않습니다.</p>
       </section>
 
       <section class="content-section campaign-section" id="campaigns">
@@ -148,6 +162,14 @@
               <span id="businessVerificationBadge">미확인</span>
             </div>
             <div class="step-tip"><strong>💡 작성 팁</strong> 사업자등록증에 기재된 내용과 동일하게 작성하면 운영자 심사가 빨라집니다. 소개란에는 현재 매출 규모, 강점, 자금 활용 계획을 구체적으로 적어주세요.</div>
+            <div class="ai-story-banner">
+              <div>
+                <span class="ai-badge">AI 서비스</span>
+                <strong>🪄 AI 매장 스토리 & 시그니처 메뉴 자동 생성</strong>
+                <p>상호명과 업종을 분석하여 사장님의 인사말, 가게 소개글, 추천 메뉴판을 1초 만에 자동 작성해 드립니다.</p>
+              </div>
+              <button class="secondary-button" type="button" id="generateAiStoreStory">AI로 스토리·메뉴 채우기 ✨</button>
+            </div>
             <form class="panel form-panel" id="businessForm">
               <div class="field-grid two">
                 <label>상호명<input id="businessName" required autocomplete="organization" placeholder="예: 온기 식당"></label>
@@ -164,7 +186,21 @@
                 <button class="secondary-button" id="analyzeOwnerLocation" type="button">주소로 입지 분석</button>
               </div>
               <div class="owner-location-result hidden" id="ownerLocationResult" aria-live="polite"></div>
-              <label>가게와 성장 계획 소개<textarea id="businessDescription" required rows="4" placeholder="현재 사업의 강점과 이번 자금으로 해결하려는 문제를 적어주세요."></textarea></label>
+
+              <fieldset class="field-group">
+                <legend>가게 소개 & 사장님 스토리 (투자자에게 첫인상으로 공개)</legend>
+                <label>가게 소개 (어떤 곳이고 왜 특별한지)<textarea id="businessDescription" required rows="3" placeholder="예: 성수동 조용한 골목에서 8년째 제철 식재료로 정갈한 솥밥을 짓는 건강한 한식당입니다."></textarea></label>
+                <label>사장님의 한마디 (창업 철학과 인사말)<textarea id="businessOwnerStory" rows="3" placeholder="예: 어릴 적 어머니가 차려주시던 따뜻한 집밥의 온기를 전하고 싶습니다. 정직한 재료로 손님 한 분 한 분께 정성을 다하겠습니다."></textarea></label>
+                <label>가게 매력 포인트 / 해시태그<small class="field-hint">쉼표(,)로 구분하여 입력해 주세요</small><input id="businessHighlights" placeholder="예: #성수동솥밥, #제철집밥, #8년단골명소, #정갈한7첩반상"></input></label>
+              </fieldset>
+
+              <fieldset class="field-group">
+                <legend>시그니처 메뉴판 (대표 메뉴 & 가격)</legend>
+                <p class="field-hint">투자자에게 보여줄 매장의 시그니처 메뉴와 가격, 설명을 등록하세요.</p>
+                <div id="businessMenuRows" class="menu-rows-container"></div>
+                <button class="add-row-button" id="addBusinessMenuRow" type="button">＋ 메뉴 추가</button>
+              </fieldset>
+
               <label>최근 월평균 매출<input id="businessSales" required type="number" min="0" step="10000" placeholder="30000000"></label>
               <fieldset class="field-group"><legend>Mock 사업자 검증 동의</legend><div class="check-grid compact">
                 <label><input id="businessLicense" type="checkbox" required><span><b>영업신고 완료</b><small>Demo에서는 자기확인</small></span></label>
@@ -194,6 +230,7 @@
               <div><h3>사기 가능성과 상환·운영 위험을 함께 점검합니다</h3><p>평가 점수 하나로 승인하지 않습니다. 입력값, 빠진 자료, 사업계획과의 모순을 운영자가 함께 확인합니다.</p></div>
             </div>
             <div class="step-tip"><strong>💡 평가 기준 안내</strong> 매출 지속성, 현금흐름, 부채 부담, 사업 안정성, 상권 회복력 5가지 요인을 종합 평가합니다. 빠진 항목이 많을수록 점수가 낮아지고, 운영자가 추가 자료를 요청할 수 있습니다.</div>
+            <div class="claim-warning"><strong>직접 입력값은 아직 ‘사업자 주장’입니다.</strong><span>아래 숫자만으로 공식 신용평가나 모집 승인이 만들어지지 않습니다. 저장 후 POS·카드 매출, 부채·상환, 납세 증빙을 업로드해 대조해야 합니다.</span></div>
             <details class="panel data-guide"><summary>CSV로 매출 자료를 준비한다면 어떤 형식인가요?</summary><div><p>현재 화면은 6개월 값을 직접 입력하지만, POS·카드 API 연결 시 아래 열을 그대로 사용할 수 있습니다.</p><code>year_month,total_sales,card_sales,cash_sales,operating_cash_flow,fixed_cost,rent,labor_cost,material_cost</code><p>UTF-8 CSV, 금액은 쉼표 없는 원 단위 정수, 월은 YYYY-MM 형식을 권장합니다. 예: <code>2026-08,31800000,25800000,6000000,6400000,12000000,3200000,5400000,3400000</code></p></div></details>
             <form class="panel form-panel" id="metricsForm">
               <fieldset class="field-group"><legend>매출·현금흐름 지표</legend>
@@ -230,7 +267,19 @@
                 <label>주변 폐업률(%)<input id="metricsClosure" type="number" min="0" max="100" step="0.1" value="10"></label>
               </div>
               </fieldset>
-              <button class="primary-button" type="submit">위험 점검 갱신 <span>→</span></button>
+              <button class="primary-button" type="submit">사업자 주장 저장·예비점검 <span>→</span></button>
+            </form>
+            <form class="panel form-panel verification-form" id="financialVerificationForm">
+              <div class="panel-heading"><div><p class="eyebrow">AI 원자료 대조</p><h3>재무 근거자료 검증</h3><p>필수 3종을 이미지로 올리면 문서별 OCR 결과를 입력 주장과 대조합니다. AI는 승인하지 않고 운영자 검토 가능 여부만 판정합니다.</p></div><span class="status-pill" id="financialVerificationBadge">자료 대기</span></div>
+              <div class="evidence-requirements">
+                <article><b>필수 1</b><span>POS 정산서 또는 카드매출 자료</span></article>
+                <article><b>필수 2</b><span>대출잔액·월 상환액 자료</span></article>
+                <article><b>필수 3</b><span>납세증명 또는 체납 확인 자료</span></article>
+                <article><b>선택</b><span>통장 거래내역·재무제표</span></article>
+              </div>
+              <label class="file-drop">재무자료 이미지(최대 6개)<small>PNG·JPG·WebP, 파일당 6MB · 주민번호/계좌번호 등 불필요한 개인정보는 가려 주세요.</small><input id="financialEvidenceFiles" type="file" multiple accept="image/png,image/jpeg,image/webp" required></label>
+              <button class="primary-button" id="runFinancialVerification" type="submit">자료 판독·교차검증 <span>→</span></button>
+              <div class="verification-result hidden" id="financialVerificationStatus" aria-live="polite"></div>
             </form>
             <div class="assessment-panel panel hidden" id="assessmentPanel">
               <div class="assessment-score"><strong id="assessmentScore">-</strong><span>자료 충실도·지속가능성 점수</span></div>
@@ -282,8 +331,8 @@
             <details class="panel data-guide" open><summary>영수증·계약서 사진 촬영 예시와 주의사항</summary><div class="photo-guide"><article><b>좋은 예시</b><span>문서 한 장만 촬영 · 네 모서리 전부 보임 · 글자가 수평 · 그림자와 반사 없음 · 공급자/날짜/품목/합계가 선명</span></article><article><b>다시 촬영</b><span>여러 영수증이 겹침 · 일부 잘림 · 심한 기울어짐 · 손가락이 금액을 가림 · 화면 캡처가 흐림 · 개인정보가 불필요하게 포함됨</span></article></div><p>PNG/JPG/WebP, 파일당 6MB 이하입니다. 주민번호·계좌번호처럼 심사에 불필요한 개인정보는 가리고, 원본은 운영자 확인 때 제시하세요. 현재는 이미지와 OCR 결과를 처리하며 PDF·CSV 원본 보관은 추후 private Storage 연결이 필요합니다.</p></details>
             <section class="panel fund-operations" id="ownerFundDashboard"></section>
             <div class="owner-benefit-actions">
-              <form class="panel" id="monthlySalesForm"><div class="panel-heading"><div><h3>월 매출·성장 보너스</h3><p>전월 성장률에 따라 투자자 적립률이 갱신됩니다.</p></div></div>
-                <div class="field-grid two"><label>기준 월<input id="salesYearMonth" type="month" required></label><label>총 매출<input id="salesTotal" type="number" min="0" step="10000" required></label><label>쿠폰 주문 매출<input id="salesCouponRevenue" type="number" min="0" value="0"></label><label>총 할인액<input id="salesDiscountTotal" type="number" min="0" value="0"></label></div><button class="secondary-button" type="submit">매출 저장·보너스 계산</button>
+              <form class="panel" id="monthlySalesForm"><div class="panel-heading"><div><h3>월 매출 기록</h3><p>직접 입력값은 미검증 기록으로 저장되며 쿠폰 보너스를 자동 지급하지 않습니다. POS·카드 원장 검증 연결 후에만 보너스를 반영합니다.</p></div></div>
+                <div class="field-grid two"><label>기준 월<input id="salesYearMonth" type="month" required></label><label>총 매출<input id="salesTotal" type="number" min="0" step="10000" required></label><label>쿠폰 주문 매출<input id="salesCouponRevenue" type="number" min="0" value="0"></label><label>총 할인액<input id="salesDiscountTotal" type="number" min="0" value="0"></label></div><button class="secondary-button" type="submit">미검증 매출 기록 저장</button>
               </form>
               <form class="panel" id="dividendCouponForm"><div class="panel-heading"><div><h3>배당 쿠폰 지급</h3><p>현재 투자자 전원에게 추가 혜택을 지급합니다.</p></div></div>
                 <label>지급 사유<input id="dividendTitle" required placeholder="이번 달 매출 신기록 기념"></label><div class="field-grid two"><label>혜택 유형<select id="dividendKind"><option value="percent">전체 메뉴 % 할인</option><option value="fixed">정액 할인</option><option value="menu">특정 메뉴 혜택</option></select></label><label>혜택값<input id="dividendValue" type="number" min="1" required value="10"></label></div><label>설명<input id="dividendDescription" placeholder="예: 아메리카노 무료"></label><button class="secondary-button" type="submit">투자자에게 지급</button>
@@ -318,11 +367,13 @@
           <div class="admin-stats" id="adminStats"></div>
         </div>
         <div class="admin-tabs" role="tablist">
+          <button type="button" data-admin-tab="financial">재무 원자료 <b id="financialQueueCount">0</b></button>
           <button type="button" data-admin-tab="campaigns">모집 심사 <b id="campaignQueueCount">0</b></button>
           <button type="button" data-admin-tab="escrow">예치 확인 <b id="escrowQueueCount">0</b></button>
           <button type="button" data-admin-tab="evidence">증빙·지급 <b id="evidenceQueueCount">0</b></button>
           <button type="button" data-admin-tab="audit">감사 기록</button>
         </div>
+        <section class="admin-tab" id="adminTab-financial"><div class="review-list" id="adminFinancialList"></div></section>
         <section class="admin-tab" id="adminTab-campaigns"><div class="review-list" id="adminCampaignList"></div></section>
         <section class="admin-tab" id="adminTab-escrow"><div class="review-list" id="adminEscrowList"></div></section>
         <section class="admin-tab" id="adminTab-evidence"><div class="review-list" id="adminEvidenceList"></div></section>
@@ -336,8 +387,8 @@
     <div class="modal-card auth-card" role="dialog" aria-modal="true" aria-labelledby="authTitle">
       <button class="modal-close optional-auth-close" type="button" data-close-modal aria-label="닫기">×</button>
       <p class="eyebrow">모아 간편 시작</p>
-      <h2 id="authTitle">역할과 이름을 입력하세요</h2>
-      <p class="modal-description" id="authDescription">복잡한 비밀번호 입력 없이 이름만 넣으면 즉시 계정이 생성되어 바로 시작됩니다.</p>
+      <h2 id="authTitle">내 계정으로 시작하세요</h2>
+      <p class="modal-description" id="authDescription">로그인 이름과 비밀번호를 입력하세요. 처음이면 계정이 생성되고, 다음부터 같은 정보로 로그인합니다.</p>
       
       <div class="quick-role-picker" id="quickRolePicker">
         <button type="button" class="quick-role-btn active" data-quick-role="investor">
@@ -358,9 +409,19 @@
       </div>
 
       <form class="quick-auth-form" id="quickAuthForm">
+        <div class="auth-mode-tabs quick-auth-tabs">
+          <button type="button" class="active" data-quick-auth-action="signup">처음 시작</button>
+          <button type="button" data-quick-auth-action="login">다시 로그인</button>
+        </div>
         <label class="quick-name-label">
-          <span>이름 (또는 상호명 / 닉네임)</span>
-          <input id="quickAuthName" required autocomplete="name" placeholder="예: 홍길동, 온기식당 사장님" autofocus>
+          <span>로그인 이름</span>
+          <input id="quickAuthName" required minlength="2" maxlength="40" autocomplete="username" placeholder="예: 홍길동, 온기식당" autofocus>
+          <small>다른 사람이 사용하지 않는 이름을 입력하고 기억해 주세요.</small>
+        </label>
+        <label class="quick-name-label">
+          <span>비밀번호</span>
+          <input id="quickAuthPassword" type="password" required minlength="8" maxlength="72" autocomplete="current-password" placeholder="8자 이상">
+          <small>이메일이 없는 간편 계정은 비밀번호 재설정이 어려우니 안전하게 보관해 주세요.</small>
         </label>
         <button class="primary-button full-button" type="submit" id="quickAuthSubmit">
           <span id="quickSubmitLabel">투자자로 바로 시작하기</span> <span>→</span>
@@ -368,7 +429,7 @@
       </form>
 
       <div class="auth-advanced-section">
-        <button class="link-button" id="toggleClassicAuth" type="button">이메일/비밀번호로 로그인하기 ▼</button>
+        <button class="link-button" id="toggleClassicAuth" type="button">이메일 계정으로 로그인·회원가입 ▼</button>
       </div>
 
       <form class="auth-form hidden" id="authForm">
@@ -382,7 +443,7 @@
         <label>비밀번호<input id="authPassword" type="password" required minlength="8" autocomplete="current-password" placeholder="8자 이상"></label>
         <button class="primary-button full-button" type="submit" id="authSubmit">로그인</button>
         <button class="link-button" id="forgotPassword" type="button">비밀번호 재설정</button>
-        <button class="link-button" id="backToQuickAuth" type="button">← 간편 로그인으로 돌아가기</button>
+        <button class="link-button" id="backToQuickAuth" type="button">← 로그인 이름으로 돌아가기</button>
       </form>
     </div>
   </div>
@@ -427,6 +488,8 @@
   <aside class="ai-drawer" id="aiDrawer" aria-hidden="true">
     <header><div><span>AI</span><div><strong>모아 상담</strong><small id="aiContextLabel">현재 화면을 바탕으로 답합니다</small></div></div><button id="closeAiDrawer" type="button" aria-label="닫기">×</button></header>
     <div class="chat-suggestions" id="chatSuggestions">
+      <button type="button">어떤 식으로 투자해?</button>
+      <button type="button">사업 등록하려면 무엇을 준비해서 업로드해?</button>
       <button type="button">이 모집에서 꼭 확인할 위험은?</button>
       <button type="button">제출 자료에서 빠진 항목은?</button>
       <button type="button">증빙 승인 전에 무엇을 확인해야 해?</button>

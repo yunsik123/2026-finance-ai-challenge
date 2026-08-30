@@ -33,6 +33,15 @@ const adminEmail = env.MOA_ADMIN_EMAIL || 'admin@moa.local';
 const generatedPassword = !env.MOA_ADMIN_PASSWORD;
 const adminPassword = env.MOA_ADMIN_PASSWORD || ('Moa!' + crypto.randomBytes(12).toString('base64url'));
 
+function saveServerOnlyLocalEnv(filePath, values) {
+  const merged = { ...loadEnvFile(filePath), ...values };
+  fs.writeFileSync(
+    filePath,
+    Object.entries(merged).map(([key, value]) => key + '=' + value).join('\n') + '\n',
+    { mode: 0o600 }
+  );
+}
+
 async function management(pathname, options = {}) {
   const response = await fetch('https://api.supabase.com/v1/' + pathname, {
     ...options,
@@ -115,12 +124,9 @@ async function ensureDemoAccounts() {
   }
 
   if (generatedPassword) {
-    fs.writeFileSync(
-      adminEnvPath,
-      'MOA_ADMIN_EMAIL=' + adminEmail + '\nMOA_ADMIN_PASSWORD=' + adminPassword + '\n',
-      { mode: 0o600 }
-    );
+    saveServerOnlyLocalEnv(adminEnvPath, { MOA_ADMIN_EMAIL: adminEmail, MOA_ADMIN_PASSWORD: adminPassword });
   }
+  saveServerOnlyLocalEnv(path.join(rootDir, '.env.local'), { SUPABASE_SERVICE_ROLE_KEY: serviceKey });
   return { email: adminEmail, password: adminPassword };
 }
 

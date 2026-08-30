@@ -56,6 +56,9 @@ create table if not exists public.businesses (
   monthly_sales bigint not null default 0 check (monthly_sales >= 0),
   business_age numeric not null default 0 check (business_age >= 0),
   description text not null default '',
+  owner_story text not null default '',
+  highlights jsonb not null default '[]'::jsonb,
+  menu_items jsonb not null default '[]'::jsonb,
   verification_status text not null default 'unverified',
   verification_note text not null default '',
   is_demo boolean not null default false,
@@ -63,6 +66,9 @@ create table if not exists public.businesses (
   updated_at timestamptz not null default now()
 );
 alter table public.businesses add column if not exists verification_note text not null default '';
+alter table public.businesses add column if not exists owner_story text not null default '';
+alter table public.businesses add column if not exists highlights jsonb not null default '[]'::jsonb;
+alter table public.businesses add column if not exists menu_items jsonb not null default '[]'::jsonb;
 -- 운영 계정이 없는 공개 가상 예시는 user_id를 비워 둘 수 있다. 일반 사용자의 쓰기 정책은 auth.uid() 일치를 계속 강제한다.
 alter table public.businesses alter column user_id drop not null;
 
@@ -101,6 +107,20 @@ create table if not exists public.credit_assessments (
 );
 alter table public.credit_assessments add column if not exists risk_level text not null default 'review';
 alter table public.credit_assessments add column if not exists s_grade text not null default 'S5';
+
+-- 아래 제출 RPC가 생성될 때부터 참조할 수 있도록 재무 검증 원장을 먼저 정의한다.
+create table if not exists public.financial_verification_runs (
+  id uuid primary key default gen_random_uuid(),
+  business_id uuid not null references public.businesses(id) on delete cascade,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  claimed_metrics jsonb not null default '{}', document_results jsonb not null default '[]',
+  orchestration jsonb not null default '{}', model text not null default '',
+  status text not null default 'needs_documents'
+    check (status in ('needs_documents','mismatch','ready_for_admin','approved','rejected')),
+  review_note text not null default '', reviewed_by uuid references public.profiles(id) on delete set null,
+  reviewed_at timestamptz, created_at timestamptz not null default now(), updated_at timestamptz not null default now()
+);
+alter table public.credit_assessments add column if not exists verification_run_id uuid references public.financial_verification_runs(id) on delete set null;
 
 create table if not exists public.user_settings (
   user_id uuid primary key references public.profiles(id) on delete cascade,
@@ -307,8 +327,12 @@ begin
   if coalesce(disclosure_count, 0) < 6 then
     raise exception '필수 공시 6개 항목을 모두 확인해 주세요.';
   end if;
-  if not exists(select 1 from public.credit_assessments where business_id = c.business_id) then
-    raise exception '재무·위험 자료를 먼저 등록해 주세요.';
+  if not exists(
+    select 1 from public.credit_assessments a
+    join public.financial_verification_runs v on v.id = a.verification_run_id
+    where a.business_id = c.business_id and a.is_official and v.status = 'approved'
+  ) then
+    raise exception '증빙 OCR 교차검증과 운영자 승인을 마친 공식 재무·위험 심사가 필요합니다.';
   end if;
   update public.campaigns set status = 'submitted', review_note = '', updated_at = now()
     where id = p_campaign_id returning * into c;
@@ -329,6 +353,15 @@ begin
   select * into c from public.campaigns where id = p_campaign_id for update;
   if c.id is null or c.status not in ('submitted', 'needs_changes', 'published') then
     raise exception '심사할 모집안을 찾을 수 없습니다.';
+  end if;
+  if p_decision = 'published'
+     and not exists(select 1 from public.businesses b where b.id=c.business_id and b.is_demo)
+     and not exists(
+       select 1 from public.credit_assessments a
+       join public.financial_verification_runs v on v.id=a.verification_run_id
+       where a.business_id=c.business_id and a.is_official and v.status='approved'
+     ) then
+    raise exception '공식 재무 원자료 검증이 없는 모집은 공개할 수 없습니다.';
   end if;
   update public.campaigns
     set status = p_decision,
@@ -595,6 +628,9 @@ alter table public.businesses add column if not exists restaurant_license_confir
 alter table public.businesses add column if not exists applicant_is_representative boolean not null default false;
 alter table public.businesses add column if not exists pos_data_consent boolean not null default false;
 alter table public.businesses add column if not exists card_sales_consent boolean not null default false;
+alter table public.businesses add column if not exists owner_story text not null default '';
+alter table public.businesses add column if not exists highlights jsonb not null default '[]'::jsonb;
+alter table public.businesses add column if not exists menu_items jsonb not null default '[]'::jsonb;
 
 alter table public.business_metrics add column if not exists card_sales_6m bigint[] not null default '{}';
 alter table public.business_metrics add column if not exists cash_sales_6m bigint[] not null default '{}';
@@ -787,9 +823,19 @@ create table if not exists public.restaurant_monthly_sales (
   coupons_used integer not null default 0 check (coupons_used >= 0),
   growth_rate numeric not null default 0,
   bonus_rate numeric not null default 0,
+  verification_status text not null default 'owner_claimed'
+    check (verification_status in ('owner_claimed','verified','rejected')),
+  verified_by uuid references public.profiles(id) on delete set null,
+  verified_at timestamptz,
   created_at timestamptz not null default now(),
   unique(business_id, year_month)
 );
+alter table public.restaurant_monthly_sales add column if not exists verification_status text not null default 'owner_claimed';
+alter table public.restaurant_monthly_sales add column if not exists verified_by uuid references public.profiles(id) on delete set null;
+alter table public.restaurant_monthly_sales add column if not exists verified_at timestamptz;
+alter table public.restaurant_monthly_sales drop constraint if exists restaurant_monthly_sales_verification_status_check;
+alter table public.restaurant_monthly_sales add constraint restaurant_monthly_sales_verification_status_check
+  check (verification_status in ('owner_claimed','verified','rejected'));
 
 create table if not exists public.ai_contents (
   id uuid primary key default gen_random_uuid(),
@@ -952,6 +998,14 @@ begin
   perform pg_advisory_xact_lock(hashtextextended(p_campaign_id::text, 0));
   select * into c from public.campaigns where id = p_campaign_id and status = 'published' for update;
   if c.id is null then raise exception '공개된 펀드를 찾을 수 없습니다.'; end if;
+  if not exists(select 1 from public.businesses b where b.id=c.business_id and b.is_demo)
+     and not exists(
+       select 1 from public.credit_assessments a
+       join public.financial_verification_runs v on v.id=a.verification_run_id
+       where a.business_id=c.business_id and a.is_official and v.status='approved'
+     ) then
+    raise exception '공식 재무 검증이 유효하지 않아 현재 참여할 수 없습니다.';
+  end if;
   max_amount := floor(c.target_amount * public.policy_number('max_investment_ratio', 0.01) / unit) * unit;
   select coalesce(invested_amount, 0) into holding from public.investments
     where campaign_id = c.id and investor_id = auth.uid();
@@ -1110,16 +1164,14 @@ begin
   if not exists(select 1 from public.businesses where id=p_business_id and user_id=auth.uid()) then raise exception '본인 사업장만 입력할 수 있습니다.'; end if;
   select total_sales into previous_sales from public.restaurant_monthly_sales where business_id=p_business_id and year_month<p_year_month order by year_month desc limit 1;
   if coalesce(previous_sales,0)>0 then growth:=round((p_total_sales-previous_sales)*100.0/previous_sales,2); end if;
-  if growth>0 then bonus:=least(10,round(growth*public.policy_number('sales_growth_bonus_multiplier',0.2),2)); end if;
-  insert into public.restaurant_monthly_sales(business_id,year_month,total_sales,coupon_sales,coupon_discount_total,coupons_used,growth_rate,bonus_rate)
-    values(p_business_id,date_trunc('month',p_year_month)::date,p_total_sales,p_coupon_sales,p_coupon_discount_total,p_coupons_used,growth,bonus)
+  -- 사업자 직접 입력은 미검증 주장이다. 검증 전에는 투자자 쿠폰 적립률을 바꾸지 않는다.
+  bonus:=0;
+  insert into public.restaurant_monthly_sales(business_id,year_month,total_sales,coupon_sales,coupon_discount_total,coupons_used,growth_rate,bonus_rate,verification_status,verified_by,verified_at)
+    values(p_business_id,date_trunc('month',p_year_month)::date,p_total_sales,p_coupon_sales,p_coupon_discount_total,p_coupons_used,growth,bonus,'owner_claimed',null,null)
     on conflict(business_id,year_month) do update set total_sales=excluded.total_sales,coupon_sales=excluded.coupon_sales,
-      coupon_discount_total=excluded.coupon_discount_total,coupons_used=excluded.coupons_used,growth_rate=excluded.growth_rate,bonus_rate=excluded.bonus_rate
+      coupon_discount_total=excluded.coupon_discount_total,coupons_used=excluded.coupons_used,growth_rate=excluded.growth_rate,bonus_rate=0,
+      verification_status='owner_claimed',verified_by=null,verified_at=null
     returning * into result;
-  if bonus>0 then
-    update public.investments i set accrued_discount=accrued_discount+bonus,updated_at=now()
-      from public.campaigns c where i.campaign_id=c.id and c.business_id=p_business_id and i.invested_amount>0;
-  end if;
   return result;
 end;
 $$;
@@ -1248,5 +1300,163 @@ grant execute on function public.issue_dividend_coupon(uuid,text,text,text,numer
 grant execute on function public.record_monthly_sales(uuid,date,bigint,bigint,bigint,integer) to authenticated;
 grant execute on function public.create_coupon_trade(uuid) to authenticated;
 grant execute on function public.accept_coupon_trade(uuid,uuid) to authenticated;
+
+-- 모집 전 재무자료 검증: 입력값은 주장으로 저장되고 OCR 교차검증·운영자 승인 후 공식화된다.
+create table if not exists public.financial_verification_runs (
+  id uuid primary key default gen_random_uuid(),
+  business_id uuid not null references public.businesses(id) on delete cascade,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  claimed_metrics jsonb not null default '{}', document_results jsonb not null default '[]',
+  orchestration jsonb not null default '{}', model text not null default '',
+  status text not null default 'needs_documents'
+    check (status in ('needs_documents','mismatch','ready_for_admin','approved','rejected')),
+  review_note text not null default '', reviewed_by uuid references public.profiles(id) on delete set null,
+  reviewed_at timestamptz, created_at timestamptz not null default now(), updated_at timestamptz not null default now()
+);
+create index if not exists financial_verification_queue_idx on public.financial_verification_runs(status,created_at desc);
+alter table public.business_metrics add column if not exists verification_status text not null default 'owner_claimed';
+alter table public.business_metrics add column if not exists verification_run_id uuid references public.financial_verification_runs(id) on delete set null;
+alter table public.business_metrics add column if not exists verified_by uuid references public.profiles(id) on delete set null;
+alter table public.business_metrics add column if not exists verified_at timestamptz;
+alter table public.business_metrics drop constraint if exists business_metrics_verification_status_check;
+alter table public.business_metrics add constraint business_metrics_verification_status_check
+  check (verification_status in ('owner_claimed','ai_reviewed','approved','rejected'));
+alter table public.credit_assessments add column if not exists verification_run_id uuid references public.financial_verification_runs(id) on delete set null;
+
+create or replace function public.guard_business_metrics_verification()
+returns trigger language plpgsql security definer set search_path=public as $$
+begin
+  if not public.is_admin() then
+    new.verification_status:='owner_claimed'; new.verification_run_id:=null;
+    new.verified_by:=null; new.verified_at:=null;
+    if tg_op='UPDATE' then
+      update public.credit_assessments set is_official=false where business_id=new.business_id and is_official;
+    end if;
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists guard_business_metrics_verification_trigger on public.business_metrics;
+create trigger guard_business_metrics_verification_trigger before insert or update on public.business_metrics
+for each row execute function public.guard_business_metrics_verification();
+
+create or replace function public.review_financial_verification(p_run_id uuid,p_decision text,p_note text default '')
+returns public.financial_verification_runs language plpgsql security definer set search_path=public as $$
+declare r public.financial_verification_runs; m public.business_metrics;
+begin
+  if not public.is_admin() then raise exception '운영자 권한이 필요합니다.'; end if;
+  if p_decision not in ('approved','rejected') then raise exception '지원하지 않는 검증 결정입니다.'; end if;
+  select * into r from public.financial_verification_runs where id=p_run_id for update;
+  if r.id is null or r.status not in ('ready_for_admin','mismatch','needs_documents','rejected') then raise exception '검토 가능한 재무 검증을 찾을 수 없습니다.'; end if;
+  select * into m from public.business_metrics where business_id=r.business_id for update;
+  if m.business_id is null then raise exception '재무 입력값을 찾을 수 없습니다.'; end if;
+  if m.updated_at>r.created_at then raise exception '검증 후 재무 입력값이 변경되었습니다. 새 검증이 필요합니다.'; end if;
+  if p_decision='approved' and coalesce((r.orchestration->>'readyForAdminReview')::boolean,false) is not true then
+    raise exception '필수 문서 누락 또는 불일치가 있어 승인할 수 없습니다.';
+  end if;
+  update public.financial_verification_runs set status=p_decision,review_note=trim(coalesce(p_note,'')),
+    reviewed_by=auth.uid(),reviewed_at=now(),updated_at=now() where id=r.id returning * into r;
+  update public.business_metrics set verification_status=p_decision,verification_run_id=r.id,
+    verified_by=auth.uid(),verified_at=case when p_decision='approved' then now() else null end where business_id=r.business_id;
+  update public.credit_assessments set is_official=false where business_id=r.business_id;
+  if p_decision='approved' then
+    update public.credit_assessments set is_official=true,verification_run_id=r.id
+    where id=(select id from public.credit_assessments where business_id=r.business_id order by created_at desc limit 1);
+  end if;
+  insert into public.audit_events(actor_user_id,action,entity_type,entity_id,detail)
+    values(auth.uid(),'financial_verification_'||p_decision,'financial_verification',r.id::text,jsonb_build_object('note',p_note));
+  return r;
+end;
+$$;
+alter table public.financial_verification_runs enable row level security;
+drop policy if exists "financial verification scoped read" on public.financial_verification_runs;
+drop policy if exists "financial verification owner insert" on public.financial_verification_runs;
+create policy "financial verification scoped read" on public.financial_verification_runs for select using (user_id=auth.uid() or public.is_admin());
+create policy "financial verification owner insert" on public.financial_verification_runs for insert with check
+  (user_id=auth.uid() and exists(select 1 from public.businesses b where b.id=business_id and b.user_id=auth.uid()));
+revoke all on public.financial_verification_runs from anon,authenticated;
+grant select on public.financial_verification_runs to authenticated;
+grant execute on function public.review_financial_verification(uuid,text,text) to authenticated;
+
+-- 역할별 PostgreSQL Property Graph. 서비스 원장과 같은 DB에서 출처·검증 상태를 보존한다.
+create table if not exists public.knowledge_nodes (
+  id text primary key, role_scope text not null check (role_scope in ('shared','investor','owner')),
+  business_id uuid references public.businesses(id) on delete cascade, node_type text not null, label text not null,
+  properties jsonb not null default '{}', source_ref text not null default 'MOA_SERVICE_POLICY',
+  verification_status text not null default 'policy_verified', updated_at timestamptz not null default now()
+);
+alter table public.knowledge_nodes add column if not exists role_scope text not null default 'shared';
+alter table public.knowledge_nodes add column if not exists business_id uuid references public.businesses(id) on delete cascade;
+alter table public.knowledge_nodes add column if not exists node_type text not null default 'GuideStep';
+alter table public.knowledge_nodes add column if not exists label text not null default '';
+alter table public.knowledge_nodes add column if not exists properties jsonb not null default '{}';
+alter table public.knowledge_nodes add column if not exists source_ref text not null default 'MOA_SERVICE_POLICY';
+alter table public.knowledge_nodes add column if not exists verification_status text not null default 'policy_verified';
+alter table public.knowledge_nodes add column if not exists updated_at timestamptz not null default now();
+alter table public.knowledge_nodes drop constraint if exists knowledge_nodes_role_scope_check;
+alter table public.knowledge_nodes add constraint knowledge_nodes_role_scope_check check (role_scope in ('shared','investor','owner'));
+
+create table if not exists public.knowledge_edges (
+  id text primary key, role_scope text not null check (role_scope in ('shared','investor','owner')),
+  business_id uuid references public.businesses(id) on delete cascade,
+  source_node_id text not null references public.knowledge_nodes(id) on delete cascade,
+  target_node_id text not null references public.knowledge_nodes(id) on delete cascade,
+  relation_type text not null, evidence_refs jsonb not null default '[]',
+  confidence numeric not null default 1 check (confidence between 0 and 1), updated_at timestamptz not null default now()
+);
+alter table public.knowledge_edges add column if not exists role_scope text not null default 'shared';
+alter table public.knowledge_edges add column if not exists business_id uuid references public.businesses(id) on delete cascade;
+alter table public.knowledge_edges add column if not exists evidence_refs jsonb not null default '[]';
+alter table public.knowledge_edges add column if not exists confidence numeric not null default 1;
+alter table public.knowledge_edges add column if not exists updated_at timestamptz not null default now();
+alter table public.knowledge_edges drop constraint if exists knowledge_edges_role_scope_check;
+alter table public.knowledge_edges drop constraint if exists knowledge_edges_confidence_check;
+alter table public.knowledge_edges add constraint knowledge_edges_role_scope_check check (role_scope in ('shared','investor','owner'));
+alter table public.knowledge_edges add constraint knowledge_edges_confidence_check check (confidence between 0 and 1);
+
+create index if not exists knowledge_nodes_scope_idx on public.knowledge_nodes(role_scope,business_id,node_type);
+create index if not exists knowledge_edges_scope_idx on public.knowledge_edges(role_scope,business_id,relation_type);
+insert into public.knowledge_nodes(id,role_scope,node_type,label,properties) values
+('investor:start','investor','GuideStep','투자 시작','{"order":1,"instruction":"투자자 계정으로 로그인하고 공개 모집을 탐색합니다."}'),
+('investor:review','investor','GuideStep','사업과 위험 검토','{"order":2,"instruction":"공식 재무검증, 상권, 위험과 지급조건을 확인합니다."}'),
+('investor:commit','investor','GuideStep','위험 동의 후 참여','{"order":3,"instruction":"한도와 단위 안에서 참여하고 예치 상태를 확인합니다."}'),
+('investor:monitor','investor','GuideStep','모집·집행 추적','{"order":4,"instruction":"중요 변경과 마일스톤 증빙·지급을 추적합니다."}'),
+('investor:exit','investor','GuideStep','회수 요청','{"order":5,"instruction":"종료 후에는 신규 예약과 FIFO 매칭을 기다립니다."}'),
+('owner:business','owner','GuideStep','사업체·대표자 등록','{"order":1,"instruction":"사업자번호, 대표자, 영업신고와 주소를 등록합니다."}'),
+('owner:claims','owner','GuideStep','재무 수치 주장 입력','{"order":2,"instruction":"입력값은 검증 전 사업자 주장으로 저장됩니다."}'),
+('owner:documents','owner','GuideStep','근거자료 업로드','{"order":3,"instruction":"POS·카드매출, 부채, 납세 자료를 업로드합니다."}'),
+('owner:orchestration','owner','GuideStep','AI 교차검증','{"order":4,"instruction":"OCR 추출 후 식별값·기간·금액·중복을 대조합니다."}'),
+('owner:adminReview','owner','GuideStep','운영자 원본 확인','{"order":5,"instruction":"운영자 승인 후에만 공식 심사로 승격됩니다."}'),
+('owner:campaign','owner','GuideStep','모집안·공시 작성','{"order":6,"instruction":"목표, 용도, 위험, 공시와 지급단계를 작성합니다."}')
+on conflict(id) do update set properties=excluded.properties,label=excluded.label,updated_at=now();
+insert into public.knowledge_edges(id,role_scope,source_node_id,target_node_id,relation_type) values
+('investor:start-review','investor','investor:start','investor:review','NEXT'),
+('investor:review-commit','investor','investor:review','investor:commit','NEXT'),
+('investor:commit-monitor','investor','investor:commit','investor:monitor','NEXT'),
+('investor:monitor-exit','investor','investor:monitor','investor:exit','NEXT'),
+('owner:business-claims','owner','owner:business','owner:claims','NEXT'),
+('owner:claims-documents','owner','owner:claims','owner:documents','REQUIRES'),
+('owner:documents-orchestration','owner','owner:documents','owner:orchestration','VERIFIED_BY'),
+('owner:orchestration-review','owner','owner:orchestration','owner:adminReview','REVIEWED_BY'),
+('owner:review-campaign','owner','owner:adminReview','owner:campaign','UNLOCKS')
+on conflict(id) do update set relation_type=excluded.relation_type,updated_at=now();
+create or replace function public.role_knowledge_graph(p_role text,p_business_id uuid default null)
+returns jsonb language sql stable set search_path=public as $$
+  select jsonb_build_object('role',p_role,
+    'nodes',coalesce((select jsonb_agg(to_jsonb(n) order by n.id) from public.knowledge_nodes n where n.role_scope in ('shared',p_role) and (n.business_id is null or n.business_id=p_business_id)),'[]'::jsonb),
+    'edges',coalesce((select jsonb_agg(to_jsonb(e) order by e.id) from public.knowledge_edges e where e.role_scope in ('shared',p_role) and (e.business_id is null or e.business_id=p_business_id)),'[]'::jsonb)
+  ) where p_role in ('investor','owner');
+$$;
+alter table public.knowledge_nodes enable row level security;
+alter table public.knowledge_edges enable row level security;
+drop policy if exists "knowledge nodes scoped read" on public.knowledge_nodes;
+drop policy if exists "knowledge edges scoped read" on public.knowledge_edges;
+create policy "knowledge nodes scoped read" on public.knowledge_nodes for select using
+  (business_id is null or public.is_admin() or exists(select 1 from public.businesses b where b.id=business_id and (b.user_id=auth.uid() or b.verification_status='verified')));
+create policy "knowledge edges scoped read" on public.knowledge_edges for select using
+  (business_id is null or public.is_admin() or exists(select 1 from public.businesses b where b.id=business_id and (b.user_id=auth.uid() or b.verification_status='verified')));
+revoke all on public.knowledge_nodes,public.knowledge_edges from anon,authenticated;
+grant select on public.knowledge_nodes,public.knowledge_edges to anon,authenticated;
+grant execute on function public.role_knowledge_graph(text,uuid) to anon,authenticated;
 
 commit;

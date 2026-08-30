@@ -6,6 +6,8 @@
   "rewrites": [
     { "source": "/api/ai/chat", "destination": "/api/ai?mode=chat" },
     { "source": "/api/ai/ocr", "destination": "/api/ai?mode=ocr" },
+    { "source": "/api/ai/financial-verify", "destination": "/api/ai?mode=financial-verify" },
+    { "source": "/api/ai/story-generator", "destination": "/api/ai?mode=story-generator" },
     { "source": "/api/health", "destination": "/api/health" }
   ],
   "headers": [

@@ -25,3 +25,24 @@ test('투자 한도와 쿠폰 정책은 정책 테이블 값으로 계산한다'
   assert.match(schema, /coupon_trade_max_diff/);
   assert.match(schema, /sales_growth_bonus_multiplier/);
 });
+
+test('공식 재무검증은 모집 제출·공개·투자 시점마다 다시 확인한다', () => {
+  for (const [start, end] of [
+    ['function public.submit_campaign', 'function public.review_campaign'],
+    ['function public.review_campaign', 'function public.submit_milestone_evidence'],
+    ['function public.invest_fund', 'function public.withdraw_fund']
+  ]) {
+    const sql = schema.slice(schema.indexOf(start), schema.indexOf(end));
+    assert.match(sql, /financial_verification_runs/);
+    assert.match(sql, /is_official/);
+    assert.match(sql, /status ?= ?'approved'/);
+  }
+});
+
+test('재무검증 실행은 브라우저가 직접 쓰지 못하고 수기 월매출은 보너스를 지급하지 않는다', () => {
+  assert.match(schema, /grant select on public\.financial_verification_runs to authenticated/);
+  assert.doesNotMatch(schema, /grant select,insert on public\.financial_verification_runs to authenticated/);
+  const sales = schema.slice(schema.indexOf('function public.record_monthly_sales'), schema.indexOf('function public.create_coupon_trade'));
+  assert.match(sales, /bonus:=0/);
+  assert.doesNotMatch(sales, /update public\.investments/);
+});

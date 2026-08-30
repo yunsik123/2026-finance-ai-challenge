@@ -8,7 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "db:apply": "node scripts/apply_supabase.mjs",
-    "test": "node --check src/app.js && node --check src/supabase-cloud.js && node --check src/submission-status.js && node --check api/ai.js && node --test tests/*.test.mjs",
+    "test": "node --check src/app.js && node --check src/supabase-cloud.js && node --check src/submission-status.js && node --check api/ai.js && node --check api/health.js && node --check scripts/apply_supabase.mjs && node --check scripts/verify_live_scenarios.mjs && node --check scripts/verify_financial_graph.mjs && node --test tests/*.test.mjs",
     "check": "npm test && npm run build"
   },
   "devDependencies": {

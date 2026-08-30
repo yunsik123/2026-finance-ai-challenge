@@ -54,6 +54,7 @@ export function buildSubmissionStatus(owner = {}, viewerRole = '') {
   const business = owner.business || null;
   const metrics = owner.metrics || null;
   const campaign = owner.campaign || null;
+  const financialVerification = owner.financialVerification || null;
   const selectedDisclosures = Array.isArray(owner.disclosures) ? owner.disclosures : [];
   const businessMissing = missingObjectFields(business, BUSINESS_FIELDS);
   const metricsMissing = missingObjectFields(metrics, METRIC_FIELDS);
@@ -90,7 +91,13 @@ export function buildSubmissionStatus(owner = {}, viewerRole = '') {
       missing: businessMissing,
       verificationStatus: business?.verificationStatus || 'unverified'
     },
-    metrics: { saved: Boolean(metrics), missing: metricsMissing },
+    metrics: {
+      saved: Boolean(metrics), missing: metricsMissing,
+      claimStatus: metrics?.verification_status || 'not_submitted',
+      verificationStatus: financialVerification?.status || 'not_started',
+      verificationMissingDocuments: financialVerification?.orchestration?.missingDocuments || [],
+      verificationMismatches: financialVerification?.orchestration?.mismatches || []
+    },
     disclosures: {
       selected: DISCLOSURE_ITEMS.filter(item => selectedDisclosures.includes(item.code)).map(item => item.label),
       missing: disclosureMissing
@@ -107,10 +114,12 @@ export function buildSubmissionStatus(owner = {}, viewerRole = '') {
         : null,
       acceptedImageEvidence: ['세금계산서', '영수증', '매출전표', '계약서', '견적서', '설치 완료 사진']
     },
+    requiredFinancialEvidence: ['POS·카드매출 내역', '부채·월 상환 내역', '납세 확인 자료'],
+    optionalFinancialEvidence: ['재무제표', '은행 거래 내역'],
     notCollectedAsRequiredUploads: ['재무제표', '최근 3개월 은행 거래 내역', '세금 신고서'],
     notes: [
       '사업자등록번호와 확인 상태를 저장하지만 현재 사업자등록증 파일 업로드 기능은 없다.',
-      '세금 정상 납부 여부는 예/아니오 입력값이며 세금 신고서 파일이 아니다.',
+      '재무 입력값은 사업자 주장으로 저장되며 OCR 교차검증과 운영자 승인 전에는 공식 심사에 사용할 수 없다.',
       '증빙 이미지는 모집 공개 후 현재 열린 지급 단계의 조건에 맞춰 제출한다.'
     ]
   };

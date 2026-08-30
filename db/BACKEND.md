@@ -20,12 +20,13 @@
 
 ## 인증 방식
 
-1. 사용자가 역할(투자자/소상공인)을 선택하고 이메일, 비밀번호를 제출한다.
-2. **회원가입**: Supabase Auth `/auth/v1/signup`에 사용자 메타데이터(`name`, `role`)와 함께 전송.
-3. **로그인**: Supabase Auth `/auth/v1/token?grant_type=password`로 JWT 토큰 발급.
-4. JWT 토큰으로 `profiles` 테이블을 조회하여 실제 역할을 확인하고, 폼에서 선택한 역할과 불일치 시 강제 로그아웃.
-5. 세션은 `localStorage` 키 `moa.session.v2`에 저장하며, 만료 60초 전 자동 갱신.
-6. `login_events` 테이블에 로그인/로그아웃 이벤트와 브라우저 User-Agent를 기록.
+1. 사용자가 역할(투자자/소상공인)을 선택하고 로그인 이름과 비밀번호를 제출한다.
+2. 로그인 이름은 정규화한 뒤 역할과 함께 SHA-256 식별자로 변환한다. 원래 이름은 이메일 주소에 노출하지 않는다.
+3. **간편 시작**: 사용자가 `처음 시작`을 선택하면 Supabase Auth `/auth/v1/signup`에 사용자 메타데이터(`name`, `role`, `account_type`)와 함께 생성하고, `다시 로그인`을 선택하면 기존 식별자로 로그인한다. 생성된 사용자와 프로필은 역할별 공용 계정이 아니라 개인별로 저장된다.
+4. **이메일 회원가입/로그인**: 별도 화면에서 일반 이메일 계정도 같은 Supabase Auth로 처리한다.
+5. JWT 토큰으로 `profiles` 테이블을 조회하여 실제 역할을 확인하고, 폼에서 선택한 역할과 불일치 시 강제 로그아웃.
+6. 세션은 `localStorage` 키 `moa.session.v2`에 저장하며, 만료 60초 전 자동 갱신.
+7. `login_events` 테이블에 로그인/로그아웃 이벤트와 브라우저 User-Agent를 기록.
 
 ## 데이터베이스 스키마 (Supabase PostgreSQL)
 
@@ -37,6 +38,8 @@
 | `businesses` | 소상공인 사업체 정보 (상호, 업종, 사업자번호, 주소, 매출) |
 | `business_metrics` | 재무·상권 지표 (매출, 현금흐름, 부채, 상권 데이터) |
 | `credit_assessments` | 신용평가 결과 (점수, 등급, 리스크 레벨, 5대 요인) |
+| `financial_verification_runs` | 모집 전 재무자료 OCR 결과, 순차 교차검증, 운영자 승인 상태 |
+| `knowledge_nodes`, `knowledge_edges` | 투자자·소상공인 역할별 절차와 동적 근거 그래프 |
 | `user_settings` | 사용자별 공시 항목 등 설정 |
 | `campaigns` | 펀딩 모집안 (목표금액, 기간, 사용계획, 위험요인, 상태) |
 | `campaign_milestones` | 단계별 지급 조건 (제목, 비율, 증빙 조건, 상태) |
@@ -58,6 +61,8 @@
 | `handle_new_user()` | 회원가입 시 프로필 자동 생성 (트리거) |
 | `submit_campaign()` | 공시 6개 + 2단계 이상 마일스톤 검증 후 심사 요청 |
 | `review_campaign()` | 운영자가 모집안 승인/보완요청/반려 처리 |
+| `review_financial_verification()` | 운영자가 원자료 대조 후 공식평가 승인/반려 |
+| `role_knowledge_graph()` | 역할과 사업체 범위의 근거 그래프 조회 |
 | `submit_milestone_evidence()` | 증빙 제출 (순차 단계 검증 포함) |
 | `review_evidence()` | 운영자 증빙 승인/반려 |
 | `confirm_commitment_escrow()` | 투자자 예치금 확인 처리 |
@@ -72,6 +77,8 @@
 | `GET` | `/api/health` | 시스템 구성 상태 확인 (API 키, Supabase, 모델 정보) |
 | `POST` | `/api/ai/chat` | AI 상담 (현재 화면 컨텍스트 기반, 최근 12개 대화 유지) |
 | `POST` | `/api/ai/ocr` | Vision OCR 증빙 분석 (영수증/세금계산서 → 구조화 JSON) |
+| `POST` | `/api/ai/financial-verify` | 모집 전 재무자료 다중 OCR 및 주장 교차검증 |
+| `POST` | `/api/ai/story-generator` | 가게 소개·사장님 이야기·메뉴 초안 생성 |
 
 ### Supabase PostgREST (프론트엔드에서 직접 호출)
 
