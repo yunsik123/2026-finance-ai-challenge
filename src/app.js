@@ -351,6 +351,52 @@ $('#quickAuthForm').addEventListener('submit', async event => {
   }
 });
 
+$('#openAdminLogin')?.addEventListener('click', () => {
+  if (state.user?.role === 'admin') {
+    switchView('admin');
+  } else {
+    openModal('adminAuthModal');
+  }
+});
+
+$('#adminAuthForm')?.addEventListener('submit', async event => {
+  event.preventDefault();
+  const submit = $('#adminAuthSubmit');
+  const nameInput = $('#adminAuthName');
+  const passwordInput = $('#adminAuthPassword');
+  const name = nameInput.value.trim();
+  const password = passwordInput.value;
+  if (!name || !password) {
+    showToast('운영자 아이디와 비밀번호를 입력해 주세요.', 'info');
+    return;
+  }
+  submit.disabled = true;
+  submit.textContent = '운영자 권한 확인 중…';
+  try {
+    const data = await apiRequest('/api/auth/session', {
+      method: 'POST',
+      body: JSON.stringify({
+        role: 'admin',
+        name,
+        password,
+        action: 'login'
+      })
+    });
+    nameInput.value = '';
+    passwordInput.value = '';
+    applyBootstrap(data);
+    closeModal($('#adminAuthModal'));
+    renderAll();
+    switchView('admin');
+    showToast('운영자 통제실에 접속했습니다.');
+  } catch (error) {
+    showToast(error.message || '운영자 로그인에 실패했습니다.', 'error');
+  } finally {
+    submit.disabled = false;
+    submit.innerHTML = '운영자 통제실 입장 <span>→</span>';
+  }
+});
+
 function renderInvestor() {
   renderCampaignGrid();
   if (state.campaignView === 'map') requestAnimationFrame(renderCampaignMap);

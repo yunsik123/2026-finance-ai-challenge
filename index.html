@@ -17,7 +17,6 @@
     <nav class="role-navigation hidden" id="roleNavigation" aria-label="역할별 화면">
       <button type="button" data-view="investor">투자자</button>
       <button type="button" data-view="owner">소상공인</button>
-      <button type="button" data-view="admin">운영자 심사</button>
     </nav>
     <div class="header-actions">
       <button class="plain-button hidden" id="openMyCommitments" type="button">내 참여</button>
@@ -375,6 +374,43 @@
       </div>
     </section>
   </main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <strong><span>ㅁ</span> 모아 (MOA)</strong>
+        <p>소상공인과 동네 투자자를 잇는 AI 기반 신용평가 & 마일스톤 크라우드펀딩 플랫폼</p>
+      </div>
+      <div class="footer-meta">
+        <span>© 2026 MOA Platform. All rights reserved.</span>
+        <button type="button" class="footer-admin-link" id="openAdminLogin">운영자 심사 페이지</button>
+      </div>
+    </div>
+  </footer>
+
+  <div class="modal" id="adminAuthModal" aria-hidden="true">
+    <div class="modal-backdrop" data-close-modal></div>
+    <div class="modal-card auth-card" role="dialog" aria-modal="true" aria-labelledby="adminAuthTitle">
+      <button class="modal-close optional-auth-close" type="button" data-close-modal aria-label="닫기">×</button>
+      <p class="eyebrow">관리자 보안 통제실</p>
+      <h2 id="adminAuthTitle">운영자 로그인</h2>
+      <p class="modal-description">사전에 발급된 관리자 아이디 또는 이메일과 비밀번호를 입력해 주세요.</p>
+      
+      <form class="quick-auth-form" id="adminAuthForm">
+        <label class="quick-name-label">
+          <span>운영자 아이디 / 이메일</span>
+          <input id="adminAuthName" required autocomplete="username" placeholder="admin 또는 admin@moa.local" autofocus>
+        </label>
+        <label class="quick-name-label">
+          <span>비밀번호</span>
+          <input id="adminAuthPassword" type="password" required autocomplete="current-password" placeholder="비밀번호">
+        </label>
+        <button class="primary-button full-button" type="submit" id="adminAuthSubmit">
+          운영자 통제실 입장 <span>→</span>
+        </button>
+      </form>
+    </div>
+  </div>
 
   <div class="modal" id="authModal" aria-hidden="true">
     <div class="modal-backdrop" data-close-modal></div>

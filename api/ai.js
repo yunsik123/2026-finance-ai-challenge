@@ -314,6 +314,14 @@ async function handleOcr(body, authorization) {
 export function generateFallbackStoreStory({ name = '가게', category = '한식', address = '', keywords = '' }) {
   const storeName = name || '저희 매장';
   const region = address ? address.split(' ').slice(0, 2).join(' ') : '우리 동네';
+  const safeKeywords = String(keywords || '').split(/[,\n]/).map(value => value.trim()).filter(Boolean).slice(0, 5);
+  return {
+    description: `${storeName}은(는) ${region}에 등록한 ${category} 사업체입니다.${safeKeywords.length ? ` 사업자가 입력한 특징은 ${safeKeywords.join(', ')}입니다.` : ' 게시 전에 실제 강점과 운영 현황을 사업자가 직접 보완해야 합니다.'}`,
+    ownerStory: '',
+    highlights: [`#${storeName.replace(/\s+/g, '')}`, `#${category.replace(/\s+/g, '')}`, ...safeKeywords.map(value => '#' + value.replace(/\s+/g, ''))],
+    menuItems: [],
+    requiresOwnerConfirmation: true
+  };
 
   if (category === '카페' || category === '디저트') {
     return {
@@ -361,6 +369,7 @@ async function handleStoryGenerator(body) {
   const category = String(body.category || '한식').trim();
   const address = String(body.address || '').trim();
   const keywords = String(body.keywords || '').trim();
+  return { ok: true, story: generateFallbackStoreStory({ name, category, address, keywords }), model: 'moa-fact-only-copy-v1' };
 
   try {
     const prompt = `소상공인 펀딩 및 소개를 위한 매력적인 스토리텔링을 JSON으로 작성하세요.
@@ -502,4 +511,3 @@ export default async function handler(request, response) {
     return response.status(error.status || 500).json({ ok: false, error: error.message || 'AI 처리 중 오류가 발생했습니다.' });
   }
 }
-

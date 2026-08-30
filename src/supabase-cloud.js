@@ -550,17 +550,27 @@ async function authenticate(values) {
   const password = String(values.password || '');
   const action = values.action || 'login';
 
-  if (!['investor', 'owner'].includes(role)) {
-    throw new Error('투자자 또는 소상공인 역할을 선택해 주세요.');
+  if (action === 'signup' && !['investor', 'owner'].includes(role)) {
+    throw new Error('운영자 계정은 공개 회원가입으로 만들 수 없습니다.');
+  }
+  if (!['investor', 'owner', 'admin'].includes(role)) {
+    throw new Error('올바른 역할을 선택해 주세요.');
   }
   if (!rawInput) {
-    throw new Error('로그인 이름 또는 이메일을 입력해 주세요.');
+    throw new Error('로그인 아이디 또는 이메일을 입력해 주세요.');
   }
-  if (password.length < 8 || password.length > 72) {
-    throw new Error('비밀번호는 8자 이상 72자 이하로 입력해 주세요.');
+  if (password.length < 6 || password.length > 72) {
+    throw new Error('비밀번호는 6자 이상 72자 이하로 입력해 주세요.');
   }
 
-  const email = isEmailInput ? rawInput : await quickAccountEmail(rawInput, role);
+  let email = isEmailInput ? rawInput : '';
+  if (!email) {
+    if (role === 'admin') {
+      email = rawInput.toLowerCase() === 'admin' ? 'admin@moa.local' : (rawInput + '@moa.local');
+    } else {
+      email = await quickAccountEmail(rawInput, role);
+    }
+  }
   let session = null;
 
   if (action === 'signup') {
