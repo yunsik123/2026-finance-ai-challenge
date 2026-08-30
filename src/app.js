@@ -502,10 +502,10 @@ function renderCouponMarket(portfolio) {
     const offered = marketCoupons.get(trade.offered_coupon_id);
     if (!offered) return '';
     const candidate = ownAvailable.find(item => item.id !== offered.id && Math.abs(item.discountRate - offered.discountRate) < 10);
-    return '<article class="trade-row"><span><b>' + escapeHTML(campaignLabel(offered.campaignId)) + ' ' + formatRate(offered.discountRate) + '%</b><small>할인율 차이 10%p 미만 쿠폰만 가능</small></span>'
-      + (trade.offered_by === state.user.id ? '<em>내 교환 제안</em>' : candidate ? '<button type="button" data-accept-trade="' + trade.id + '" data-coupon-id="' + candidate.id + '">내 ' + formatRate(candidate.discountRate) + '% 쿠폰과 교환</button>' : '<em>교환 가능한 내 쿠폰 없음</em>') + '</article>';
+    return '<article class="trade-row"><span><b>' + escapeHTML(campaignLabel(offered.campaignId)) + ' ' + formatRate(offered.discountRate) + '% 할인 쿠폰</b><small>할인율 차이 10%p 이내 안전 맞교환</small></span>'
+      + (trade.offered_by === state.user.id ? '<em>내 교환 제안 (등록 중)</em>' : candidate ? '<button type="button" data-accept-trade="' + trade.id + '" data-coupon-id="' + candidate.id + '">내 ' + formatRate(candidate.discountRate) + '% 쿠폰과 교환하기</button>' : '<em>교환 가능한 내 쿠폰 없음 (차이 10%p 이내 필요)</em>') + '</article>';
   }).filter(Boolean);
-  return '<details class="coupon-market"><summary>쿠폰 교환소 (' + rows.length + '건)</summary><div>' + (rows.join('') || '<p class="empty-copy">열린 교환 제안이 없습니다.</p>') + '</div></details>';
+  return '<details class="coupon-market" open><summary>🏪 실시간 투자자 쿠폰 교환소 (' + rows.length + '건 등록됨)</summary><div>' + (rows.join('') || '<p class="empty-copy">현재 등록된 타인의 교환 제안이 없습니다. 내 쿠폰에서 [교환 등록]을 누르면 다른 투자자와 교환할 수 있습니다.</p>') + '</div></details>';
 }
 
 $('#investorPortfolio').addEventListener('click', async event => {
