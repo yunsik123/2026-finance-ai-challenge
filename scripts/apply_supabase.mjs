@@ -78,30 +78,40 @@ async function authAdmin(pathname, serviceKey, options = {}) {
   return data;
 }
 
-async function ensureAdminAccount() {
+async function ensureDemoAccounts() {
   const serviceKey = await serviceRoleKey();
   const listing = await authAdmin('users?page=1&per_page=1000', serviceKey);
   const users = Array.isArray(listing) ? listing : (listing?.users || []);
-  const existing = users.find(user => String(user.email).toLowerCase() === adminEmail.toLowerCase());
-  const payload = {
-    email: adminEmail,
-    password: adminPassword,
-    email_confirm: true,
-    user_metadata: { name: '모아 운영자', role: 'admin' }
-  };
-  const adminUser = existing
-    ? await authAdmin('users/' + existing.id, serviceKey, { method: 'PUT', body: JSON.stringify(payload) })
-    : await authAdmin('users', serviceKey, { method: 'POST', body: JSON.stringify(payload) });
-  const userId = adminUser?.id || adminUser?.user?.id || existing?.id;
-  if (!userId) throw new Error('운영자 계정 ID를 확인하지 못했습니다.');
 
-  const escapedEmail = adminEmail.replaceAll("'", "''");
-  await executeSql(
-    'alter table public.profiles disable trigger guard_profile_role_trigger;' +
-    " insert into public.profiles(id, email, display_name, role) values ('" + userId + "'::uuid, '" + escapedEmail + "', '모아 운영자', 'admin')" +
-    " on conflict (id) do update set email = excluded.email, display_name = excluded.display_name, role = 'admin', updated_at = now();" +
-    ' alter table public.profiles enable trigger guard_profile_role_trigger;'
-  );
+  const accounts = [
+    { email: adminEmail, password: adminPassword, role: 'admin', name: '모아 운영자' },
+    { email: 'owner@moa.local', password: 'MoaPass2026!', role: 'owner', name: '온기식당 사장님' },
+    { email: 'investor@moa.local', password: 'MoaPass2026!', role: 'investor', name: '김투자' }
+  ];
+
+  for (const acc of accounts) {
+    const existing = users.find(u => String(u.email).toLowerCase() === acc.email.toLowerCase());
+    const payload = {
+      email: acc.email,
+      password: acc.password,
+      email_confirm: true,
+      user_metadata: { name: acc.name, role: acc.role }
+    };
+    const userRes = existing
+      ? await authAdmin('users/' + existing.id, serviceKey, { method: 'PUT', body: JSON.stringify(payload) })
+      : await authAdmin('users', serviceKey, { method: 'POST', body: JSON.stringify(payload) });
+    const userId = userRes?.id || userRes?.user?.id || existing?.id;
+    if (!userId) throw new Error(`${acc.role} 계정 ID를 확인하지 못했습니다.`);
+
+    const escapedEmail = acc.email.replaceAll("'", "''");
+    const escapedName = acc.name.replaceAll("'", "''");
+    await executeSql(
+      'alter table public.profiles disable trigger guard_profile_role_trigger;' +
+      ` insert into public.profiles(id, email, display_name, role) values ('${userId}'::uuid, '${escapedEmail}', '${escapedName}', '${acc.role}')` +
+      ` on conflict (id) do update set email = excluded.email, display_name = excluded.display_name, role = '${acc.role}', updated_at = now();` +
+      ' alter table public.profiles enable trigger guard_profile_role_trigger;'
+    );
+  }
 
   if (generatedPassword) {
     fs.writeFileSync(
@@ -110,7 +120,7 @@ async function ensureAdminAccount() {
       { mode: 0o600 }
     );
   }
-  return { created: !existing, email: adminEmail, password: adminPassword };
+  return { email: adminEmail, password: adminPassword };
 }
 
 async function main() {
@@ -120,12 +130,12 @@ async function main() {
   const schemaSql = fs.readFileSync(path.join(rootDir, 'db', 'schema.sql'), 'utf8');
   console.log('1/2 데이터베이스 스키마와 접근 정책을 적용합니다.');
   await executeSql(schemaSql);
-  console.log('2/2 운영자 계정을 생성하거나 갱신합니다.');
-  const admin = await ensureAdminAccount();
-  console.log('완료: ' + (admin.created ? '새 운영자 계정 생성' : '운영자 계정 갱신'));
+  console.log('2/2 데모 계정들(운영자, 소상공인, 투자자)을 생성하거나 갱신합니다.');
+  const admin = await ensureDemoAccounts();
+  console.log('완료: 운영자, 소상공인, 투자자 계정 준비 완료');
   console.log('운영자 ID: ' + admin.email);
-  console.log('운영자 비밀번호: ' + admin.password);
-  console.log('운영자 정보는 .env.admin.local에도 저장했습니다.');
+  console.log('소상공인 ID: owner@moa.local');
+  console.log('투자자 ID: investor@moa.local');
 }
 
 main().catch(error => {
