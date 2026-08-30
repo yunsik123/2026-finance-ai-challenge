@@ -250,34 +250,45 @@
   </main>
 
   <div class="modal" id="authModal" aria-hidden="true">
-    <div class="modal-backdrop"></div>
+    <div class="modal-backdrop" data-close-modal></div>
     <div class="modal-card auth-card" role="dialog" aria-modal="true" aria-labelledby="authTitle">
       <button class="modal-close optional-auth-close" type="button" data-close-modal aria-label="닫기">×</button>
-      <p class="eyebrow">모아 시작하기</p>
-      <h2 id="authTitle">어떤 목적으로 이용하시나요?</h2>
-      <p class="modal-description" id="authDescription">선택한 역할에 따라 맞춤 화면과 기능을 제공합니다. 가입 후에는 역할을 변경할 수 없으니 신중하게 선택해 주세요.</p>
-      <div class="role-cards" id="authRoleCards">
-        <button type="button" data-auth-role="investor">
-          <span>↗</span>
+      <p class="eyebrow">모아 간편 시작</p>
+      <h2 id="authTitle">역할과 이름을 입력하세요</h2>
+      <p class="modal-description" id="authDescription">복잡한 비밀번호 입력 없이 이름만 넣으면 즉시 계정이 생성되어 바로 시작됩니다.</p>
+      
+      <div class="quick-role-picker" id="quickRolePicker">
+        <button type="button" class="quick-role-btn active" data-quick-role="investor">
+          <span class="role-icon">↗</span>
           <strong>투자자</strong>
-          <small>검증된 소상공인 사업에 참여합니다</small>
-          <ul class="role-features">
-            <li>사업자 정보와 재무 현황 열람</li>
-            <li>단계별 지급 조건과 위험요인 검토</li>
-            <li>참여 약정 및 예치금 집행 추적</li>
-          </ul>
+          <small>펀딩 참여·예치</small>
         </button>
-        <button type="button" data-auth-role="owner">
-          <span>⌂</span>
+        <button type="button" class="quick-role-btn" data-quick-role="owner">
+          <span class="role-icon">⌂</span>
           <strong>소상공인</strong>
-          <small>사업을 등록하고 자금을 모집합니다</small>
-          <ul class="role-features">
-            <li>사업체 등록 및 공시 항목 관리</li>
-            <li>AI 신용평가 및 모집안 작성</li>
-            <li>증빙 제출로 단계별 자금 수령</li>
-          </ul>
+          <small>가게 등록·자금 모집</small>
+        </button>
+        <button type="button" class="quick-role-btn" data-quick-role="admin">
+          <span class="role-icon">🛡️</span>
+          <strong>운영자</strong>
+          <small>심사·통제실</small>
         </button>
       </div>
+
+      <form class="quick-auth-form" id="quickAuthForm">
+        <label class="quick-name-label">
+          <span>이름 (또는 상호명 / 닉네임)</span>
+          <input id="quickAuthName" required autocomplete="name" placeholder="예: 홍길동, 온기식당 사장님" autofocus>
+        </label>
+        <button class="primary-button full-button" type="submit" id="quickAuthSubmit">
+          <span id="quickSubmitLabel">투자자로 바로 시작하기</span> <span>→</span>
+        </button>
+      </form>
+
+      <div class="auth-advanced-section">
+        <button class="link-button" id="toggleClassicAuth" type="button">이메일/비밀번호로 로그인하기 ▼</button>
+      </div>
+
       <form class="auth-form hidden" id="authForm">
         <div class="auth-mode-tabs">
           <button type="button" data-auth-action="login">로그인</button>
@@ -289,9 +300,8 @@
         <label>비밀번호<input id="authPassword" type="password" required minlength="8" autocomplete="current-password" placeholder="8자 이상"></label>
         <button class="primary-button full-button" type="submit" id="authSubmit">로그인</button>
         <button class="link-button" id="forgotPassword" type="button">비밀번호 재설정</button>
-        <button class="link-button" id="changeAuthRole" type="button">← 역할 다시 선택</button>
+        <button class="link-button" id="backToQuickAuth" type="button">← 간편 로그인으로 돌아가기</button>
       </form>
-      <button class="admin-login-link" id="adminLoginLink" type="button">운영자 로그인</button>
     </div>
   </div>
 

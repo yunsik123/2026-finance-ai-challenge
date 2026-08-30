@@ -44,6 +44,7 @@ const state = {
   adminPreviewCampaign: null,
   ownerStep: 'business',
   adminTab: 'campaigns',
+  quickRole: 'investor',
   authRole: null,
   authAction: 'login',
   evidenceImage: '',
@@ -130,7 +131,7 @@ async function refreshData(message = '') {
 }
 
 function allowedViews() {
-  if (!state.user) return [];
+  if (!state.user) return ['investor'];
   if (state.user.role === 'admin') return ['investor', 'owner', 'admin'];
   return [state.user.role];
 }
@@ -142,6 +143,12 @@ function defaultView() {
 }
 
 function switchView(view, scroll = true) {
+  if (!state.user && view !== 'investor') {
+    showToast('로그인이 필요한 화면입니다.', 'info');
+    selectQuickRole(view === 'owner' ? 'owner' : 'admin');
+    openModal('authModal');
+    return;
+  }
   if (!allowedViews().includes(view)) {
     showToast('현재 계정에서는 이 화면을 이용할 수 없습니다.', 'error');
     return;
@@ -157,9 +164,10 @@ function switchView(view, scroll = true) {
 function updateHeader() {
   const nav = $('#roleNavigation');
   const allowed = allowedViews();
-  nav.classList.toggle('hidden', !state.user);
+  nav.classList.remove('hidden');
   $$('[data-view]', nav).forEach(button => {
-    button.classList.toggle('locked', !allowed.includes(button.dataset.view));
+    button.classList.toggle('locked', Boolean(state.user && !allowed.includes(button.dataset.view)));
+    button.classList.toggle('active', button.dataset.view === (state.user ? defaultView() : 'investor'));
   });
   $('#accountLabel').textContent = state.user ? state.user.name + '님' : '로그인';
   $('#openMyCommitments').classList.toggle('hidden', state.user?.role !== 'investor');
@@ -168,7 +176,7 @@ function updateHeader() {
 function renderAccount() {
   if (!state.user) return;
   $('#accountAvatar').textContent = state.user.name.slice(0, 1);
-  $('#accountSummary').textContent = state.user.email + ' · ' + roleLabels[state.user.role] + ' 계정';
+  $('#accountSummary').textContent = (state.user.email || state.user.name) + ' · ' + roleLabels[state.user.role] + ' 계정';
   const list = $('#loginHistoryList');
   list.innerHTML = state.loginHistory.length
     ? state.loginHistory.map(item =>
@@ -186,14 +194,13 @@ function renderAll() {
   renderOwner();
   renderAdmin();
   if (state.user) {
-    $('.optional-auth-close').classList.remove('hidden');
+    $('.optional-auth-close')?.classList.remove('hidden');
     closeModal($('#authModal'));
     switchView(defaultView(), false);
   } else {
-    $$('.view').forEach(view => view.classList.remove('active'));
-    $('.optional-auth-close').classList.add('hidden');
-    resetAuthChoice();
-    openModal('authModal');
+    $('.optional-auth-close')?.classList.remove('hidden');
+    closeModal($('#authModal'));
+    switchView('investor', false);
   }
 }
 
@@ -212,33 +219,81 @@ $$('[data-view]').forEach(button => {
   button.addEventListener('click', () => switchView(button.dataset.view));
 });
 
-function resetAuthChoice() {
-  state.authRole = null;
-  state.authAction = 'login';
-  $('#authRoleCards').classList.remove('hidden');
-  $('#authForm').classList.add('hidden');
-  $('#adminLoginLink').classList.remove('hidden');
-  $('#authTitle').textContent = '어떤 목적으로 이용하시나요?';
-  $('#authDescription').textContent = '선택한 역할에 필요한 화면과 기능만 보여드립니다.';
+const quickRoleLabels = {
+  investor: '투자자로 바로 시작하기',
+  owner: '소상공인으로 바로 시작하기',
+  admin: '운영자로 바로 시작하기'
+};
+
+function selectQuickRole(role) {
+  state.quickRole = role;
+  $$('.quick-role-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.quickRole === role);
+  });
+  const label = quickRoleLabels[role] || '바로 시작하기';
+  const submitLabel = $('#quickSubmitLabel');
+  if (submitLabel) submitLabel.textContent = label;
+  const nameInput = $('#quickAuthName');
+  if (nameInput) nameInput.focus();
 }
 
-function selectAuthRole(role) {
-  state.authRole = role;
-  state.authAction = 'login';
-  $('#authRoleCards').classList.add('hidden');
+$$('.quick-role-btn').forEach(button => {
+  button.addEventListener('click', () => selectQuickRole(button.dataset.quickRole));
+});
+
+$('#quickAuthForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  const submit = $('#quickAuthSubmit');
+  const nameInput = $('#quickAuthName');
+  const name = nameInput.value.trim();
+  if (!name) {
+    showToast('이름 또는 닉네임을 입력해 주세요.', 'info');
+    nameInput.focus();
+    return;
+  }
+  submit.disabled = true;
+  const submitLabel = $('#quickSubmitLabel');
+  if (submitLabel) submitLabel.textContent = '계정을 준비하고 있습니다…';
+  try {
+    const data = await apiRequest('/api/auth/session', {
+      method: 'POST',
+      body: JSON.stringify({
+        quick: true,
+        role: state.quickRole || 'investor',
+        name
+      })
+    });
+    nameInput.value = '';
+    applyBootstrap(data);
+    renderAll();
+    showToast(state.user.name + '님, 환영합니다.');
+  } catch (error) {
+    showToast(error.message || '로그인에 실패했습니다.', 'error');
+  } finally {
+    submit.disabled = false;
+    if (submitLabel) submitLabel.textContent = quickRoleLabels[state.quickRole || 'investor'];
+  }
+});
+
+$('#toggleClassicAuth')?.addEventListener('click', () => {
+  $('#quickRolePicker').classList.add('hidden');
+  $('#quickAuthForm').classList.add('hidden');
+  $('#toggleClassicAuth').parentElement.classList.add('hidden');
   $('#authForm').classList.remove('hidden');
-  $('#adminLoginLink').classList.toggle('hidden', role === 'admin');
-  $('#authTitle').textContent = roleLabels[role] + ' 계정';
-  $('#selectedRoleLabel').textContent = roleLabels[role] + ' 전용 화면으로 시작합니다';
   setAuthAction('login');
-}
+});
+
+$('#backToQuickAuth')?.addEventListener('click', () => {
+  $('#quickRolePicker').classList.remove('hidden');
+  $('#quickAuthForm').classList.remove('hidden');
+  $('#toggleClassicAuth').parentElement.classList.remove('hidden');
+  $('#authForm').classList.add('hidden');
+});
 
 function setAuthAction(action) {
-  if (state.authRole === 'admin') action = 'login';
   state.authAction = action;
   $$('[data-auth-action]').forEach(button => {
     button.classList.toggle('active', button.dataset.authAction === action);
-    button.classList.toggle('hidden', state.authRole === 'admin' && button.dataset.authAction === 'signup');
   });
   const signup = action === 'signup';
   $('#authNameLabel').classList.toggle('hidden', !signup);
@@ -247,14 +302,9 @@ function setAuthAction(action) {
   $('#forgotPassword').classList.toggle('hidden', signup);
 }
 
-$$('[data-auth-role]').forEach(button => {
-  button.addEventListener('click', () => selectAuthRole(button.dataset.authRole));
-});
 $$('[data-auth-action]').forEach(button => {
   button.addEventListener('click', () => setAuthAction(button.dataset.authAction));
 });
-$('#changeAuthRole').addEventListener('click', resetAuthChoice);
-$('#adminLoginLink').addEventListener('click', () => selectAuthRole('admin'));
 
 $('#authForm').addEventListener('submit', async event => {
   event.preventDefault();
@@ -266,7 +316,7 @@ $('#authForm').addEventListener('submit', async event => {
       method: 'POST',
       body: JSON.stringify({
         action: state.authAction,
-        role: state.authRole,
+        role: state.quickRole || 'investor',
         name: $('#authName').value.trim(),
         email: $('#authEmail').value.trim(),
         password: $('#authPassword').value
@@ -392,7 +442,13 @@ function openCampaignDetail(id) {
     + escapeHTML(item.condition) + '</small></div><span>'
     + escapeHTML(milestoneStatusLabels[item.status] || item.status) + '</span></div>'
   ).join('');
+  const isGuest = !state.user;
   const canCommit = state.user?.role === 'investor';
+  const commitButtonHtml = isGuest
+    ? '<button class="primary-button full-button" type="button" id="promptLoginCommit">로그인하고 참여하기 <span>→</span></button>'
+    : '<button class="primary-button full-button" type="submit" ' + (canCommit ? '' : 'disabled')
+      + '>' + (canCommit ? '참여 의사 등록' : '투자자 계정에서 참여 가능') + '</button>';
+
   $('#campaignDetailContent').innerHTML =
     '<div class="detail-hero"><span>운영자 심사 완료 · 조건부 지급</span><h2 id="campaignDetailTitle">'
     + escapeHTML(campaign.business?.name || campaign.name) + '</h2><p>'
@@ -411,16 +467,27 @@ function openCampaignDetail(id) {
     + '<p>아래 금액은 참여 의사 등록입니다. 결제·예치 확인 전에는 지급 재원으로 계산되지 않습니다.</p>'
     + '<form id="commitmentForm"><label>참여 금액<input id="commitmentAmount" type="number" min="1000" step="1000" value="100000" required></label>'
     + '<label class="check-line"><input id="commitmentRisk" type="checkbox" required> 원금 손실 가능성과 사업·증빙 위험을 확인했습니다.</label>'
-    + '<button class="primary-button full-button" type="submit" ' + (canCommit ? '' : 'disabled')
-    + '>' + (canCommit ? '참여 의사 등록' : '투자자 계정에서 참여 가능') + '</button></form></aside>'
+    + commitButtonHtml + '</form></aside>'
     + '</div></div>';
   openModal('campaignModal');
+  $('#promptLoginCommit')?.addEventListener('click', () => {
+    closeModal($('#campaignModal'));
+    selectQuickRole('investor');
+    openModal('authModal');
+  });
   $('#commitmentForm').addEventListener('submit', submitCommitment);
 }
 
 async function submitCommitment(event) {
   event.preventDefault();
-  if (state.user?.role !== 'investor') return;
+  if (!state.user) {
+    showToast('로그인이 필요합니다. 간편 로그인을 진행해 주세요.', 'info');
+    closeModal($('#campaignModal'));
+    selectQuickRole('investor');
+    openModal('authModal');
+    return;
+  }
+  if (state.user.role !== 'investor') return;
   const amount = Number($('#commitmentAmount').value);
   if (amount < 1000 || !$('#commitmentRisk').checked) {
     showToast('금액과 위험 확인 동의를 확인해 주세요.', 'error');
