@@ -1,4 +1,5 @@
 import { verifyBusiness } from './business-verification.js';
+import { assessMetrics } from './risk-model.js';
 
 const runtimeEnv = import.meta.env || {};
 const supabaseUrl = String(runtimeEnv.VITE_SUPABASE_URL || '')
@@ -177,6 +178,10 @@ function assessmentDto(row) {
     riskLevel: row.risk_level,
     fundingLimit: Number(row.funding_limit),
     components: row.components || {},
+    contributions: row.contributions || [],
+    diagnostics: row.model_inputs || {},
+    methodology: row.methodology || {},
+    modelVersion: row.model_version || '',
     missing: row.missing_fields || [],
     isOfficial: Boolean(row.is_official),
     verificationRunId: row.verification_run_id || null,
@@ -538,102 +543,111 @@ async function bootstrap() {
 }
 
 async function authenticate(values) {
-  let result;
-  if (values.quick) {
-    const role = values.role || 'investor';
-    const name = String(values.name || '').normalize('NFKC').trim().replace(/\s+/g, ' ');
-    const password = String(values.password || '');
-    if (!['investor', 'owner'].includes(role)) {
-      throw new Error('운영자는 발급받은 이메일 계정으로 로그인해 주세요.');
+  const role = values.role || 'investor';
+  const rawInput = String(values.name || values.email || '').trim();
+  const isEmailInput = rawInput.includes('@');
+  const displayName = isEmailInput ? (values.name || rawInput.split('@')[0]) : rawInput;
+  const password = String(values.password || '');
+  const action = values.action || 'login';
+
+  if (!['investor', 'owner'].includes(role)) {
+    throw new Error('투자자 또는 소상공인 역할을 선택해 주세요.');
+  }
+  if (!rawInput) {
+    throw new Error('로그인 이름 또는 이메일을 입력해 주세요.');
+  }
+  if (password.length < 8 || password.length > 72) {
+    throw new Error('비밀번호는 8자 이상 72자 이하로 입력해 주세요.');
+  }
+
+  const email = isEmailInput ? rawInput : await quickAccountEmail(rawInput, role);
+  let session = null;
+
+  if (action === 'signup') {
+    // 1. 서버리스 Direct Auth 시도 (Admin API로 email_confirm=true 생성하여 Email Rate Limit 완전 차단)
+    try {
+      const serverAuthRes = await fetch('/api/ai/auth-direct', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, name: displayName, role, action: 'signup' })
+      });
+      if (serverAuthRes.ok) {
+        const data = await serverAuthRes.json();
+        if (data.session?.access_token) {
+          session = data.session;
+        }
+      } else {
+        const errData = await serverAuthRes.json().catch(() => ({}));
+        if (serverAuthRes.status === 409 || errData?.error?.includes('이미 사용 중인')) {
+          throw new Error('이미 사용 중인 로그인 이름입니다. 다시 로그인해 주세요.');
+        }
+      }
+    } catch (directErr) {
+      if (directErr.message?.includes('이미 사용 중인')) throw directErr;
+      // 서버리스가 없는 로컬/오프라인 환경일 경우 아래 Supabase 직접 호출로 fallback
     }
-    if (password.length < 8 || password.length > 72) {
-      throw new Error('비밀번호는 8자 이상 72자 이하로 입력해 주세요.');
-    }
-    const email = await quickAccountEmail(name, role);
-    if (values.action === 'signup') {
+
+    // 2. 만약 Direct Auth 세션이 없으면 Supabase Auth Client로 가입 시도
+    if (!session?.access_token) {
       try {
-        result = await auth('signup', {
+        const signupRes = await auth('signup', {
           email,
           password,
-          data: { name, role, account_type: 'quick' }
+          data: { name: displayName, role, account_type: isEmailInput ? 'email' : 'quick' }
         });
+        session = signupRes?.access_token ? signupRes : signupRes?.session;
+        if (!session?.access_token) {
+          // 자동 로그인을 위해 토큰 발급 시도
+          const tokenRes = await auth('token?grant_type=password', { email, password }).catch(() => null);
+          if (tokenRes?.access_token) session = tokenRes;
+        }
       } catch (signupError) {
-        if ([400, 409, 422].includes(signupError.status)) {
-          throw new Error('이미 사용 중인 로그인 이름입니다. 다시 로그인하거나 다른 이름을 사용해 주세요.');
+        if ([400, 409, 422].includes(signupError.status) || signupError.message?.includes('already registered')) {
+          throw new Error('이미 사용 중인 로그인 이름입니다. 다시 로그인해 주세요.');
+        }
+        if (signupError.message?.includes('rate limit') || signupError.status === 429) {
+          throw new Error('요청이 많습니다. 이미 가입된 이름이라면 [다시 로그인]을 선택해 주세요.');
         }
         throw signupError;
       }
-    } else {
-      try {
-        result = await auth('token?grant_type=password', { email, password });
-      } catch (loginError) {
-        if ([400, 401].includes(loginError.status)) {
-          throw new Error('로그인 이름 또는 비밀번호가 일치하지 않습니다. 처음이라면 먼저 계정을 만들어 주세요.');
-        }
-        throw loginError;
-      }
     }
-    const session = result?.access_token ? result : result?.session;
-    if (!session?.access_token) {
-      if (result?.user?.identities?.length === 0) {
-        throw new Error('이미 사용 중인 로그인 이름입니다. 다시 로그인하거나 다른 이름을 사용해 주세요.');
-      }
-      throw new Error('계정 생성 후 자동 로그인하지 못했습니다. 간편 가입 설정을 확인해 주세요.');
-    }
-    session.user = result.user || session.user;
-    saveSession(session);
-
-    const profile = first(await rest('profiles?select=*&id=eq.' + session.user.id + '&limit=1'));
-    if (!profile || profile.role !== role) {
-      saveSession(null);
-      throw new Error('계정 정보를 확인하지 못했습니다. 다시 시도해 주세요.');
-    }
-
-    await rest('login_events', {
-      method: 'POST',
-      body: { user_id: session.user.id, event_type: 'login_success', user_agent: navigator.userAgent },
-      prefer: 'return=minimal'
-    }).catch(() => {});
-
-    return bootstrap();
-  }
-
-  if (values.action === 'signup') {
-    if (!['investor', 'owner'].includes(values.role)) {
-      throw new Error('운영자 계정은 공개 회원가입으로 만들 수 없습니다.');
-    }
-    result = await auth('signup', {
-      email: values.email,
-      password: values.password,
-      data: { name: values.name, role: values.role }
-    });
   } else {
-    result = await auth('token?grant_type=password', {
-      email: values.email,
-      password: values.password
-    });
+    // 다시 로그인 (Login)
+    try {
+      const loginRes = await auth('token?grant_type=password', { email, password });
+      session = loginRes?.access_token ? loginRes : loginRes?.session;
+    } catch (loginError) {
+      if ([400, 401].includes(loginError.status) || loginError.message?.includes('Invalid login credentials')) {
+        throw new Error('로그인 정보가 일치하지 않습니다. 처음이라면 [처음 시작]을 선택해 주세요.');
+      }
+      throw loginError;
+    }
   }
-  const session = result?.access_token ? result : result?.session;
+
   if (!session?.access_token) {
-    throw new Error('이메일 확인을 마친 뒤 로그인해 주세요.');
+    throw new Error('로그인 토큰을 발급받지 못했습니다. 다시 시도해 주세요.');
   }
-  session.user = result.user || session.user;
+
   saveSession(session);
+
   const profile = first(await rest('profiles?select=*&id=eq.' + session.user.id + '&limit=1'));
   if (!profile) {
-    saveSession(null);
-    throw new Error('계정 정보를 불러오지 못했습니다.');
+    // 프로필이 아직 생성 중인 경우 잠시 대기 후 재조회
+    await new Promise(r => setTimeout(r, 400));
   }
-  if (values.role && profile.role !== values.role) {
+  const finalProfile = first(await rest('profiles?select=*&id=eq.' + session.user.id + '&limit=1'));
+  if (finalProfile && role && finalProfile.role !== role && finalProfile.role !== 'admin') {
     saveSession(null);
     const labels = { investor: '투자자', owner: '소상공인', admin: '운영자' };
-    throw new Error('이 계정은 ' + labels[profile.role] + ' 계정입니다.');
+    throw new Error('이 계정은 ' + (labels[finalProfile.role] || finalProfile.role) + ' 계정입니다.');
   }
+
   await rest('login_events', {
     method: 'POST',
-    body: { user_id: profile.id, event_type: 'login_success', user_agent: navigator.userAgent },
+    body: { user_id: session.user.id, event_type: 'login_success', user_agent: navigator.userAgent },
     prefer: 'return=minimal'
-  });
+  }).catch(() => {});
+
   return bootstrap();
 }
 
@@ -680,38 +694,6 @@ async function saveBusiness(body) {
     prefer: 'resolution=merge-duplicates,return=representation'
   }));
   return { ok: true, business: businessDto(row), verification };
-}
-
-function assessMetrics(body, business) {
-  const clamp = (value, min = 0, max = 100) => Math.max(min, Math.min(max, value));
-  const sales = body.sales6m.map(Number);
-  const growth = sales[0] > 0 ? (sales[5] / sales[0] - 1) * 100 : 0;
-  const cashCoverage = Number(body.operatingCashFlow) / Math.max(Number(body.monthlyDebtPayment), 1);
-  const debtRatio = Number(body.debtTotal) / Math.max(Number(business.sales) * 12, 1);
-  const components = {
-    '매출 지속성': Number(clamp(55 + growth * 1.4, 0, 100).toFixed(1)),
-    '현금흐름 여력': Number(clamp(35 + cashCoverage * 18, 0, 100).toFixed(1)),
-    '부채 부담': Number(clamp(90 - debtRatio * 35 - Number(body.overdueCount) * 20, 0, 100).toFixed(1)),
-    '사업 운영 안정성': Number(clamp(45 + business.age * 5 + (body.taxCompliant ? 12 : -25), 0, 100).toFixed(1)),
-    '상권 회복력': Number(clamp(55 + Number(body.footTrafficGrowth) * 1.5 + Number(body.localSalesGrowth) - Number(body.closureRate), 0, 100).toFixed(1))
-  };
-  const score = Number(
-    (components['매출 지속성'] * .25 + components['현금흐름 여력'] * .25
-      + components['부채 부담'] * .2 + components['사업 운영 안정성'] * .15
-      + components['상권 회복력'] * .15).toFixed(1)
-  );
-  const missing = [];
-  if (!business.number) missing.push('사업자등록 확인');
-  if (!body.sales6m.some(Number)) missing.push('최근 매출');
-  if (body.employeeCount === 0) missing.push('고용 현황 확인');
-  return {
-    score,
-    riskLevel: score >= 75 ? 'low' : score >= 55 ? 'review' : 'high',
-    fundingLimit: Math.floor(Math.max(0, business.sales * (score / 100)) / 100000) * 100000,
-    components,
-    missing,
-    grade: score >= 80 ? 'S2' : score >= 70 ? 'S3' : score >= 60 ? 'S4' : score >= 50 ? 'S5' : 'S7'
-  };
 }
 
 async function saveMetrics(body) {
@@ -761,8 +743,11 @@ async function saveMetrics(body) {
       risk_level: assessment.riskLevel,
       funding_limit: assessment.fundingLimit,
       components: assessment.components,
+      contributions: assessment.contributions,
+      model_inputs: assessment.diagnostics,
+      methodology: assessment.methodology,
       missing_fields: assessment.missing,
-      model_version: 'moa-risk-v3-owner-claim',
+      model_version: assessment.methodology.modelVersion,
       is_official: false
     },
     prefer: 'return=minimal'

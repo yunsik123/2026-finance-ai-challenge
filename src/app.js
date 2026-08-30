@@ -2,6 +2,11 @@ import { cloudConfigured, cloudRequest, cloudSessionHeaders } from './supabase-c
 import { DEMO_CAMPAIGNS } from './demo-campaigns.js';
 import { buildSubmissionStatus } from './submission-status.js';
 import { buildRoleKnowledgeGraph } from './knowledge-graph.js';
+import { scoreContributions } from './risk-model.js';
+import { buildAuditReport, renderAuditReportHtml } from './audit-report.js';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
+import QRCode from 'qrcode';
 import {
   getCommercialAreaByAddress,
   getCommercialInsightCards,
@@ -63,9 +68,15 @@ const state = {
   evidenceFilename: '',
   evidenceResult: null,
   evidenceAnalysisId: null,
+  financialDocumentImages: [],
   chatHistory: [],
   investorAreaCode: '',
-  ownerAreaCode: ''
+  ownerAreaCode: '',
+  campaignView: 'grid',
+  map: null,
+  mapMarkers: null,
+  redeemCoupon: null,
+  auditReport: null
 };
 
 function campaignsWithExamples(campaigns = []) {
@@ -267,33 +278,24 @@ function setQuickAuthAction(action) {
     button.classList.toggle('active', button.dataset.quickAuthAction === state.quickAuthAction);
   });
   $('#quickSubmitLabel').textContent = quickSubmitText();
-  if (state.quickRole !== 'admin') {
-    $('#authDescription').textContent = state.quickAuthAction === 'signup'
-      ? '로그인 이름과 비밀번호로 내 계정을 만들고 바로 시작합니다.'
-      : '처음 계정을 만들 때 입력한 로그인 이름과 비밀번호를 입력하세요.';
-  }
+  $('#authDescription').textContent = state.quickAuthAction === 'signup'
+    ? '로그인 아이디와 비밀번호를 입력하면 바로 계정이 생성됩니다.'
+    : '가입 시 사용한 로그인 아이디와 비밀번호를 입력해 주세요.';
   $('#quickAuthPassword').autocomplete = state.quickAuthAction === 'signup' ? 'new-password' : 'current-password';
 }
 
 function selectQuickRole(role) {
-  state.quickRole = role;
+  state.quickRole = role === 'owner' ? 'owner' : 'investor';
   $$('.quick-role-btn').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.quickRole === role);
+    btn.classList.toggle('active', btn.dataset.quickRole === state.quickRole);
   });
   const submitLabel = $('#quickSubmitLabel');
   if (submitLabel) submitLabel.textContent = quickSubmitText();
-  const adminSelected = role === 'admin';
-  $('#quickAuthForm')?.classList.toggle('hidden', adminSelected);
-  $('#authDescription').textContent = adminSelected
-    ? '운영자 계정은 공개로 만들 수 없습니다. 사전에 발급된 이메일과 비밀번호로 로그인하세요.'
-    : state.quickAuthAction === 'signup'
-      ? '로그인 이름과 비밀번호로 내 계정을 만들고 바로 시작합니다.'
-      : '처음 계정을 만들 때 입력한 로그인 이름과 비밀번호를 입력하세요.';
-  $('#toggleClassicAuth').textContent = adminSelected
-    ? '운영자 이메일로 로그인하기 ▼'
-    : '이메일 계정으로 로그인·회원가입 ▼';
+  $('#authDescription').textContent = state.quickAuthAction === 'signup'
+    ? '로그인 아이디와 비밀번호를 입력하면 바로 계정이 생성됩니다.'
+    : '가입 시 사용한 로그인 아이디와 비밀번호를 입력해 주세요.';
   const nameInput = $('#quickAuthName');
-  if (nameInput && !adminSelected) nameInput.focus();
+  if (nameInput) nameInput.focus();
 }
 
 $$('.quick-role-btn').forEach(button => {
@@ -313,7 +315,7 @@ $('#quickAuthForm').addEventListener('submit', async event => {
   const name = nameInput.value.trim();
   const password = passwordInput.value;
   if (name.length < 2) {
-    showToast('로그인 이름을 2자 이상 입력해 주세요.', 'info');
+    showToast('로그인 아이디를 2자 이상 입력해 주세요.', 'info');
     nameInput.focus();
     return;
   }
@@ -349,90 +351,9 @@ $('#quickAuthForm').addEventListener('submit', async event => {
   }
 });
 
-$('#toggleClassicAuth')?.addEventListener('click', () => {
-  $('#quickRolePicker').classList.add('hidden');
-  $('#quickAuthForm').classList.add('hidden');
-  $('#toggleClassicAuth').parentElement.classList.add('hidden');
-  $('#authForm').classList.remove('hidden');
-  const adminSelected = state.quickRole === 'admin';
-  $('[data-auth-action="signup"]')?.classList.toggle('hidden', adminSelected);
-  $('#selectedRoleLabel').textContent = (roleLabels[state.quickRole] || '투자자') + ' 계정';
-  setAuthAction('login');
-});
-
-$('#backToQuickAuth')?.addEventListener('click', () => {
-  $('#quickRolePicker').classList.remove('hidden');
-  $('#quickAuthForm').classList.remove('hidden');
-  $('#toggleClassicAuth').parentElement.classList.remove('hidden');
-  $('#authForm').classList.add('hidden');
-  selectQuickRole(state.quickRole || 'investor');
-});
-
-function setAuthAction(action) {
-  state.authAction = action;
-  $$('[data-auth-action]').forEach(button => {
-    button.classList.toggle('active', button.dataset.authAction === action);
-  });
-  const signup = action === 'signup';
-  $('#authNameLabel').classList.toggle('hidden', !signup);
-  $('#authName').required = signup;
-  $('#authSubmit').textContent = signup ? '회원가입하고 시작하기' : '로그인';
-  $('#forgotPassword').classList.toggle('hidden', signup);
-  $('#authPassword').autocomplete = signup ? 'new-password' : 'current-password';
-}
-
-$$('[data-auth-action]').forEach(button => {
-  button.addEventListener('click', () => setAuthAction(button.dataset.authAction));
-});
-
-$('#authForm').addEventListener('submit', async event => {
-  event.preventDefault();
-  const submit = $('#authSubmit');
-  submit.disabled = true;
-  submit.textContent = '계정을 확인하고 있습니다…';
-  try {
-    const data = await apiRequest('/api/auth/session', {
-      method: 'POST',
-      body: JSON.stringify({
-        action: state.authAction,
-        role: state.quickRole || 'investor',
-        name: $('#authName').value.trim(),
-        email: $('#authEmail').value.trim(),
-        password: $('#authPassword').value
-      })
-    });
-    $('#authPassword').value = '';
-    applyBootstrap(data);
-    renderAll();
-    showToast(state.user.name + '님, 환영합니다.');
-  } catch (error) {
-    showToast(error.message, 'error');
-  } finally {
-    submit.disabled = false;
-    submit.textContent = state.authAction === 'signup' ? '회원가입하고 시작하기' : '로그인';
-  }
-});
-
-$('#forgotPassword').addEventListener('click', async () => {
-  const email = $('#authEmail').value.trim();
-  if (!email) {
-    showToast('재설정 안내를 받을 이메일을 먼저 입력해 주세요.', 'info');
-    $('#authEmail').focus();
-    return;
-  }
-  try {
-    await apiRequest('/api/auth/recover', {
-      method: 'POST',
-      body: JSON.stringify({ email })
-    });
-    showToast('비밀번호 재설정 안내를 이메일로 보냈습니다.');
-  } catch (error) {
-    showToast(error.message, 'error');
-  }
-});
-
 function renderInvestor() {
   renderCampaignGrid();
+  if (state.campaignView === 'map') requestAnimationFrame(renderCampaignMap);
   renderDiscovery();
   renderPortfolio();
   renderCommitments();
@@ -565,16 +486,39 @@ $('#couponWallet').addEventListener('click', async event => {
     } catch (error) { showToast(error.message, 'error'); button.disabled = false; }
     return;
   }
-  const orderAmount = Number(window.prompt('음식점 주문금액을 입력하세요.', 30000));
-  if (!orderAmount) return;
+  const coupon = (state.portfolio?.coupons || []).find(item => item.id === button.dataset.useCoupon);
+  if (!coupon) return showToast('사용할 쿠폰을 현재 원장에서 확인하지 못했습니다.', 'error');
+  state.redeemCoupon = coupon;
+  $('#couponRedeemSummary').textContent = campaignLabel(coupon.campaignId) + ' · ' + coupon.discountRate + '% 할인';
+  $('#couponOrderAmount').value = 30000;
+  $('#couponQr').innerHTML = '<span class="loader"></span>';
+  openModal('couponRedeemModal');
+  try {
+    const payload = JSON.stringify({ type: 'MOA_COUPON_V1', couponId: coupon.id, campaignId: coupon.campaignId });
+    const dataUrl = await QRCode.toDataURL(payload, { width: 260, margin: 2, errorCorrectionLevel: 'M', color: { dark: '#173d34', light: '#ffffff' } });
+    $('#couponQr').innerHTML = '<img src="' + dataUrl + '" alt="MOA 쿠폰 ' + escapeHTML(coupon.id) + ' QR 코드">';
+  } catch (error) {
+    $('#couponQr').innerHTML = '<p>QR 생성 실패: ' + escapeHTML(error.message) + '</p>';
+  }
+});
+
+$('#couponRedeemForm')?.addEventListener('submit', async event => {
+  event.preventDefault();
+  const coupon = state.redeemCoupon;
+  const orderAmount = Number($('#couponOrderAmount').value);
+  if (!coupon || !orderAmount) return;
+  const button = $('button[type="submit"]', event.currentTarget);
   button.disabled = true;
   try {
     const result = await apiRequest('/api/coupon/use', {
-      method: 'POST', body: JSON.stringify({ couponId: button.dataset.useCoupon, orderAmount })
+      method: 'POST', body: JSON.stringify({ couponId: coupon.id, orderAmount })
     });
-    await refreshData('쿠폰 사용이 완료됐습니다. 할인액 ' + won(result.coupon?.discountAmount || 0) + '이 기록됐습니다.');
+    closeModal($('#couponRedeemModal'));
+    state.redeemCoupon = null;
+    await refreshData('쿠폰 사용이 완료됐습니다. 할인액 ' + won(result.coupon?.discountAmount || 0) + '이 DB 원장에 기록됐습니다.');
   } catch (error) {
     showToast(error.message, 'error');
+  } finally {
     button.disabled = false;
   }
 });
@@ -589,6 +533,7 @@ function renderInvestorLocation(address, updateInput = true) {
     result.innerHTML = '<div class="location-empty"><strong>아직 연결된 상권 데이터가 없습니다</strong>'
       + '<p>현재는 성수·연남·서촌·행궁동·전포·대전 중앙로 예시 상권을 지원합니다. 주소는 저장하거나 검색할 수 있지만, 수치 자동 반영 전 최신 공공데이터 확인이 필요합니다.</p></div>';
     renderCampaignGrid();
+    if (state.campaignView === 'map') renderCampaignMap();
     return;
   }
   state.investorAreaCode = area.areaCode;
@@ -601,8 +546,10 @@ function renderInvestorLocation(address, updateInput = true) {
     $('#investorLocation').value = '';
     result.classList.add('hidden');
     renderCampaignGrid();
+    if (state.campaignView === 'map') renderCampaignMap();
   });
   renderCampaignGrid();
+  if (state.campaignView === 'map') renderCampaignMap();
 }
 
 $('#investorLocationForm').addEventListener('submit', event => {
@@ -620,10 +567,9 @@ $$('[data-location-pick]').forEach(button => {
   button.addEventListener('click', () => renderInvestorLocation(button.dataset.locationPick));
 });
 
-function renderCampaignGrid() {
-  const grid = $('#campaignGrid');
+function filteredCampaigns() {
   const query = $('#campaignSearch').value.trim().toLocaleLowerCase('ko');
-  const campaigns = state.campaigns.filter(item => {
+  return state.campaigns.filter(item => {
     const haystack = [
       item.name, item.business?.name, item.business?.category,
       item.business?.address, item.plan
@@ -632,6 +578,11 @@ function renderCampaignGrid() {
     const locationMatches = !state.investorAreaCode || itemArea?.areaCode === state.investorAreaCode;
     return locationMatches && (!query || haystack.includes(query));
   });
+}
+
+function renderCampaignGrid() {
+  const grid = $('#campaignGrid');
+  const campaigns = filteredCampaigns();
   if (!campaigns.length) {
     grid.innerHTML = '<div class="empty-state"><strong>현재 공개된 모집이 없습니다</strong>'
       + '<p>운영자 심사를 통과한 모집만 이곳에 표시됩니다.</p></div>';
@@ -662,7 +613,58 @@ function renderCampaignGrid() {
   }).join('');
 }
 
-$('#campaignSearch').addEventListener('input', renderCampaignGrid);
+function renderCampaignMap() {
+  if (state.campaignView !== 'map' || !$('#campaignMap')) return;
+  if (!state.map) {
+    state.map = L.map('campaignMap', { scrollWheelZoom: false }).setView([36.4, 127.8], 7);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(state.map);
+    state.mapMarkers = L.layerGroup().addTo(state.map);
+  }
+  state.mapMarkers.clearLayers();
+  const points = [];
+  filteredCampaigns().forEach((campaign, index) => {
+    const area = getCommercialAreaByAddress(campaign.business?.address);
+    if (!area?.latitude || !area?.longitude) return;
+    const sameAreaIndex = points.filter(point => point.areaCode === area.areaCode).length;
+    const latitude = area.latitude + Math.sin(sameAreaIndex * 2.4) * .0014;
+    const longitude = area.longitude + Math.cos(sameAreaIndex * 2.4) * .0014;
+    points.push({ latitude, longitude, areaCode: area.areaCode });
+    const icon = L.divIcon({
+      className: 'moa-map-pin',
+      html: '<span><b>' + escapeHTML(String(index + 1)) + '</b></span>',
+      iconSize: [32, 38], iconAnchor: [16, 38]
+    });
+    const marker = L.marker([latitude, longitude], { icon }).addTo(state.mapMarkers);
+    marker.bindPopup('<div class="map-popup"><b>' + escapeHTML(campaign.business?.name || campaign.name)
+      + '</b><span>' + escapeHTML(area.areaName) + '</span><button type="button" data-map-campaign="'
+      + escapeHTML(campaign.id) + '">계획·위험 보기</button></div>');
+  });
+  if (points.length === 1) state.map.setView([points[0].latitude, points[0].longitude], 14);
+  else if (points.length > 1) state.map.fitBounds(points.map(point => [point.latitude, point.longitude]), { padding: [35, 35], maxZoom: 13 });
+  else state.map.setView([36.4, 127.8], 7);
+  setTimeout(() => state.map?.invalidateSize(), 0);
+}
+
+$$('[data-campaign-view]').forEach(button => button.addEventListener('click', () => {
+  state.campaignView = button.dataset.campaignView === 'map' ? 'map' : 'grid';
+  $$('[data-campaign-view]').forEach(item => item.classList.toggle('active', item.dataset.campaignView === state.campaignView));
+  $('#campaignGrid').classList.toggle('hidden', state.campaignView !== 'grid');
+  $('#campaignMapShell').classList.toggle('hidden', state.campaignView !== 'map');
+  if (state.campaignView === 'map') requestAnimationFrame(renderCampaignMap);
+}));
+
+$('#campaignMap')?.addEventListener('click', event => {
+  const button = event.target.closest('[data-map-campaign]');
+  if (button) openCampaignDetail(button.dataset.mapCampaign);
+});
+
+$('#campaignSearch').addEventListener('input', () => {
+  renderCampaignGrid();
+  if (state.campaignView === 'map') renderCampaignMap();
+});
 $('#campaignGrid').addEventListener('click', event => {
   const button = event.target.closest('[data-open-campaign]');
   if (button) openCampaignDetail(button.dataset.openCampaign);
@@ -699,9 +701,10 @@ function renderCommitments() {
 }
 
 function renderDetailMenuList(menuItems, representativeMenu, representativePrice) {
-  const items = (menuItems && menuItems.length) ? menuItems : [
-    { name: representativeMenu || '대표 시그니처 메뉴', price: representativePrice || 15000, description: '가게의 정성과 신뢰가 담긴 대표 메뉴', isSignature: true, category: '대표' }
-  ];
+  const items = (menuItems && menuItems.length) ? menuItems
+    : representativeMenu ? [{ name: representativeMenu, price: representativePrice || 0, description: '', isSignature: true, category: '대표' }]
+      : [];
+  if (!items.length) return '<p class="empty-copy">사업자가 등록한 메뉴 정보가 없습니다.</p>';
   return items.map(item =>
     `<article class="detail-menu-card ${item.isSignature ? 'signature' : ''}">
       <div class="detail-menu-header">
@@ -715,6 +718,28 @@ function renderDetailMenuList(menuItems, representativeMenu, representativePrice
       ${item.description ? `<p class="detail-menu-desc">${escapeHTML(item.description)}</p>` : ''}
     </article>`
   ).join('');
+}
+
+function assessmentContributions(assessment) {
+  const stored = Array.isArray(assessment?.contributions) ? assessment.contributions : [];
+  return stored.length ? stored : scoreContributions(assessment?.components || {});
+}
+
+function renderContributionWaterfall(assessment) {
+  if (!assessment) return '';
+  const contributions = assessmentContributions(assessment);
+  const max = Math.max(1, ...contributions.map(item => Math.abs(Number(item.contribution || 0))));
+  return '<div class="score-waterfall"><div class="waterfall-heading"><div><b>기준 60점에서 최종 '
+    + escapeHTML(assessment.score) + '점까지</b><span>각 구성요인의 가중치 기여를 정확히 분해합니다.</span></div><strong>'
+    + escapeHTML(assessment.grade || 'S5') + '</strong></div>'
+    + contributions.map(item => {
+      const value = Number(item.contribution || 0);
+      const positive = value >= 0;
+      return '<div class="waterfall-row"><span>' + escapeHTML(item.label) + '</span><div class="waterfall-track '
+        + (positive ? 'positive' : 'negative') + '"><i style="width:' + Math.max(3, Math.abs(value) / max * 100) + '%"></i></div><b>'
+        + (positive ? '+' : '') + value.toFixed(1) + '</b></div>';
+    }).join('')
+    + '<p>이 차트는 학습 모델의 SHAP 추정치를 가장하지 않고, MOA의 현재 가중 합산식을 SHAP 워터폴 형식으로 표시한 것입니다.</p></div>';
 }
 
 function openCampaignDetail(id) {
@@ -742,7 +767,7 @@ function openCampaignDetail(id) {
       + '</b> · 점수만으로 승인하지 않습니다. 매출·현금흐름·부채·업력·상권 자료를 함께 본 보조 지표입니다.</p>'
       + '<div class="detail-factor-chips">' + Object.entries(assessment.components || {}).map(([key, value]) =>
         '<span>' + escapeHTML(key) + ' <b>' + escapeHTML(value) + '</b></span>'
-      ).join('') + '</div></section>'
+      ).join('') + '</div>' + renderContributionWaterfall(assessment) + '</section>'
     : '';
   const closed = campaign.fundStatus === 'closed';
   const commitButtonHtml = campaign.isDemo
@@ -788,7 +813,7 @@ function openCampaignDetail(id) {
                 <h3>사장님의 한마디 & 철학</h3>
               </div>
               <blockquote class="owner-quote-body">
-                ${escapeHTML(campaign.business?.ownerStory || '손님 한 분 한 분께 정성과 신뢰를 다해 최고의 식음료 경험을 선물하겠습니다.')}
+                ${escapeHTML(campaign.business?.ownerStory || '사업자가 등록한 소개글이 없습니다.')}
               </blockquote>
               <div class="owner-quote-author">
                 <strong>${escapeHTML(campaign.business?.representativeName || campaign.business?.name || '대표')} 사장님</strong>
@@ -1409,7 +1434,46 @@ function renderFinancialVerification(verification) {
     + (flow.missingDocuments?.length ? '<p class="verification-alert"><b>빠진 자료</b> ' + escapeHTML(flow.missingDocuments.join(', ')) + '</p>' : '')
     + (flow.mismatches?.length ? '<p class="verification-alert"><b>불일치</b> ' + escapeHTML(flow.mismatches.join(' ')) + '</p>' : '')
     + (flow.warnings?.length ? '<p class="verification-warning"><b>확인사항</b> ' + escapeHTML(flow.warnings.join(' ')) + '</p>' : '')
+    + renderFinancialDocumentViewers(verification)
     + '<p class="privacy-note">현재 버전은 개인정보 노출을 줄이기 위해 원본 이미지를 DB에 저장하지 않고 구조화된 판독 결과와 SHA-256 지문만 저장합니다. 운영자 원본 열람용 비공개 스토리지는 후속 연결 항목입니다.</p>';
+}
+
+function comparisonStatusForBox(box, document, verification) {
+  const fieldLabels = { monthlySales: '월평균 매출', debtTotal: '총 부채', monthlyDebtPayment: '월 상환액', taxCompliant: '세금 정상 납부' };
+  if (box.field === 'businessNumber') {
+    const expected = String(ownerModel().business?.number || verification?.business?.number || '').replace(/\D/g, '');
+    const observed = String(document.businessNumber || box.value || '').replace(/\D/g, '');
+    return expected && observed ? (expected === observed ? 'matched' : 'mismatch') : 'review';
+  }
+  const comparison = (verification?.orchestration?.comparisons || []).find(item =>
+    item.source === document.filename && item.label === fieldLabels[box.field]);
+  return comparison?.status || 'review';
+}
+
+function renderOcrViewer(image, boxes = [], statusResolver = () => 'review', title = '') {
+  if (!/^data:image\/(?:png|jpeg|webp);base64,/.test(String(image || ''))) return '';
+  const overlays = boxes.map(box => {
+    const [x, y, width, height] = box.bbox || [];
+    if (![x, y, width, height].every(Number.isFinite)) return '';
+    const status = statusResolver(box);
+    return '<span class="ocr-box ' + escapeHTML(status) + '" style="left:' + x / 10 + '%;top:' + y / 10
+      + '%;width:' + width / 10 + '%;height:' + height / 10 + '%"><b>' + escapeHTML(box.label) + '</b><em>'
+      + escapeHTML(box.value || '') + '</em></span>';
+  }).join('');
+  return '<figure class="ocr-viewer"><figcaption>' + escapeHTML(title) + '</figcaption><div><img src="' + image
+    + '" alt="' + escapeHTML(title) + '">' + overlays + '</div><p><i></i>일치 <i></i>확인 필요 <i></i>불일치</p></figure>';
+}
+
+function renderFinancialDocumentViewers(verification) {
+  const documents = verification?.documents || [];
+  const viewers = documents.map((document, index) => renderOcrViewer(
+    state.financialDocumentImages[index],
+    document.boundingBoxes || [],
+    box => comparisonStatusForBox(box, document, verification),
+    document.filename || '재무 근거자료'
+  )).filter(Boolean);
+  if (!viewers.length) return '';
+  return '<details class="ocr-viewer-group" open><summary>AI 필드 위치·입력값 대조</summary><p>원본은 이 브라우저 세션에서만 표시됩니다.</p><div>' + viewers.join('') + '</div></details>';
 }
 
 function fileAsDataUrl(file) {
@@ -1446,6 +1510,7 @@ $('#financialVerificationForm').addEventListener('submit', async event => {
   button.textContent = '문서별 판독·대조 중…';
   try {
     const documents = await Promise.all(files.map(async file => ({ filename: file.name, image: await fileAsDataUrl(file) })));
+    state.financialDocumentImages = documents.map(item => item.image);
     const data = await apiRequest('/api/ai/financial-verify', {
       method: 'POST', body: JSON.stringify({ claims: collectMetricClaims(), documents })
     });
@@ -1501,6 +1566,7 @@ function renderAssessmentExplanation(model) {
     + ' 등급 · 펀딩 ' + (assessment.fundingLimit > 0 ? '가능' : '보완 필요') + '</h3></div><strong>최대 ' + won(assessment.fundingLimit) + '</strong></div>'
     + '<div class="explanation-columns"><div><b>긍정 요인</b><ul>' + (positives.length ? positives : ['입력 자료 추가 확인']).map(item => '<li>' + escapeHTML(item) + '</li>').join('')
     + '</ul></div><div><b>주요 위험</b><ul>' + (risks.length ? risks : ['중대한 정량 위험 신호 없음']).map(item => '<li>' + escapeHTML(item) + '</li>').join('') + '</ul></div></div>'
+    + renderContributionWaterfall(assessment)
     + '<p>최근 매출·현금흐름·부채 상환 부담·운영 안정성·상권 지표를 함께 반영했습니다. '
     + (assessment.isOfficial ? '운영자가 원자료와 AI 교차검증 결과를 확인한 공식 평가입니다.' : '아직 원자료가 승인되지 않은 참고용 결과이며 모집 제출을 열지 않습니다.') + '</p>';
 }
@@ -1793,11 +1859,13 @@ $('#analyzeEvidence').addEventListener('click', async () => {
     state.evidenceResult = data.result;
     state.evidenceAnalysisId = data.analysisId;
     const warnings = Array.isArray(data.result.warnings) ? data.result.warnings : [];
+    const planStatus = data.result.planMatch === '적합' ? 'matched' : data.result.planMatch === '부적합' ? 'mismatch' : 'review';
     $('#evidenceAnalysis').innerHTML = '<strong>계획 일치: '
       + escapeHTML(data.result.planMatch || '검토 필요') + '</strong>'
       + '<span>공급자 ' + escapeHTML(data.result.merchant || '판독 안 됨')
       + ' · 합계 ' + won(data.result.total) + '</span>'
-      + (warnings.length ? '<p>' + warnings.map(escapeHTML).join(' · ') + '</p>' : '');
+      + (warnings.length ? '<p>' + warnings.map(escapeHTML).join(' · ') + '</p>' : '')
+      + renderOcrViewer(state.evidenceImage, data.result.boundingBoxes || [], () => planStatus, state.evidenceFilename);
     $('#evidenceAnalysis').classList.remove('hidden');
     $('#sendEvidence').disabled = false;
     showToast('증빙 분석이 끝났습니다. 결과를 확인한 뒤 제출해 주세요.');
@@ -1916,7 +1984,8 @@ function renderAdminCampaigns(campaigns) {
       + item.status + '">' + escapeHTML(campaignStatusLabels[item.status] || item.status)
       + '</span><h3>' + escapeHTML(item.business?.name || item.name) + '</h3><p>'
       + escapeHTML(item.name) + ' · ' + escapeHTML(item.business?.address || '') + '</p></div>'
-      + '<button class="plain-button" type="button" data-preview-owner="' + item.id + '">소상공인 화면으로 보기</button></div>'
+      + '<div class="review-header-actions"><button class="plain-button" type="button" data-audit-report="' + item.id + '">심사 보고서</button>'
+      + '<button class="plain-button" type="button" data-preview-owner="' + item.id + '">소상공인 화면으로 보기</button></div></div>'
       + '<div class="review-card-grid"><div><small>사업자 상태</small><strong>'
       + escapeHTML(item.business?.verificationStatus || '미확인') + '</strong></div>'
       + '<div><small>위험 점검</small><strong>' + (assessment ? assessment.score + '점' : '자료 없음') + '</strong></div>'
@@ -2019,6 +2088,20 @@ $$('[data-admin-tab]').forEach(button => {
 });
 
 $('#adminCampaignList').addEventListener('click', async event => {
+  const reportButton = event.target.closest('[data-audit-report]');
+  if (reportButton) {
+    const campaign = state.admin.campaigns.find(item => item.id === reportButton.dataset.auditReport);
+    const verification = (state.admin.financialVerifications || []).find(item => item.businessId === campaign?.businessId) || null;
+    state.auditReport = buildAuditReport({
+      campaign,
+      verification,
+      evidence: state.admin.evidence || [],
+      audit: state.admin.audit || []
+    });
+    $('#auditReportPreview').innerHTML = renderAuditReportHtml(state.auditReport);
+    openModal('auditReportModal');
+    return;
+  }
   const preview = event.target.closest('[data-preview-owner]');
   if (preview) {
     state.adminPreviewCampaign = state.admin.campaigns.find(item => item.id === preview.dataset.previewOwner);
@@ -2037,6 +2120,32 @@ $('#adminCampaignList').addEventListener('click', async event => {
     decision: button.dataset.campaignReview,
     note
   }, '모집 심사 결과를 저장했습니다.');
+});
+
+function auditReportDocument() {
+  return state.auditReport ? renderAuditReportHtml(state.auditReport, { standalone: true }) : '';
+}
+
+$('#downloadAuditReport')?.addEventListener('click', () => {
+  const html = auditReportDocument();
+  if (!html) return;
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = 'MOA-심사보고서-' + (state.auditReport.business.name || '사업체').replace(/[^\p{L}\p{N}_-]+/gu, '-') + '.html';
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 0);
+});
+
+$('#printAuditReport')?.addEventListener('click', () => {
+  const html = auditReportDocument();
+  if (!html) return;
+  const preview = window.open('', '_blank');
+  if (!preview) return showToast('인쇄 미리보기를 열려면 팝업을 허용해 주세요.', 'info');
+  preview.opener = null;
+  preview.document.write(html);
+  preview.document.close();
+  preview.addEventListener('load', () => preview.print(), { once: true });
 });
 
 $('#adminFinancialList').addEventListener('click', async event => {

@@ -2,6 +2,27 @@ const number = value => Number.isFinite(Number(value)) ? Number(value) : null;
 const series = value => Array.isArray(value) ? value.map(number).filter(item => item !== null) : [];
 const mean = values => values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
 
+export function normalizeOcrBoxes(value) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, 24).flatMap(item => {
+    const box = Array.isArray(item?.bbox) ? item.bbox.map(Number) : [];
+    if (box.length !== 4 || box.some(number => !Number.isFinite(number))) return [];
+    const [x, y, width, height] = box;
+    if (width <= 0 || height <= 0) return [];
+    return [{
+      field: String(item.field || 'unknown').slice(0, 80),
+      label: String(item.label || item.field || '필드').slice(0, 120),
+      value: String(item.value ?? '').slice(0, 300),
+      bbox: [
+        Math.max(0, Math.min(1000, x)), Math.max(0, Math.min(1000, y)),
+        Math.max(1, Math.min(1000 - Math.max(0, x), width)),
+        Math.max(1, Math.min(1000 - Math.max(0, y), height))
+      ],
+      confidence: Math.max(0, Math.min(1, Number(item.confidence || 0)))
+    }];
+  });
+}
+
 function difference(claimed, observed) {
   if (claimed === null || observed === null) return null;
   return Math.abs(claimed - observed) / Math.max(Math.abs(observed), 1);
@@ -29,7 +50,7 @@ export function orchestrateFinancialVerification({ claims = {}, documents = [], 
   const safeDocuments = documents.map((item, index) => {
     const rawConfidence = Number(item.confidence || 0);
     const confidence = Math.max(0, Math.min(1, rawConfidence > 1 ? rawConfidence / 100 : rawConfidence));
-    return { ...item, index, category: category(item), confidence };
+    return { ...item, index, category: category(item), confidence, boundingBoxes: normalizeOcrBoxes(item.boundingBoxes) };
   });
   const categories = new Set(safeDocuments.map(item => item.category));
   const missingDocuments = [

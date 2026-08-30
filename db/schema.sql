@@ -107,6 +107,9 @@ create table if not exists public.credit_assessments (
 );
 alter table public.credit_assessments add column if not exists risk_level text not null default 'review';
 alter table public.credit_assessments add column if not exists s_grade text not null default 'S5';
+alter table public.credit_assessments add column if not exists contributions jsonb not null default '[]';
+alter table public.credit_assessments add column if not exists model_inputs jsonb not null default '{}';
+alter table public.credit_assessments add column if not exists methodology jsonb not null default '{}';
 
 -- 아래 제출 RPC가 생성될 때부터 참조할 수 있도록 재무 검증 원장을 먼저 정의한다.
 create table if not exists public.financial_verification_runs (

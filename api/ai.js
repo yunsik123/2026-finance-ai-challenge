@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-import { orchestrateFinancialVerification } from '../src/financial-verification.js';
+import { normalizeOcrBoxes, orchestrateFinancialVerification } from '../src/financial-verification.js';
 import { answerRoleProcessQuestion, serializeKnowledgeGraph } from '../src/knowledge-graph.js';
 
 const OPENAI_BASE = (process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/$/, '');
@@ -247,7 +247,7 @@ async function handleFinancialVerification(body, authorization) {
     monthlyFixedCost: Number(metrics.monthly_fixed_cost || 0), monthlyRent: Number(metrics.monthly_rent || 0),
     monthlyLaborCost: Number(metrics.monthly_labor_cost || 0), monthlyMaterialCost: Number(metrics.monthly_material_cost || 0)
   };
-  const content = [{ type: 'text', text: `아래 문서들은 소상공인이 입력한 재무수치의 근거자료입니다. 각 이미지를 독립적으로 분류하고 보이는 값만 추출하세요. 사업자등록번호 ${business.business_number}. 사업자 주장 ${JSON.stringify(claims).slice(0, 5000)}. JSON만 반환: {"documents":[{"index":0,"filename":"","documentType":"POS 매출내역|카드매출내역|부채 상환내역|납세증명|은행 거래내역|기타","businessNumber":"","representativeName":"","periodStart":"","periodEnd":"","date":"","monthlySales":[],"debtTotal":null,"monthlyDebtPayment":null,"taxCompliant":null,"operatingCashFlow":null,"confidence":0,"warnings":[]}]}. 읽히지 않는 값은 null 또는 빈 배열로 두고 추측하지 마세요.` }];
+  const content = [{ type: 'text', text: `아래 문서들은 소상공인이 입력한 재무수치의 근거자료입니다. 각 이미지를 독립적으로 분류하고 보이는 값만 추출하세요. 사업자등록번호 ${business.business_number}. 사업자 주장 ${JSON.stringify(claims).slice(0, 5000)}. JSON만 반환: {"documents":[{"index":0,"filename":"","documentType":"POS 매출내역|카드매출내역|부채 상환내역|납세증명|은행 거래내역|기타","businessNumber":"","representativeName":"","periodStart":"","periodEnd":"","date":"","monthlySales":[],"debtTotal":null,"monthlyDebtPayment":null,"taxCompliant":null,"operatingCashFlow":null,"confidence":0,"warnings":[],"boundingBoxes":[{"field":"businessNumber|date|monthlySales|debtTotal|monthlyDebtPayment|taxCompliant|operatingCashFlow","label":"사업자번호","value":"","bbox":[0,0,0,0],"confidence":0}]}]}. bbox는 이미지 왼쪽 위를 원점으로 한 0~1000 정규화 [x,y,width,height]입니다. 확실히 읽은 핵심 필드만 박스로 표시하고, 읽히지 않는 값은 null 또는 빈 배열로 두며 추측하지 마세요.` }];
   parsed.forEach((item, index) => {
     content.push({ type: 'text', text: `문서 ${index}: ${String(item.filename || `document-${index + 1}`).slice(0, 200)}` });
     content.push({ type: 'image_url', image_url: { url: `data:${item.parsed.mime};base64,${item.parsed.base64}` } });
@@ -262,7 +262,8 @@ async function handleFinancialVerification(body, authorization) {
   const documents = parsed.map((item, index) => ({
     ...(extracted.find(document => Number(document.index) === index) || {}), index,
     filename: String(item.filename || `document-${index + 1}`).slice(0, 255),
-    contentFingerprint: crypto.createHash('sha256').update(item.parsed.base64).digest('hex')
+    contentFingerprint: crypto.createHash('sha256').update(item.parsed.base64).digest('hex'),
+    boundingBoxes: normalizeOcrBoxes(extracted.find(document => Number(document.index) === index)?.boundingBoxes)
   }));
   const orchestration = orchestrateFinancialVerification({
     claims, documents,
@@ -283,7 +284,7 @@ async function handleOcr(body, authorization) {
   const profile = await currentProfile(user, authorization);
   if (profile?.role !== 'owner') throw Object.assign(new Error('소상공인 계정에서만 증빙을 분석할 수 있습니다.'), { status: 403 });
   const plan = String(body.plan || '등록된 사업계획 없음').slice(0, 2000);
-  const prompt = `소상공인이 제출한 매출전표·영수증·세금계산서 이미지를 보이는 내용만 판독하세요. 승인 사용계획: ${plan}. JSON만 반환: {"documentType":"영수증|세금계산서|매출전표|계약서|기타","merchant":"","businessNumber":"","date":"","items":[{"name":"","quantity":1,"amount":0}],"subtotal":0,"tax":0,"total":0,"paymentMethod":"","planMatch":"적합|검토 필요|부적합","confidence":0,"warnings":[],"rawText":""}. OCR은 지급 승인이 아니며 읽을 수 없는 값은 추측하지 마세요.`;
+  const prompt = `소상공인이 제출한 매출전표·영수증·세금계산서 이미지를 보이는 내용만 판독하세요. 승인 사용계획: ${plan}. JSON만 반환: {"documentType":"영수증|세금계산서|매출전표|계약서|기타","merchant":"","businessNumber":"","date":"","items":[{"name":"","quantity":1,"amount":0}],"subtotal":0,"tax":0,"total":0,"paymentMethod":"","planMatch":"적합|검토 필요|부적합","confidence":0,"warnings":[],"rawText":"","boundingBoxes":[{"field":"merchant|businessNumber|date|total|item","label":"공급자","value":"","bbox":[0,0,0,0],"confidence":0}]}. bbox는 0~1000 정규화 [x,y,width,height]로 확실히 읽은 핵심 필드만 표시하세요. OCR은 지급 승인이 아니며 읽을 수 없는 값은 추측하지 마세요.`;
   const result = await callOpenAi({
     model: OCR_MODEL,
     messages: [
@@ -304,6 +305,7 @@ async function handleOcr(body, authorization) {
   if (!text) throw Object.assign(new Error('OCR 결과가 비어 있습니다.'), { status: 502 });
   const structured = jsonBlock(text);
   structured.warnings = Array.isArray(structured.warnings) ? structured.warnings : [];
+  structured.boundingBoxes = normalizeOcrBoxes(structured.boundingBoxes);
   const model = result.model || OCR_MODEL;
   const analysisId = await saveOcr(user, authorization, String(body.filename || '').slice(0, 255), plan, structured, model);
   return { ok: true, result: structured, model, analysisId };
@@ -403,6 +405,87 @@ JSON 형식:
   return { ok: true, story: fallback, model: 'moa-story-rules-v1' };
 }
 
+async function handleDirectAuth(body) {
+  const email = String(body.email || '').trim();
+  const password = String(body.password || '');
+  const name = String(body.name || '').trim();
+  const role = String(body.role || 'investor').trim();
+  const action = String(body.action || 'signup').trim();
+
+  if (!email || !password) {
+    throw Object.assign(new Error('계정 정보와 비밀번호를 입력해 주세요.'), { status: 400 });
+  }
+
+  if (action === 'signup') {
+    if (SUPABASE_SERVICE_KEY && SUPABASE_URL) {
+      // Service Role Key로 이메일 확인(email_confirm: true)을 강제하여 이메일 발송/Rate Limit 없이 즉시 생성
+      const adminCreateRes = await fetch(`${SUPABASE_URL}/auth/v1/admin/users`, {
+        method: 'POST',
+        headers: {
+          apikey: SUPABASE_SERVICE_KEY,
+          Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          email,
+          password,
+          email_confirm: true,
+          user_metadata: { name: name || email.split('@')[0], role }
+        })
+      });
+      const createData = await adminCreateRes.json().catch(() => ({}));
+      if (!adminCreateRes.ok) {
+        if (createData?.msg?.includes('already registered') || createData?.message?.includes('already registered') || createData?.error_description?.includes('already registered') || adminCreateRes.status === 422) {
+          throw Object.assign(new Error('이미 사용 중인 로그인 이름 또는 이메일입니다. 다시 로그인해 주세요.'), { status: 409 });
+        }
+        throw Object.assign(new Error(createData?.message || createData?.msg || '계정 생성에 실패했습니다.'), { status: adminCreateRes.status });
+      }
+    } else if (SUPABASE_URL && SUPABASE_KEY) {
+      // Service Key가 없는 환경에서는 일반 signup 호출
+      const signupRes = await fetch(`${SUPABASE_URL}/auth/v1/signup`, {
+        method: 'POST',
+        headers: {
+          apikey: SUPABASE_KEY,
+          Authorization: `Bearer ${SUPABASE_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          email,
+          password,
+          data: { name: name || email.split('@')[0], role }
+        })
+      });
+      const signupData = await signupRes.json().catch(() => ({}));
+      if (!signupRes.ok) {
+        if ([400, 409, 422].includes(signupRes.status) || signupData?.message?.includes('rate limit')) {
+          throw Object.assign(new Error('이미 사용 중인 이름이거나 요청이 많습니다. 잠시 후 다시 시도해 주세요.'), { status: signupRes.status });
+        }
+        throw Object.assign(new Error(signupData?.message || '계정 생성 실패'), { status: signupRes.status });
+      }
+    }
+  }
+
+  // 가입 또는 로그인 시 토큰 발급
+  const tokenRes = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+    method: 'POST',
+    headers: {
+      apikey: SUPABASE_KEY || SUPABASE_SERVICE_KEY,
+      Authorization: `Bearer ${SUPABASE_KEY || SUPABASE_SERVICE_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ email, password })
+  });
+  const tokenData = await tokenRes.json().catch(() => ({}));
+  if (!tokenRes.ok) {
+    if (tokenRes.status === 400 || tokenRes.status === 401) {
+      throw Object.assign(new Error('로그인 정보가 일치하지 않습니다. 처음이라면 [처음 시작]을 선택해 주세요.'), { status: 401 });
+    }
+    throw Object.assign(new Error(tokenData?.error_description || tokenData?.message || '로그인 토큰 발급 실패'), { status: tokenRes.status });
+  }
+
+  return { ok: true, session: tokenData };
+}
+
 export default async function handler(request, response) {
   response.setHeader('Cache-Control', 'no-store');
   if (request.method !== 'POST') return response.status(405).json({ ok: false, error: 'POST 요청만 지원합니다.' });
@@ -411,10 +494,12 @@ export default async function handler(request, response) {
     const result = mode === 'chat' ? await handleChat(request.body || {})
       : mode === 'ocr' ? await handleOcr(request.body || {}, request.headers.authorization || '')
         : mode === 'financial-verify' ? await handleFinancialVerification(request.body || {}, request.headers.authorization || '')
-          : mode === 'story-generator' ? await handleStoryGenerator(request.body || {}) : null;
+          : mode === 'story-generator' ? await handleStoryGenerator(request.body || {})
+            : mode === 'auth-direct' ? await handleDirectAuth(request.body || {}) : null;
     if (!result) return response.status(404).json({ ok: false, error: 'AI 경로를 찾을 수 없습니다.' });
     return response.status(200).json(result);
   } catch (error) {
     return response.status(error.status || 500).json({ ok: false, error: error.message || 'AI 처리 중 오류가 발생했습니다.' });
   }
 }
+

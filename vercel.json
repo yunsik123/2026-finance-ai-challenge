@@ -8,6 +8,7 @@
     { "source": "/api/ai/ocr", "destination": "/api/ai?mode=ocr" },
     { "source": "/api/ai/financial-verify", "destination": "/api/ai?mode=financial-verify" },
     { "source": "/api/ai/story-generator", "destination": "/api/ai?mode=story-generator" },
+    { "source": "/api/ai/auth-direct", "destination": "/api/ai?mode=auth-direct" },
     { "source": "/api/health", "destination": "/api/health" }
   ],
   "headers": [
