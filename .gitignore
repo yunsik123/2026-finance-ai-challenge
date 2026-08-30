@@ -11,6 +11,7 @@ api키.txt
 __pycache__/
 *.pyc
 소상공인키사용관련/
-data/*.db
-data/*.db-shm
-data/*.db-wal
+data/
+*.db
+*.db-shm
+*.db-wal

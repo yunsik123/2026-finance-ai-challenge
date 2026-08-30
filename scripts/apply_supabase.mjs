@@ -1,104 +1,134 @@
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const rootDir = path.resolve(__dirname, '..');
+const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 function loadEnvFile(filePath) {
   if (!fs.existsSync(filePath)) return {};
-  const content = fs.readFileSync(filePath, 'utf-8');
-  const env = {};
-  for (const line of content.split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
-    const eqIdx = trimmed.indexOf('=');
-    if (eqIdx !== -1) {
-      const key = trimmed.slice(0, eqIdx).trim();
-      let val = trimmed.slice(eqIdx + 1).trim();
-      if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
-        val = val.slice(1, -1);
-      }
-      env[key] = val;
-    }
-  }
-  return env;
+  return Object.fromEntries(
+    fs.readFileSync(filePath, 'utf8').split('\n')
+      .map(line => line.trim())
+      .filter(line => line && !line.startsWith('#') && line.includes('='))
+      .map(line => {
+        const index = line.indexOf('=');
+        return [line.slice(0, index).trim(), line.slice(index + 1).trim().replace(/^['"]|['"]$/g, '')];
+      })
+  );
 }
 
-const envLocal = loadEnvFile(path.join(rootDir, '.env.local'));
-const envDev = loadEnvFile(path.join(rootDir, '.env.development.local'));
-const envDefault = loadEnvFile(path.join(rootDir, '.env'));
+const adminEnvPath = path.join(rootDir, '.env.admin.local');
+const env = {
+  ...loadEnvFile(path.join(rootDir, '.env.development.local')),
+  ...loadEnvFile(path.join(rootDir, '.env.local')),
+  ...loadEnvFile(adminEnvPath),
+  ...process.env
+};
+const projectRef = env.SUPABASE_PROJECT_REF
+  || String(env.VITE_SUPABASE_URL || '').replace(/^https:\/\//, '').split('.')[0];
+const managementToken = env.SUPABASE_ACCESS_TOKEN || env.SUPABASE_TOKEN;
+const supabaseUrl = String(env.VITE_SUPABASE_URL || '').replace(/\/$/, '');
+const adminEmail = env.MOA_ADMIN_EMAIL || 'admin@moa.local';
+const generatedPassword = !env.MOA_ADMIN_PASSWORD;
+const adminPassword = env.MOA_ADMIN_PASSWORD || ('Moa!' + crypto.randomBytes(12).toString('base64url'));
 
-const env = { ...envDefault, ...envDev, ...envLocal, ...process.env };
-
-const SUPABASE_PROJECT_REF = env.SUPABASE_PROJECT_REF || (env.VITE_SUPABASE_URL ? env.VITE_SUPABASE_URL.replace(/https:\/\//, '').split('.')[0] : 'udrbqexmxjyiruebooxx');
-const SUPABASE_ACCESS_TOKEN = env.SUPABASE_ACCESS_TOKEN || env.SUPABASE_TOKEN || process.env.SUPABASE_ACCESS_TOKEN;
-
-async function executeSqlViaManagementApi(token, projectRef, sql, stepName) {
-  console.log(`🚀 [${stepName}] Supabase에 SQL을 전송하여 실행 중... (프로젝트: ${projectRef})`);
-  const res = await fetch(`https://api.supabase.com/v1/projects/${projectRef}/database/query`, {
-    method: 'POST',
+async function management(pathname, options = {}) {
+  const response = await fetch('https://api.supabase.com/v1/' + pathname, {
+    ...options,
     headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    },
+      Authorization: 'Bearer ' + managementToken,
+      'Content-Type': 'application/json',
+      ...(options.headers || {})
+    }
+  });
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : null;
+  if (!response.ok) throw new Error(data?.message || data?.error || ('Supabase Management API 오류 (' + response.status + ')'));
+  return data;
+}
+
+async function executeSql(sql) {
+  await management('projects/' + projectRef + '/database/query', {
+    method: 'POST',
     body: JSON.stringify({ query: sql })
   });
+}
 
-  if (!res.ok) {
-    const errorText = await res.text();
-    throw new Error(`[${stepName}] SQL 실행 실패 (${res.status}): ${errorText}`);
+async function serviceRoleKey() {
+  const keys = await management('projects/' + projectRef + '/api-keys');
+  const key = keys.find(item => item.name === 'service_role' || item.type === 'service_role');
+  if (!key?.api_key) throw new Error('Supabase service_role 키를 조회하지 못했습니다.');
+  return key.api_key;
+}
+
+async function authAdmin(pathname, serviceKey, options = {}) {
+  const response = await fetch(supabaseUrl + '/auth/v1/admin/' + pathname, {
+    ...options,
+    headers: {
+      apikey: serviceKey,
+      Authorization: 'Bearer ' + serviceKey,
+      'Content-Type': 'application/json',
+      ...(options.headers || {})
+    }
+  });
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : null;
+  if (!response.ok) throw new Error(data?.msg || data?.message || data?.error || ('Supabase Auth Admin 오류 (' + response.status + ')'));
+  return data;
+}
+
+async function ensureAdminAccount() {
+  const serviceKey = await serviceRoleKey();
+  const listing = await authAdmin('users?page=1&per_page=1000', serviceKey);
+  const users = Array.isArray(listing) ? listing : (listing?.users || []);
+  const existing = users.find(user => String(user.email).toLowerCase() === adminEmail.toLowerCase());
+  const payload = {
+    email: adminEmail,
+    password: adminPassword,
+    email_confirm: true,
+    user_metadata: { name: '모아 운영자', role: 'admin' }
+  };
+  const adminUser = existing
+    ? await authAdmin('users/' + existing.id, serviceKey, { method: 'PUT', body: JSON.stringify(payload) })
+    : await authAdmin('users', serviceKey, { method: 'POST', body: JSON.stringify(payload) });
+  const userId = adminUser?.id || adminUser?.user?.id || existing?.id;
+  if (!userId) throw new Error('운영자 계정 ID를 확인하지 못했습니다.');
+
+  const escapedEmail = adminEmail.replaceAll("'", "''");
+  await executeSql(
+    'alter table public.profiles disable trigger guard_profile_role_trigger;' +
+    " insert into public.profiles(id, email, display_name, role) values ('" + userId + "'::uuid, '" + escapedEmail + "', '모아 운영자', 'admin')" +
+    " on conflict (id) do update set email = excluded.email, display_name = excluded.display_name, role = 'admin', updated_at = now();" +
+    ' alter table public.profiles enable trigger guard_profile_role_trigger;'
+  );
+
+  if (generatedPassword) {
+    fs.writeFileSync(
+      adminEnvPath,
+      'MOA_ADMIN_EMAIL=' + adminEmail + '\nMOA_ADMIN_PASSWORD=' + adminPassword + '\n',
+      { mode: 0o600 }
+    );
   }
-
-  const result = await res.json().catch(() => null);
-  console.log(`✅ [${stepName}] 실행 완료!`);
-  return result;
+  return { created: !existing, email: adminEmail, password: adminPassword };
 }
 
 async function main() {
-  console.log('========================================================');
-  console.log('  MOA Supabase 자동 DB 마이그레이션 & 시드 적용기');
-  console.log('========================================================\n');
-
-  if (!SUPABASE_ACCESS_TOKEN) {
-    console.error('❌ SUPABASE_ACCESS_TOKEN 이 설정되지 않았습니다.\n');
-    console.log('👉 [해결 방법 - 딱 1번만 설정하면 영구 자동화]');
-    console.log('1. 브라우저에서 https://supabase.com/dashboard/account/tokens 접속');
-    console.log('2. "Generate New Token" 클릭 후 발급된 토큰 복사');
-    console.log('3. .env.local 파일에 아래 한 줄 추가:');
-    console.log('   SUPABASE_ACCESS_TOKEN=sbp_여기에토큰붙여넣기\n');
-    console.log('4. 다시 npm run db:apply 실행하면 웹 복붙 없이 100% 자동 적용됩니다!\n');
-    process.exit(1);
+  if (!managementToken || !projectRef || !supabaseUrl) {
+    throw new Error('SUPABASE_ACCESS_TOKEN, Supabase 프로젝트 URL/참조값이 필요합니다.');
   }
-
-  const schemaPath = path.join(rootDir, 'db', 'schema.sql');
-  const seedPath = path.join(rootDir, 'db', 'seed.sql');
-
-  if (!fs.existsSync(schemaPath)) {
-    console.error(`❌ 파일이 없습니다: ${schemaPath}`);
-    process.exit(1);
-  }
-  if (!fs.existsSync(seedPath)) {
-    console.error(`❌ 파일이 없습니다: ${seedPath}`);
-    process.exit(1);
-  }
-
-  const schemaSql = fs.readFileSync(schemaPath, 'utf-8');
-  const seedSql = fs.readFileSync(seedPath, 'utf-8');
-
-  try {
-    console.log('1단계: schema.sql (테이블 및 RLS 보안 정책 생성)');
-    await executeSqlViaManagementApi(SUPABASE_ACCESS_TOKEN, SUPABASE_PROJECT_REF, schemaSql, 'Schema');
-
-    console.log('\n2단계: seed.sql (소상공인 3명 및 샘플 데이터 입력)');
-    await executeSqlViaManagementApi(SUPABASE_ACCESS_TOKEN, SUPABASE_PROJECT_REF, seedSql, 'Seed');
-
-    console.log('\n🎉 축하합니다! 모든 DB 테이블과 시드 데이터가 Supabase에 성공적으로 적용되었습니다.');
-  } catch (err) {
-    console.error(`\n❌ 오류 발생: ${err.message}`);
-    process.exit(1);
-  }
+  const schemaSql = fs.readFileSync(path.join(rootDir, 'db', 'schema.sql'), 'utf8');
+  console.log('1/2 데이터베이스 스키마와 접근 정책을 적용합니다.');
+  await executeSql(schemaSql);
+  console.log('2/2 운영자 계정을 생성하거나 갱신합니다.');
+  const admin = await ensureAdminAccount();
+  console.log('완료: ' + (admin.created ? '새 운영자 계정 생성' : '운영자 계정 갱신'));
+  console.log('운영자 ID: ' + admin.email);
+  console.log('운영자 비밀번호: ' + admin.password);
+  console.log('운영자 정보는 .env.admin.local에도 저장했습니다.');
 }
 
-main();
+main().catch(error => {
+  console.error('적용 실패: ' + error.message);
+  process.exit(1);
+});

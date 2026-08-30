@@ -66,6 +66,16 @@ async function currentUser(authorization) {
   return response.ok ? response.json() : null;
 }
 
+async function currentProfile(user, authorization) {
+  if (!user || !SUPABASE_URL || !SUPABASE_KEY) return null;
+  const response = await fetch(
+    `${SUPABASE_URL}/rest/v1/profiles?select=id,role&id=eq.${user.id}&limit=1`,
+    { headers: { apikey: SUPABASE_KEY, Authorization: authorization } }
+  );
+  const rows = response.ok ? await response.json() : [];
+  return rows[0] || null;
+}
+
 async function saveOcr(user, authorization, filename, plan, result, model) {
   if (!user || !SUPABASE_URL || !SUPABASE_KEY) return null;
   const commonHeaders = { apikey: SUPABASE_KEY, Authorization: authorization, 'Content-Type': 'application/json' };
@@ -83,7 +93,7 @@ async function handleChat(body) {
   const messages = Array.isArray(body.messages) ? body.messages.slice(-12).filter(item => ['user', 'assistant'].includes(item?.role) && typeof item?.content === 'string').map(item => ({ role: item.role, content: item.content.slice(0, 4000) })) : [];
   if (!messages.length) throw Object.assign(new Error('대화 내용이 필요합니다.'), { status: 400 });
   const context = String(body.context || '').slice(0, 12000);
-  const system = `당신은 지역 소상공인 펀딩 플랫폼 모아의 근거 중심 상담사입니다. 한국어로 답하세요. DB 지식그래프/평가 컨텍스트가 있으면 해당 노드, 관계, 수치를 근거로 사용하고 부족자료를 명시하세요. 투자자에게 장점과 손실·폐업·정보부족 위험을 같은 비중으로 설명하세요. 특정 투자를 지시하거나 수익을 보장하지 마세요. 설명용 성장등급은 공식 SCB가 아니라고 밝히세요.\n\n검증되지 않은 현재 컨텍스트:\n${context}`;
+  const system = `당신은 소상공인 펀딩 플랫폼 모아의 심사·이용 상담사입니다. 한국어로 짧고 명확하게 답하세요. 현재 컨텍스트의 수치와 상태를 근거로 사용하되, 확인된 사실·사업자 주장·AI 추정을 구분하세요. 투자자에게 사업의 강점뿐 아니라 허위 가능성, 현금흐름, 부채, 폐업, 정보 부족 위험과 추가 확인 자료를 반드시 함께 설명하세요. 자금 지급은 앞 단계 완료, 원본 증빙 승인, 확인된 예치 잔액을 모두 충족해야 한다는 원칙을 지키세요. 특정 참여를 지시하거나 수익을 보장하지 마세요.\n\n현재 화면에서 전달된 미검증 정보:\n${context}`;
   const result = await callOpenAi({
     model: CHAT_MODEL,
     messages: [{ role: 'system', content: system }, ...messages],
@@ -105,6 +115,8 @@ async function handleOcr(body, authorization) {
   if (!estimatedBytes || estimatedBytes > 6 * 1024 * 1024) throw Object.assign(new Error('이미지는 6MB 이하여야 합니다.'), { status: 400 });
   const user = await currentUser(authorization);
   if (!user) throw Object.assign(new Error('소상공인 로그인이 필요합니다.'), { status: 401 });
+  const profile = await currentProfile(user, authorization);
+  if (profile?.role !== 'owner') throw Object.assign(new Error('소상공인 계정에서만 증빙을 분석할 수 있습니다.'), { status: 403 });
   const plan = String(body.plan || '등록된 사업계획 없음').slice(0, 2000);
   const prompt = `소상공인이 제출한 매출전표·영수증·세금계산서 이미지를 보이는 내용만 판독하세요. 승인 사용계획: ${plan}. JSON만 반환: {"documentType":"영수증|세금계산서|매출전표|계약서|기타","merchant":"","businessNumber":"","date":"","items":[{"name":"","quantity":1,"amount":0}],"subtotal":0,"tax":0,"total":0,"paymentMethod":"","planMatch":"적합|검토 필요|부적합","confidence":0,"warnings":[],"rawText":""}. OCR은 지급 승인이 아니며 읽을 수 없는 값은 추측하지 마세요.`;
   const result = await callOpenAi({
@@ -127,7 +139,6 @@ async function handleOcr(body, authorization) {
   if (!text) throw Object.assign(new Error('OCR 결과가 비어 있습니다.'), { status: 502 });
   const structured = jsonBlock(text);
   structured.warnings = Array.isArray(structured.warnings) ? structured.warnings : [];
-  structured.warnings.push('OpenAI Vision(gpt-4o-mini)을 사용하여 증빙을 분석했습니다.');
   const model = result.model || OCR_MODEL;
   const analysisId = await saveOcr(user, authorization, String(body.filename || '').slice(0, 255), plan, structured, model);
   return { ok: true, result: structured, model, analysisId };

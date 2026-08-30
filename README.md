@@ -1,127 +1,146 @@
-# MOA — 소상공인 데이터 기반 펀딩
+# MOA — 검증 기반 소상공인 펀딩
 
-소상공인과 지역 투자 참여자를 연결하는 기능형 MVP입니다. 회원 유형별 로그인, 펀딩·쿠폰, 매출전표 OCR, 설명 가능한 성장평가, property graph 기반 자료 진단, 투자자 비교 추천을 제공합니다.
+모아는 단순히 소상공인에게 돈을 모아 주는 서비스가 아니다. 모집 전에 사업 실체와 지속 가능성을 확인하고, 참여금은 예치 상태로 관리하며, 계약·구매·설치처럼 미리 합의한 목표가 증빙으로 확인된 뒤에만 단계별 지급을 허용하는 서비스다.
 
-> 현재 금전 거래는 데모 기록이며 `S1~S10` 성장등급과 추천 점수는 금융위원회의 공개된 SCB 추진 방향을 재현한 PoC입니다. 공식 CB/SCB, 투자 권유 또는 수익 보장이 아닙니다.
+핵심 질문은 두 가지다.
 
-## 구조
+1. 이 사업과 모집 정보는 믿을 만한가?
+2. 모인 돈은 약속한 목표를 달성했을 때만 지급되는가?
 
-```text
-index.html / styles.css / features.css / metrics.css
-app.js
-└─ src/supabase-cloud.js       Supabase Auth·PostgREST 브라우저 어댑터
+## 사용자 흐름
 
-api/
-├─ health.js                   Vercel 상태 API
-└─ ai.js                       Vercel SGLLM 챗·Vision OCR 프록시
+### 소상공인
 
-db/
-├─ schema.sql                  Supabase PostgreSQL + RLS + property graph
-├─ seed.sql                    가상 소상공인 3곳·평가·그래프 시드
-└─ README.md
+1. 사업체와 사업자 정보를 등록한다.
+2. 최근 매출, 영업현금흐름, 부채, 상환액, 연체, 고용, 세금, 상권 자료를 입력한다.
+3. 투자자에게 공개할 매출·비용·부채·계획·위험·계약 증빙 항목을 확인한다.
+4. 모집 목표, 자금 사용계획, 주요 위험과 대응계획을 작성한다.
+5. 계약 확인, 구매 착수, 설치 완료 같은 지급 단계를 만들고 지급 비율 합계를 100%로 맞춘다.
+6. 운영자 심사를 요청한다. 승인 전에는 투자자 화면에 공개되지 않는다.
+7. 공개 승인 후 현재 열려 있는 단계의 증빙을 제출한다.
+8. AI 판독 결과를 확인한 뒤 운영자에게 제출한다. AI는 지급을 승인하지 않는다.
+9. 운영자가 원본과 계획을 확인하고 승인하면 해당 단계의 지급 심사가 열린다.
 
-server.py / moa_db.py          로컬 API·SQLite 인증/감사로그
-moa_intelligence.py            설명형 성장평가·추천·그래프 진단
-schema.sql                     로컬 SQLite 스키마
-seed/demo_owners.json          로컬 가상 소상공인 계정 3명
-tests/                         백엔드·실브라우저 통합 테스트
-```
+### 투자자
 
-Vercel에서는 Supabase Authentication/PostgreSQL/RLS가 영속 저장을 담당합니다. 로컬에서는 SQLite와 `HttpOnly` 세션 쿠키로 동일한 사용자 흐름을 검증할 수 있습니다.
+1. 운영자가 공개 승인한 모집만 본다.
+2. 사업 정보, 재무·위험 점검, 자금 사용계획과 단계별 지급 조건을 확인한다.
+3. 손실과 정보 부족 위험에 동의하고 참여 의사를 등록한다.
+4. 예치 확인 여부와 단계별 지급 내역을 계속 확인한다.
 
-## 핵심 기능
+### 운영자
 
-- 투자자/소상공인 역할별 회원가입·로그인과 최근 로그인/로그아웃 기록
-- 사용자별 찜, 데모 참여, 리워드 쿠폰 지급·사용
-- 사업체·펀딩·공시·상권 기준·쿠폰 정책 관리
-- 최근 6개월 매출, 영업현금흐름, 부채·상환, 연체, 고용, 세금, 상권 입력
-- 금융위 SCB 방향의 매출 성장·상권 지위·지속성·회복력 중심 설명형 `S1~S10` 평가
-- `knowledge_nodes` / `knowledge_edges`와 재귀 탐색 함수 기반 자료 부족 진단
-- 성장성, 위험, 쿠폰 혜택을 함께 보여 주는 일반 투자자 탐색 추천
-- 영수증·세금계산서·매출전표 OCR 및 사업계획 일치도 저장
-- 로컬 `Ollama Vision → SGLLM Vision` 순서의 OCR fallback
-- Vercel에서는 로컬 Ollama에 접근할 수 없으므로 서버리스 SGLLM Vision 사용
+1. 소상공인과 투자자 화면을 모두 미리 볼 수 있다.
+2. 사업자 정보, 위험자료, 빠진 자료, 자금 목적과 지급 조건을 함께 심사한다.
+3. 모집안을 공개 승인하거나 보완 요청·반려한다.
+4. 결제·예치 결과와 참여 약정을 대조해 예치 상태를 확인한다.
+5. AI가 구조화한 증빙과 원본을 대조해 승인·반려한다.
+6. 앞 단계 지급 완료, 현재 증빙 승인, 확인된 예치 잔액을 다시 검사한 뒤 지급을 승인한다.
+7. 모든 상태 변경을 감사 기록에서 확인한다.
 
-## 로컬 실행
+## 서버에서 강제하는 안전 규칙
 
-```bash
-npm install
-python3 server.py
-```
+화면 버튼을 숨기는 것만으로 권한을 통제하지 않는다. 아래 규칙은 PostgreSQL 함수와 RLS에서 다시 검사한다.
 
-<http://127.0.0.1:8000>을 엽니다. Ollama Vision 모델은 환경에 맞게 지정합니다.
+- 일반 회원가입은 investor와 owner만 만들 수 있고 admin은 만들 수 없다.
+- 투자자와 소상공인은 자기 역할 화면만 열 수 있다.
+- 소상공인은 자신의 사업과 모집안만 수정할 수 있다.
+- 소상공인은 모집을 직접 공개 승인하거나 자신의 증빙을 승인할 수 없다.
+- 공개 전 모집은 투자자에게 조회되지 않는다.
+- 지급 단계는 2개 이상이고 지급 비율 합계가 정확히 100%여야 심사를 요청할 수 있다.
+- 필수 공시 6개와 재무·위험 점검이 없으면 심사를 요청할 수 없다.
+- 앞 단계가 지급 완료되지 않으면 다음 단계 증빙을 제출할 수 없다.
+- 승인된 증빙이 없으면 지급할 수 없다.
+- 누적 지급액과 이번 지급액의 합이 확인된 예치액을 넘으면 지급할 수 없다.
+- 심사·예치·증빙·지급 상태 변경은 audit_events에 남는다.
 
-```bash
-MOA_OCR_ENGINE=auto \
-OLLAMA_URL=http://127.0.0.1:11434 \
-OLLAMA_OCR_MODEL=qwen2.5vl:7b \
-python3 server.py
-```
+## 자료 조사에서 반영한 내용
 
-- `auto`: Ollama를 먼저 호출하고 연결 불가 시 SGLLM Vision 사용
-- `ollama`: Ollama만 허용하며 실패를 숨기지 않음
-- `cloud`: SGLLM Vision만 사용
+소상공인은 담보나 장기 신용 이력이 부족해 전통적인 재무정보만으로 현재 상태를 설명하기 어렵다. 따라서 매출의 절대 규모뿐 아니라 다음 정보를 함께 봐야 한다.
 
-Ollama 모델은 이미지 입력을 지원해야 합니다. OCR 결과는 자동 지급 승인이 아니며 원본 대조와 운영자 검토가 필요합니다.
+- 월별 매출 추세와 변동성
+- 영업현금흐름과 월 상환 부담
+- 총부채, 연체와 세금 납부 상태
+- 업력, 고용 유지와 대표자 변경
+- 상권 매출·유동인구 변화, 경쟁 밀도와 주변 폐업률
+- 재방문과 온라인 매출 같은 영업 지속성 신호
+- 각 입력값의 기준일, 출처와 원본 증빙
 
-### 로컬 데모 소상공인
+점수 하나로 승인하면 누락·오입력·편향을 숨길 수 있다. 그래서 화면에는 점수와 함께 구성요인, 부족 자료와 사업자가 공개한 위험을 보여 주고, 최종 심사는 사람이 원자료를 확인하도록 설계했다.
 
-비밀번호는 모두 `Demo1234!`입니다.
+증빙 자동화의 목적도 자동 지급이 아니다. OCR은 공급자·사업자번호·거래일·품목·금액을 구조화하고 승인된 사용계획과의 일치 여부를 표시한다. 운영자는 이미지 원본, 중복 여부, 거래 상대방, 금액과 계획을 대조한 뒤 결정한다.
 
-| 이름 | 이메일 | 가상 평가 특성 |
-|---|---|---|
-| 김온기 | `ongi-owner@moa.demo` | 매출·현금흐름 우수 |
-| 박목화 | `mokhwa-owner@moa.demo` | 중간 성장·경쟁 심화 |
-| 이일구 | `table-owner@moa.demo` | 부채 회복력 보완 필요 |
+## 프로젝트 구조
 
-## Supabase 설정
+    .
+    ├── index.html                  역할별 화면과 폼
+    ├── app.js                      사용자 흐름과 화면 상태
+    ├── styles.css                  전체 반응형 UI
+    ├── src/
+    │   └── supabase-cloud.js       Auth, PostgREST, RLS 함수 연결
+    ├── api/
+    │   ├── ai.js                   상담과 증빙 이미지 분석
+    │   └── health.js               배포 상태 확인
+    ├── db/
+    │   └── schema.sql              PostgreSQL 테이블, RLS, 심사·지급 함수
+    ├── scripts/
+    │   └── apply_supabase.mjs      스키마 적용과 운영자 계정 준비
+    ├── package.json
+    └── vercel.json
 
-`.env.development.local` 또는 Vercel 환경변수에 아래 두 값만 넣습니다. URL 뒤에 `/rest/v1`을 붙이지 않습니다. 코드에도 방어적 정규화가 들어 있습니다.
+운영 웹과 무관했던 로컬 SQLite 서버, Python 평가 코드, 샘플 seed, 중복 설계 문서와 저장소 내부 테스트 폴더는 제거했다.
 
-```dotenv
-VITE_SUPABASE_URL=https://PROJECT_REF.supabase.co
-VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
-```
+## 환경 설정
 
-Supabase SQL Editor에서 다음 순서로 실행합니다.
+.env.development.local:
 
-1. `db/schema.sql`
-2. `db/seed.sql`
+    VITE_SUPABASE_URL=https://PROJECT_REF.supabase.co
+    VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
 
-브라우저나 Git에는 `service_role`, DB 비밀번호, SGLLM 키를 넣지 않습니다. 상세 RLS와 Graph DB 구조는 [db/README.md](db/README.md)를 참고하세요.
+.env.local 또는 Vercel 서버 환경변수:
 
-## Vercel 설정
+    OPENAI_API_KEY=...
+    MOA_CHAT_MODEL=gpt-4o-mini
+    MOA_OCR_MODEL=gpt-4o-mini
+    SUPABASE_ACCESS_TOKEN=...
 
-```bash
-npm run build
-vercel link
-vercel env add VITE_SUPABASE_URL production
-vercel env add VITE_SUPABASE_PUBLISHABLE_KEY production
-vercel env add SGLLM_API_KEY production
-vercel --prod
-```
+브라우저에는 publishable 키만 전달한다. OpenAI 키, Supabase 관리 토큰, service_role 키는 브라우저 코드나 Git에 넣지 않는다.
 
-`VITE_` 두 값은 브라우저용 publishable 설정이고 `SGLLM_API_KEY`는 서버리스 함수에서만 읽습니다. 환경변수를 바꾸면 다시 배포해야 합니다.
+## Supabase와 운영자 계정
 
-## 검증
+    npm install
+    npm run db:apply
 
-```bash
-node --check app.js
-node --check src/supabase-cloud.js
-node --check api/ai.js
-python3 -m py_compile server.py moa_db.py moa_intelligence.py
-npm run build
-python3 tests/backend_integration.py
-node tests/browser_smoke.mjs
-```
+db:apply는 다음 작업을 수행한다.
 
-브라우저 테스트는 실행 중인 `server.py`와 macOS Google Chrome을 사용합니다.
+1. db/schema.sql을 연동된 프로젝트에 적용한다.
+2. admin@moa.local 운영자 계정을 생성하거나 갱신한다.
+3. 임의의 강한 비밀번호를 .env.admin.local에 권한 0600으로 저장한다.
 
-## 실서비스 전 필수 작업
+운영자 이메일이나 비밀번호를 지정하려면 실행 전에 아래 값을 환경변수로 설정한다.
 
-- 이메일 확인·비밀번호 재설정·MFA·로그인 rate limit
-- 사업자 진위·대표자 본인확인, 개인정보 보존/파기 정책
-- private Storage, 파일 악성코드 검사, 암호화, 중복 이미지 해시
-- 운영자 심사·이의제기·평가 버전 관리와 편향/성능 검증
-- 결제·예치·환불·전자계약 및 관련 인허가/법률 검토
-- 공식 SCB 제공기관 연동 전까지 PoC 등급을 금융 의사결정에 사용하지 않기
+    MOA_ADMIN_EMAIL=admin@example.com
+    MOA_ADMIN_PASSWORD=충분히_긴_운영자_비밀번호
+
+공개 회원가입 화면에는 운영자 가입 선택지가 없다. 운영자 로그인 링크는 이미 준비된 운영자 계정의 로그인만 허용한다.
+
+## 실행과 검증
+
+    npm run dev
+    npm run check
+
+npm run check는 브라우저 JavaScript, 서버리스 함수와 데이터 적용 스크립트의 문법을 검사하고 Vite 프로덕션 빌드를 수행한다.
+
+## 결제·예치 연동 경계
+
+현재 committed → escrowed → released 상태와 지급 제약은 완성되어 있다. 다만 실제 결제사·예치기관으로 돈을 이동하는 코드는 특정 계약 사업자가 결정되지 않아 포함하지 않았다.
+
+실서비스에서는 다음 연결이 필요하다.
+
+- 결제 성공 웹훅이 검증된 뒤에만 confirm_commitment_escrow 호출
+- 지급 사업자 API 성공 응답과 거래 식별자를 확인한 뒤 지급 상태 확정
+- 환불·취소·분쟁 상태와 감사 로그 연결
+- 사업자 진위·대표자 본인확인, 전자계약, 개인정보 보존·파기 정책
+- 증빙 원본을 private Storage에 보관하고 악성 파일·중복 해시 검사
+
+결제 연동 전에는 화면의 “참여 의사 등록”, “예치 확인”, “지급 승인 기록”을 실제 결제 완료나 송금 완료로 오인해서는 안 된다.

@@ -1,787 +1,1268 @@
 import { cloudConfigured, cloudRequest, cloudSessionHeaders } from './src/supabase-cloud.js';
 
-let stores = [
-  {
-    id: 'ongi', name: '온기린 식당', category: '한식', area: '서울 성동구',
-    desc: '제철 재료로 차리는 따뜻한 한 끼', growth: '+18.2%', support: 92,
-    target: 30000000, funded: 27600000, investors: 184, daysLeft: 8,
-    tone: '#d9b88f', badge: '성장 주목', since: 2018,
-    campaign: '오래된 주방을 더 안전하고 효율적으로 바꿉니다',
-    plan: [['업소용 냉장고 교체', 12000000], ['주방 환기 설비 개선', 10000000], ['초기 식자재·운전자금', 8000000]],
-    points: ['최근 6개월 매출이 완만하게 증가했어요.', '지역 단골 리뷰에서 재방문 언급이 많아요.', '장비 교체 목적과 견적 금액이 구체적이에요.'],
-    risks: ['식재료 원가 상승 시 수익성이 낮아질 수 있어요.', '주방 공사 기간 중 매출 공백이 발생할 수 있어요.'],
-    coupon: { title: '온기린 10% 감사 쿠폰', benefit: '식사 금액 10% 할인', condition: '2만원 이상 주문 시' }
-  },
-  {
-    id: 'mokhwa', name: '목화 로스터리', category: '카페', area: '서울 마포구',
-    desc: '동네에서 직접 볶는 매일의 커피', growth: '+12.6%', support: 74,
-    target: 24000000, funded: 17760000, investors: 126, daysLeft: 14,
-    tone: '#a7bba5', badge: '방문 인증', since: 2020,
-    campaign: '더 신선한 커피를 위한 소형 로스터를 들여옵니다',
-    plan: [['소형 로스터 구매', 16000000], ['배기 설비 공사', 5000000], ['생두 구매', 3000000]],
-    points: ['원두 구독 고객이 꾸준히 늘고 있어요.', '장비 견적과 설치 일정이 제출됐어요.'],
-    risks: ['커피 원두 가격과 환율 변동에 영향을 받아요.', '장비 도입 후 판매량 증가가 계획보다 느릴 수 있어요.'],
-    coupon: { title: '목화 커피 1잔 쿠폰', benefit: '아메리카노 1잔', condition: '펀딩 참여자 전용' }
-  },
-  {
-    id: 'table', name: '일구의 식탁', category: '양식', area: '서울 종로구',
-    desc: '천천히 빚어 완성한 생면 파스타', growth: '+9.4%', support: 61,
-    target: 40000000, funded: 24400000, investors: 97, daysLeft: 19,
-    tone: '#d4a083', badge: '신규 공개', since: 2022,
-    campaign: '점심 회전율을 높일 두 번째 제면기를 마련합니다',
-    plan: [['제면기 및 반죽기', 22000000], ['주방 동선 개선', 10000000], ['신메뉴 개발', 8000000]],
-    points: ['대표 메뉴 관련 긍정 리뷰 비중이 높아요.', '점심 시간 품절 데이터가 설비 수요를 뒷받침해요.'],
-    risks: ['업력이 짧아 장기 매출 데이터가 부족해요.', '설비 증설이 실제 수요 증가로 이어지지 않을 수 있어요.'],
-    coupon: { title: '생면 파스타 5천원 쿠폰', benefit: '5,000원 할인', condition: '3만원 이상 주문 시' }
-  },
-  {
-    id: 'spring', name: '봄날 명상소', category: '생활', area: '서울 영등포구',
-    desc: '쉼의 시간을 돌보는 친환경 명상 공간', growth: '+15.1%', support: 83,
-    target: 18000000, funded: 14940000, investors: 143, daysLeft: 6,
-    tone: '#9eb8bc', badge: '지역 추천', since: 2019,
-    campaign: '소규모 마음돌봄 프로그램 공간을 확장합니다',
-    plan: [['방음 공사', 9000000], ['명상 도구 구매', 4000000], ['프로그램 개발·홍보', 5000000]],
-    points: ['예약 재방문율이 지역 동종업체 평균보다 높다는 자체 자료가 있어요.', '소규모 확장으로 고정비 증가를 제한했어요.'],
-    risks: ['자체 제출 재방문율은 외부 검증이 필요해요.', '프로그램 운영자 개인 역량 의존도가 높아요.'],
-    coupon: { title: '봄날 체험권', benefit: '입문 명상 1회', condition: '사전 예약 필수' }
-  },
-  {
-    id: 'field', name: '들녘 밥상', category: '한식', area: '경기 수원시',
-    desc: '농가에서 바로 받은 재료의 집밥', growth: '+7.8%', support: 57,
-    target: 26000000, funded: 14820000, investors: 88, daysLeft: 23,
-    tone: '#c8b994', badge: '정보 충실', since: 2017,
-    campaign: '지역 농가 직거래를 위한 저온 저장고를 설치합니다',
-    plan: [['저온 저장고', 18000000], ['전기 증설', 5000000], ['운송·포장 장비', 3000000]],
-    points: ['지역 농가와의 기존 거래 내역이 제출됐어요.', '식재료 폐기율 절감 목표가 수치로 제시됐어요.'],
-    risks: ['저장고 전기료와 유지비가 증가할 수 있어요.', '계절별 농산물 수급 변동이 커요.'],
-    coupon: { title: '들녘 반찬 쿠폰', benefit: '계절 반찬 증정', condition: '식사 주문 시' }
-  },
-  {
-    id: 'garden', name: '작은 정원', category: '카페', area: '인천 부평구',
-    desc: '식물과 구움과자가 있는 골목 카페', growth: '+11.3%', support: 68,
-    target: 20000000, funded: 13600000, investors: 109, daysLeft: 12,
-    tone: '#91ad96', badge: '이웃 추천', since: 2021,
-    campaign: '작은 베이킹 작업실을 분리해 생산량을 늘립니다',
-    plan: [['오븐 교체', 9000000], ['작업대·환기 공사', 7000000], ['원재료·패키지', 4000000]],
-    points: ['구움과자 예약 주문이 꾸준히 증가했어요.', '비교적 작은 규모로 단계별 집행이 가능해요.'],
-    risks: ['카페 매출의 주말 편중이 커요.', '인근 신규 카페 진입으로 경쟁이 늘었어요.'],
-    coupon: { title: '작은 정원 디저트 쿠폰', benefit: '구움과자 1개', condition: '음료 주문 시' }
-  }
-];
-
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
-const escapeHTML = value => String(value ?? '').replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[char]));
-const won = value => `${Number(value || 0).toLocaleString('ko-KR')}원`;
+const won = value => Number(value || 0).toLocaleString('ko-KR') + '원';
+const shortDate = value => value ? new Intl.DateTimeFormat('ko-KR', {
+  year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+}).format(new Date(value)) : '-';
+const escapeHTML = value => String(value ?? '').replace(/[&<>'"]/g, char => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;'
+}[char]));
 
-let favorites = new Set();
-let currentUser = null;
-let business = null;
-let campaign = null;
-let contributions = {};
-let coupons = [];
-let issuedCoupon = null;
-let disclosureValues = [];
-let selectedRegion = '서울 성동구';
-let activeFilter = 'all';
-let favoritesOnly = false;
-let searchTerm = '';
-let currentStore = null;
-let pendingAction = null;
-let receiptDataUrl = '';
-let receiptFilename = '';
-let lastOcrResult = null;
-let chatHistory = [];
-let loginHistory = [];
-let intelligence = null;
-let recommendations = [];
+const roleLabels = { investor: '투자자', owner: '소상공인', admin: '운영자' };
+const campaignStatusLabels = {
+  draft: '작성 중',
+  submitted: '심사 대기',
+  needs_changes: '보완 필요',
+  published: '모집 공개',
+  rejected: '심사 반려',
+  closed: '모집 종료'
+};
+const milestoneStatusLabels = {
+  planned: '증빙 대기',
+  evidence_submitted: '증빙 심사 중',
+  approved: '지급 승인 대기',
+  rejected: '증빙 보완 필요',
+  released: '지급 완료'
+};
+const commitmentStatusLabels = {
+  committed: '예치 확인 대기',
+  escrowed: '예치 확인',
+  cancelled: '취소',
+  refunded: '환불'
+};
 
-const grid = $('#storeGrid');
-const searchInput = $('#storeSearch');
-const resultSummary = $('#resultSummary');
+const state = {
+  user: null,
+  campaigns: [],
+  commitments: [],
+  loginHistory: [],
+  owner: null,
+  admin: null,
+  currentCampaign: null,
+  adminPreviewCampaign: null,
+  ownerStep: 'business',
+  adminTab: 'campaigns',
+  authRole: null,
+  authAction: 'login',
+  evidenceImage: '',
+  evidenceFilename: '',
+  evidenceResult: null,
+  evidenceAnalysisId: null,
+  chatHistory: []
+};
 
 async function apiRequest(path, options = {}) {
   if (cloudConfigured) {
-    const cloudData = await cloudRequest(path, options);
-    if (cloudData !== null) return cloudData;
+    const data = await cloudRequest(path, options);
+    if (data !== null) return data;
+  } else if (!path.startsWith('/api/ai/') && path !== '/api/health') {
+    throw new Error('서비스 데이터 연결이 설정되지 않았습니다.');
   }
-  const response = await fetch(path, {
-    credentials: 'same-origin',
-    ...options,
-    headers: options.body ? { 'Content-Type': 'application/json', ...(cloudConfigured ? cloudSessionHeaders() : {}), ...(options.headers || {}) } : { ...(cloudConfigured ? cloudSessionHeaders() : {}), ...(options.headers || {}) }
-  });
-  let data;
-  try { data = await response.json(); } catch { data = { ok: false, error: '서버 응답을 해석하지 못했습니다.' }; }
+  const headers = {
+    ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+    ...cloudSessionHeaders(),
+    ...(options.headers || {})
+  };
+  const response = await fetch(path, { ...options, headers });
+  const data = await response.json().catch(() => ({ ok: false, error: '응답을 확인하지 못했습니다.' }));
   if (!response.ok || !data.ok) {
-    const error = new Error(data.error || `요청 실패 (${response.status})`);
+    const error = new Error(data.error || '요청을 처리하지 못했습니다.');
     error.status = response.status;
     throw error;
   }
   return data;
 }
 
-function applyBootstrap(data) {
-  if (Array.isArray(data.stores) && data.stores.length) stores = data.stores;
-  currentUser = data.user || null;
-  favorites = new Set(data.favorites || []);
-  business = data.business || null;
-  campaign = data.campaign || null;
-  contributions = data.contributions || {};
-  coupons = data.coupons || [];
-  issuedCoupon = data.issuedCoupon || null;
-  disclosureValues = data.disclosures || [];
-  selectedRegion = data.region || '서울 성동구';
-  lastOcrResult = data.recentOcr?.result || null;
-  loginHistory = data.loginHistory || [];
-  intelligence = data.intelligence || null;
-  recommendations = data.recommendations || [];
-}
-
 function showToast(message, type = 'success') {
   const toast = $('#toast');
   toast.textContent = message;
-  toast.className = `toast show ${type}`;
+  toast.className = 'toast show ' + type;
   clearTimeout(showToast.timer);
-  showToast.timer = setTimeout(() => { toast.className = 'toast'; }, 3200);
+  showToast.timer = setTimeout(() => { toast.className = 'toast'; }, 3600);
 }
 
 function openModal(id) {
-  $$('.modal.open').forEach(modal => {
-    modal.classList.remove('open');
-    modal.setAttribute('aria-hidden', 'true');
-  });
-  const modal = typeof id === 'string' ? $(`#${id}`) : id;
+  const modal = typeof id === 'string' ? $('#' + id) : id;
   if (!modal) return;
   modal.classList.add('open');
   modal.setAttribute('aria-hidden', 'false');
   document.body.classList.add('modal-open');
-  setTimeout(() => $('input, textarea, button:not(.modal-close)', modal)?.focus(), 30);
+  setTimeout(() => $('input, button, textarea, select', modal)?.focus(), 30);
 }
 
-function closeModal(modal) {
-  const target = modal?.classList?.contains('modal') ? modal : modal?.closest?.('.modal');
-  if (target) {
-    target.classList.remove('open');
-    target.setAttribute('aria-hidden', 'true');
-  }
+function closeModal(target) {
+  const modal = target?.classList?.contains('modal') ? target : target?.closest?.('.modal');
+  if (!modal) return;
+  if (modal.id === 'authModal' && !state.user) return;
+  modal.classList.remove('open');
+  modal.setAttribute('aria-hidden', 'true');
   if (!$('.modal.open')) document.body.classList.remove('modal-open');
 }
 
-$$('[data-close-modal]').forEach(button => button.addEventListener('click', () => closeModal(button)));
+$$('[data-close-modal]').forEach(button => {
+  button.addEventListener('click', () => closeModal(button));
+});
 document.addEventListener('keydown', event => {
-  if (event.key === 'Escape') {
-    if ($('#aiDrawer').classList.contains('open')) closeAiDrawer();
-    else closeModal($('.modal.open'));
-  }
+  if (event.key !== 'Escape') return;
+  if ($('#aiDrawer').classList.contains('open')) closeChat();
+  else closeModal($('.modal.open'));
 });
 
-function requireLogin(role, action) {
-  if (!currentUser) {
-    pendingAction = action;
-    $(`input[name="authRole"][value="${role}"]`).checked = true;
-    openModal('authModal');
-    showToast('이 기능은 로그인 후 이용할 수 있어요.', 'info');
-    return false;
+function applyBootstrap(data) {
+  state.user = data.user || null;
+  state.campaigns = data.campaigns || [];
+  state.commitments = data.commitments || [];
+  state.loginHistory = data.loginHistory || [];
+  state.owner = data.owner || null;
+  state.admin = data.admin || null;
+  if (state.user?.role === 'admin' && !state.adminPreviewCampaign) {
+    state.adminPreviewCampaign = state.admin?.campaigns?.[0] || null;
   }
-  if (role && currentUser.role !== role) {
-    showToast(role === 'owner' ? '소상공인 계정으로 로그인해 주세요.' : '소비자 계정으로 로그인해 주세요.', 'error');
-    openModal('accountModal');
-    return false;
-  }
-  action?.();
-  return true;
 }
 
-function updateAuthUI() {
-  const label = $('#loginLabel');
-  if (currentUser) {
-    label.textContent = `${currentUser.name}님`;
-    $('#accountAvatar').textContent = currentUser.name.slice(0, 1);
-    $('#accountSummary').textContent = `${currentUser.email} · ${currentUser.role === 'owner' ? '소상공인' : '소비자'} 계정`;
-    $('#ownerGreeting').textContent = currentUser.role === 'owner' ? `${currentUser.name} 사장님` : '사장님';
-  } else {
-    label.textContent = '로그인';
-    $('#ownerGreeting').textContent = '사장님';
-  }
-  renderLoginHistory();
-  updateCouponUI();
+async function refreshData(message = '') {
+  const data = await apiRequest('/api/bootstrap');
+  applyBootstrap(data);
+  renderAll();
+  if (message) showToast(message);
 }
 
-function renderLoginHistory() {
-  const list = $('#loginHistoryList');
-  if (!list) return;
-  if (!currentUser || !loginHistory.length) {
-    list.innerHTML = '<p>로그인 기록이 없습니다.</p>';
+function allowedViews() {
+  if (!state.user) return [];
+  if (state.user.role === 'admin') return ['investor', 'owner', 'admin'];
+  return [state.user.role];
+}
+
+function defaultView() {
+  return state.user?.role === 'owner' ? 'owner'
+    : state.user?.role === 'admin' ? 'admin'
+      : 'investor';
+}
+
+function switchView(view, scroll = true) {
+  if (!allowedViews().includes(view)) {
+    showToast('현재 계정에서는 이 화면을 이용할 수 없습니다.', 'error');
     return;
   }
-  list.innerHTML = loginHistory.slice(0, 6).map(item => `<div class="login-event"><span class="event-dot ${escapeHTML(item.event)}"></span><div><strong>${escapeHTML(item.label)}</strong><small>${escapeHTML(item.createdAt)} · ${escapeHTML(item.ip || 'IP 미수집')}</small></div></div>`).join('');
+  $$('.view').forEach(section => section.classList.toggle('active', section.id === view + 'View'));
+  $$('[data-view]').forEach(button => button.classList.toggle('active', button.dataset.view === view));
+  if (view === 'owner') renderOwner();
+  if (view === 'admin') renderAdmin();
+  updateChatContext();
+  if (scroll) window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-$('#loginButton').addEventListener('click', () => openModal(currentUser ? 'accountModal' : 'authModal'));
-$('#authForm').addEventListener('submit', async event => {
-  event.preventDefault();
-  const role = $('input[name="authRole"]:checked').value;
-  const submit = $('#authForm button[type="submit"]');
-  const password = $('#authPassword').value;
-  submit.disabled = true; submit.textContent = '서버에서 확인 중…';
-  try {
-    const data = await apiRequest('/api/auth/session', {
-      method: 'POST',
-      body: JSON.stringify({ name: $('#authName').value.trim(), email: $('#authEmail').value.trim(), password, role })
-    });
-    applyBootstrap(data);
-    $('#authPassword').value = '';
+function updateHeader() {
+  const nav = $('#roleNavigation');
+  const allowed = allowedViews();
+  nav.classList.toggle('hidden', !state.user);
+  $$('[data-view]', nav).forEach(button => {
+    button.classList.toggle('locked', !allowed.includes(button.dataset.view));
+  });
+  $('#accountLabel').textContent = state.user ? state.user.name + '님' : '로그인';
+  $('#openMyCommitments').classList.toggle('hidden', state.user?.role !== 'investor');
+}
+
+function renderAccount() {
+  if (!state.user) return;
+  $('#accountAvatar').textContent = state.user.name.slice(0, 1);
+  $('#accountSummary').textContent = state.user.email + ' · ' + roleLabels[state.user.role] + ' 계정';
+  const list = $('#loginHistoryList');
+  list.innerHTML = state.loginHistory.length
+    ? state.loginHistory.map(item =>
+      '<div class="login-event"><strong>' + escapeHTML(item.label) + '</strong><span>'
+      + escapeHTML(shortDate(item.createdAt)) + '</span></div>'
+    ).join('')
+    : '<p>접속 기록이 없습니다.</p>';
+}
+
+function renderAll() {
+  $('#appLoading').classList.add('hidden');
+  updateHeader();
+  renderAccount();
+  renderInvestor();
+  renderOwner();
+  renderAdmin();
+  if (state.user) {
+    $('.optional-auth-close').classList.remove('hidden');
     closeModal($('#authModal'));
-    renderStores(); renderRecommendations(); updateAuthUI(); updateOwnerUI(); updateDisclosureUI(); updateRegionUI();
-    switchView(role === 'owner' ? 'owner' : 'consumer');
-    showToast(`${currentUser.name}님, 로그인되었습니다.`);
-    const action = pendingAction;
-    pendingAction = null;
-    action?.();
-  } catch (error) {
-    showToast(error.message, 'error');
-  } finally {
-    submit.disabled = false; submit.innerHTML = '로그인하고 시작하기 <span>→</span>';
+    switchView(defaultView(), false);
+  } else {
+    $$('.view').forEach(view => view.classList.remove('active'));
+    $('.optional-auth-close').classList.add('hidden');
+    resetAuthChoice();
+    openModal('authModal');
   }
+}
+
+$('#accountButton').addEventListener('click', () => {
+  if (state.user) openModal('accountModal');
+  else openModal('authModal');
 });
 $('#logoutButton').addEventListener('click', async () => {
   try { await apiRequest('/api/auth/session', { method: 'DELETE' }); } catch {}
-  applyBootstrap({ stores, user: null });
   closeModal($('#accountModal'));
-  renderStores(); renderRecommendations(); updateAuthUI(); updateOwnerUI(); updateDisclosureUI(); updateRegionUI();
-  switchView('consumer');
+  applyBootstrap({ user: null, campaigns: state.campaigns });
+  renderAll();
   showToast('로그아웃되었습니다.', 'info');
 });
-$('#switchRoleButton').addEventListener('click', () => {
-  closeModal($('#accountModal'));
-  switchView(currentUser?.role === 'owner' ? 'owner' : 'consumer');
+$$('[data-view]').forEach(button => {
+  button.addEventListener('click', () => switchView(button.dataset.view));
 });
 
-function switchView(view) {
-  $$('.audience-btn').forEach(button => button.classList.toggle('active', button.dataset.view === view));
-  $('.audience-switch').classList.toggle('owner', view === 'owner');
-  $$('.view').forEach(section => section.classList.toggle('active', section.id === `${view}View`));
-  $('#couponWalletButton').classList.toggle('hidden', view === 'owner');
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-  updateAiContextLabel();
+function resetAuthChoice() {
+  state.authRole = null;
+  state.authAction = 'login';
+  $('#authRoleCards').classList.remove('hidden');
+  $('#authForm').classList.add('hidden');
+  $('#adminLoginLink').classList.remove('hidden');
+  $('#authTitle').textContent = '어떤 목적으로 이용하시나요?';
+  $('#authDescription').textContent = '선택한 역할에 필요한 화면과 기능만 보여드립니다.';
 }
 
-$$('.audience-btn').forEach(button => button.addEventListener('click', () => switchView(button.dataset.view)));
-$$('[data-scroll]').forEach(button => button.addEventListener('click', () => $(button.dataset.scroll)?.scrollIntoView({ behavior: 'smooth' })));
-$('#searchButton').addEventListener('click', () => {
-  switchView('consumer');
-  setTimeout(() => { $('#discover').scrollIntoView({ behavior: 'smooth' }); searchInput.focus(); }, 200);
+function selectAuthRole(role) {
+  state.authRole = role;
+  state.authAction = 'login';
+  $('#authRoleCards').classList.add('hidden');
+  $('#authForm').classList.remove('hidden');
+  $('#adminLoginLink').classList.toggle('hidden', role === 'admin');
+  $('#authTitle').textContent = roleLabels[role] + ' 계정';
+  $('#selectedRoleLabel').textContent = roleLabels[role] + ' 전용 화면으로 시작합니다';
+  setAuthAction('login');
+}
+
+function setAuthAction(action) {
+  if (state.authRole === 'admin') action = 'login';
+  state.authAction = action;
+  $$('[data-auth-action]').forEach(button => {
+    button.classList.toggle('active', button.dataset.authAction === action);
+    button.classList.toggle('hidden', state.authRole === 'admin' && button.dataset.authAction === 'signup');
+  });
+  const signup = action === 'signup';
+  $('#authNameLabel').classList.toggle('hidden', !signup);
+  $('#authName').required = signup;
+  $('#authSubmit').textContent = signup ? '회원가입하고 시작하기' : '로그인';
+  $('#forgotPassword').classList.toggle('hidden', signup);
+}
+
+$$('[data-auth-role]').forEach(button => {
+  button.addEventListener('click', () => selectAuthRole(button.dataset.authRole));
 });
-$('#howItWorks').addEventListener('click', () => openModal('infoModal'));
+$$('[data-auth-action]').forEach(button => {
+  button.addEventListener('click', () => setAuthAction(button.dataset.authAction));
+});
+$('#changeAuthRole').addEventListener('click', resetAuthChoice);
+$('#adminLoginLink').addEventListener('click', () => selectAuthRole('admin'));
 
-function visibleStores() {
-  const query = searchTerm.trim().toLocaleLowerCase('ko');
-  return stores.filter(store =>
-    (activeFilter === 'all' || store.category === activeFilter) &&
-    (!favoritesOnly || favorites.has(store.id)) &&
-    (!query || `${store.name} ${store.category} ${store.area} ${store.desc} ${store.campaign}`.toLocaleLowerCase('ko').includes(query))
-  );
-}
+$('#authForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  const submit = $('#authSubmit');
+  submit.disabled = true;
+  submit.textContent = '계정을 확인하고 있습니다…';
+  try {
+    const data = await apiRequest('/api/auth/session', {
+      method: 'POST',
+      body: JSON.stringify({
+        action: state.authAction,
+        role: state.authRole,
+        name: $('#authName').value.trim(),
+        email: $('#authEmail').value.trim(),
+        password: $('#authPassword').value
+      })
+    });
+    $('#authPassword').value = '';
+    applyBootstrap(data);
+    renderAll();
+    showToast(state.user.name + '님, 환영합니다.');
+  } catch (error) {
+    showToast(error.message, 'error');
+  } finally {
+    submit.disabled = false;
+    submit.textContent = state.authAction === 'signup' ? '회원가입하고 시작하기' : '로그인';
+  }
+});
 
-function contributionAmount(storeId) {
-  return Number(contributions[storeId] || 0);
-}
-
-function renderStores() {
-  const visible = visibleStores();
-  resultSummary.textContent = searchTerm || activeFilter !== 'all' || favoritesOnly ? `${visible.length}개의 펀딩을 찾았어요.` : `지금 모집 중인 펀딩 ${stores.length}곳`;
-  if (!visible.length) {
-    grid.innerHTML = '<div class="empty-state"><strong>조건에 맞는 가게가 없어요.</strong><p>검색어나 필터를 바꿔 다시 찾아보세요.</p><button type="button" id="resetFilters">전체 펀딩 보기</button></div>';
-    $('#resetFilters').addEventListener('click', resetDiscovery);
+$('#forgotPassword').addEventListener('click', async () => {
+  const email = $('#authEmail').value.trim();
+  if (!email) {
+    showToast('재설정 안내를 받을 이메일을 먼저 입력해 주세요.', 'info');
+    $('#authEmail').focus();
     return;
   }
-  grid.innerHTML = visible.map((store, index) => {
-    const saved = favorites.has(store.id);
-    const extra = contributionAmount(store.id);
-    const progress = Math.min(100, Math.round((store.funded + extra) / store.target * 100));
-    return `<article class="store-card" data-store-id="${store.id}" style="animation:fade .4s ${index * .05}s both">
-      <div class="store-image" style="--tone:${store.tone}"><div class="scene"></div><span class="badge">${store.badge}</span><span class="days-badge">D-${store.daysLeft}</span><button class="save${saved ? ' saved' : ''}" type="button" data-id="${store.id}" aria-label="${store.name} ${saved ? '찜 해제' : '찜하기'}" aria-pressed="${saved}">${saved ? '♥' : '♡'}</button></div>
-      <button class="store-card-content" type="button" data-open-store="${store.id}" aria-label="${store.name} 펀딩 상세 보기"><span class="store-meta">${store.area} · ${store.category}</span><h3>${store.name}</h3><p>${store.campaign}</p><div class="funding-mini"><div><span style="width:${progress}%"></span></div><b>${progress}%</b></div><div class="store-stats"><div><small>현재 모집액</small><strong class="up">${won(store.funded + extra)}</strong></div><div><small>참여 이웃</small><strong>${store.investors + (extra ? 1 : 0)}명</strong></div></div><span class="detail-link">사업계획과 위험 보기 →</span></button>
-    </article>`;
+  try {
+    await apiRequest('/api/auth/recover', {
+      method: 'POST',
+      body: JSON.stringify({ email })
+    });
+    showToast('비밀번호 재설정 안내를 이메일로 보냈습니다.');
+  } catch (error) {
+    showToast(error.message, 'error');
+  }
+});
+
+function renderInvestor() {
+  renderCampaignGrid();
+  renderCommitments();
+}
+
+function renderCampaignGrid() {
+  const grid = $('#campaignGrid');
+  const query = $('#campaignSearch').value.trim().toLocaleLowerCase('ko');
+  const campaigns = state.campaigns.filter(item => {
+    const haystack = [
+      item.name, item.business?.name, item.business?.category,
+      item.business?.address, item.plan
+    ].join(' ').toLocaleLowerCase('ko');
+    return !query || haystack.includes(query);
+  });
+  if (!campaigns.length) {
+    grid.innerHTML = '<div class="empty-state"><strong>현재 공개된 모집이 없습니다</strong>'
+      + '<p>운영자 심사를 통과한 모집만 이곳에 표시됩니다.</p></div>';
+    return;
+  }
+  const tones = ['#dce8e2', '#efd8cd', '#e7dfc7', '#d9e3eb'];
+  grid.innerHTML = campaigns.map((item, index) => {
+    const percent = Math.min(100, Math.round(item.escrowTotal / Math.max(item.target, 1) * 100));
+    const assessment = item.assessment;
+    const risk = assessment
+      ? assessment.riskLevel === 'low' ? '낮은 보완 위험'
+        : assessment.riskLevel === 'high' ? '집중 확인 필요' : '추가 확인 필요'
+      : '자료 확인 필요';
+    return '<article class="campaign-card">'
+      + '<div class="campaign-card-top" style="--card-tone:' + tones[index % tones.length] + '">'
+      + '<span>운영자 심사 완료</span><h3>' + escapeHTML(item.business?.name || item.name) + '</h3>'
+      + '<p>' + escapeHTML(item.business?.address || '') + ' · ' + escapeHTML(item.business?.category || '') + '</p></div>'
+      + '<div class="campaign-card-body"><p>' + escapeHTML(item.name) + '</p>'
+      + '<div class="funding-bar"><span style="width:' + percent + '%"></span></div>'
+      + '<div class="campaign-numbers"><strong>' + won(item.escrowTotal) + ' 예치 확인</strong><span>목표 ' + won(item.target) + '</span></div>'
+      + '<div class="campaign-facts"><span>' + item.milestones.length + '단계 조건부 지급</span>'
+      + '<span>' + escapeHTML(risk) + '</span></div>'
+      + '<button type="button" data-open-campaign="' + item.id + '">계획·위험·지급 조건 보기 →</button></div></article>';
   }).join('');
 }
 
-function renderRecommendations() {
-  const container = $('#recommendationGrid');
-  if (!container) return;
-  if (!recommendations.length) {
-    container.innerHTML = '<div class="data-loading">비교 가능한 소상공인 자료가 아직 없습니다.</div>';
-    return;
-  }
-  container.innerHTML = recommendations.map((item, index) => `<article class="recommendation-card" data-recommend-store="${escapeHTML(item.storeId)}">
-    <div class="recommend-rank"><span>${index + 1}</span><small>탐색 순위</small></div>
-    <div class="recommend-main"><div><span class="grade-chip">${escapeHTML(item.sGrade)}</span><b>${escapeHTML(item.score)}점</b></div><h3>${escapeHTML(item.name)}</h3><p>${(item.reasons || []).map(escapeHTML).join(' · ') || '추가 강점 자료 확인 필요'}</p><small>매출 ${escapeHTML(item.growth || '-')} · 혜택 ${escapeHTML(item.coupon || '-')}</small></div>
-    <div class="recommend-risk"><strong>같이 볼 위험</strong><p>${escapeHTML((item.risks || [])[0] || '원자료 확인 필요')}</p></div>
-  </article>`).join('');
-}
-
-$('#recommendationGrid')?.addEventListener('click', event => {
-  const card = event.target.closest('[data-recommend-store]');
-  if (card) openStoreDetail(card.dataset.recommendStore);
+$('#campaignSearch').addEventListener('input', renderCampaignGrid);
+$('#campaignGrid').addEventListener('click', event => {
+  const button = event.target.closest('[data-open-campaign]');
+  if (button) openCampaignDetail(button.dataset.openCampaign);
+});
+$('#browseCampaigns').addEventListener('click', () => {
+  $('#campaigns').scrollIntoView({ behavior: 'smooth' });
+});
+$('#openProcessGuide').addEventListener('click', () => openModal('processModal'));
+$('#openMyCommitments').addEventListener('click', () => {
+  switchView('investor');
+  setTimeout(() => $('#myCommitmentsSection').scrollIntoView({ behavior: 'smooth' }), 100);
 });
 
-function resetDiscovery() {
-  activeFilter = 'all'; favoritesOnly = false; searchTerm = ''; searchInput.value = '';
-  $$('.filter').forEach(button => button.classList.toggle('active', button.dataset.filter === 'all'));
-  $('#favoritesFilter').classList.remove('active');
-  $('#favoritesFilter').setAttribute('aria-pressed', 'false');
-  renderStores();
-}
-
-async function toggleFavorite(storeId) {
-  if (!currentUser) {
-    pendingAction = () => toggleFavorite(storeId);
-    $('input[name="authRole"][value="consumer"]').checked = true;
-    openModal('authModal');
-    showToast('찜을 저장하려면 로그인해 주세요.', 'info');
+function renderCommitments() {
+  const list = $('#investorCommitments');
+  if (!state.user || state.user.role !== 'investor') {
+    list.innerHTML = '<div class="empty-state"><strong>로그인 후 내 참여를 확인할 수 있습니다</strong></div>';
     return;
   }
+  if (!state.commitments.length) {
+    list.innerHTML = '<div class="empty-state"><strong>아직 참여한 모집이 없습니다</strong>'
+      + '<p>사업계획과 위험, 지급 조건을 충분히 확인한 뒤 결정해 주세요.</p></div>';
+    return;
+  }
+  list.innerHTML = state.commitments.map(commitment => {
+    const campaign = state.campaigns.find(item => item.id === commitment.campaignId);
+    const released = (campaign?.disbursements || []).reduce((sum, item) => sum + item.amount, 0);
+    return '<article class="commitment-row"><div><small>모집</small><strong>'
+      + escapeHTML(campaign?.business?.name || '모집 정보 확인 중') + '</strong></div>'
+      + '<div><small>참여 금액</small><strong>' + won(commitment.amount) + '</strong></div>'
+      + '<div><small>예치 상태</small><strong>' + escapeHTML(commitmentStatusLabels[commitment.status] || commitment.status) + '</strong></div>'
+      + '<div><small>현재 지급액</small><strong>' + won(released) + '</strong></div></article>';
+  }).join('');
+}
+
+function openCampaignDetail(id) {
+  const campaign = state.campaigns.find(item => item.id === id)
+    || state.admin?.campaigns?.find(item => item.id === id);
+  if (!campaign) return;
+  state.currentCampaign = campaign;
+  const percent = Math.min(100, Math.round(campaign.escrowTotal / Math.max(campaign.target, 1) * 100));
+  const released = (campaign.disbursements || []).reduce((sum, item) => sum + item.amount, 0);
+  const milestones = campaign.milestones.map(item =>
+    '<div class="detail-milestone"><b>' + item.sequence + '</b><div><strong>'
+    + escapeHTML(item.title) + ' · ' + item.percent + '%</strong><small>'
+    + escapeHTML(item.condition) + '</small></div><span>'
+    + escapeHTML(milestoneStatusLabels[item.status] || item.status) + '</span></div>'
+  ).join('');
+  const canCommit = state.user?.role === 'investor';
+  $('#campaignDetailContent').innerHTML =
+    '<div class="detail-hero"><span>운영자 심사 완료 · 조건부 지급</span><h2 id="campaignDetailTitle">'
+    + escapeHTML(campaign.business?.name || campaign.name) + '</h2><p>'
+    + escapeHTML(campaign.name) + '</p></div><div class="detail-body">'
+    + '<div class="detail-summary"><div><small>목표 금액</small><strong>' + won(campaign.target) + '</strong></div>'
+    + '<div><small>예치 확인</small><strong>' + won(campaign.escrowTotal) + ' · ' + percent + '%</strong></div>'
+    + '<div><small>참여자</small><strong>' + campaign.investorCount + '명</strong></div>'
+    + '<div><small>지급 완료</small><strong>' + won(released) + '</strong></div></div>'
+    + '<div class="detail-columns"><div>'
+    + '<section class="detail-section"><h3>사업과 자금 사용계획</h3><p>'
+    + escapeHTML(campaign.business?.description || '') + '\n\n' + escapeHTML(campaign.plan) + '</p></section>'
+    + '<section class="detail-section"><h3>공개된 주요 위험</h3><p>' + escapeHTML(campaign.risk) + '</p></section>'
+    + '<section class="detail-section"><h3>단계별 지급 조건</h3><div class="detail-milestones">'
+    + milestones + '</div></section></div>'
+    + '<aside class="commitment-form"><h3>참여 약정</h3>'
+    + '<p>아래 금액은 참여 의사 등록입니다. 결제·예치 확인 전에는 지급 재원으로 계산되지 않습니다.</p>'
+    + '<form id="commitmentForm"><label>참여 금액<input id="commitmentAmount" type="number" min="1000" step="1000" value="100000" required></label>'
+    + '<label class="check-line"><input id="commitmentRisk" type="checkbox" required> 원금 손실 가능성과 사업·증빙 위험을 확인했습니다.</label>'
+    + '<button class="primary-button full-button" type="submit" ' + (canCommit ? '' : 'disabled')
+    + '>' + (canCommit ? '참여 의사 등록' : '투자자 계정에서 참여 가능') + '</button></form></aside>'
+    + '</div></div>';
+  openModal('campaignModal');
+  $('#commitmentForm').addEventListener('submit', submitCommitment);
+}
+
+async function submitCommitment(event) {
+  event.preventDefault();
+  if (state.user?.role !== 'investor') return;
+  const amount = Number($('#commitmentAmount').value);
+  if (amount < 1000 || !$('#commitmentRisk').checked) {
+    showToast('금액과 위험 확인 동의를 확인해 주세요.', 'error');
+    return;
+  }
+  const submit = $('#commitmentForm button[type="submit"]');
+  submit.disabled = true;
   try {
-    const data = await apiRequest('/api/favorites/toggle', { method: 'POST', body: JSON.stringify({ storeId }) });
-    favorites = new Set(data.favorites);
-    renderStores();
-    showToast(data.saved ? '찜한 가게에 추가했어요.' : '찜을 해제했어요.', 'info');
-  } catch (error) { showToast(error.message, 'error'); }
-}
-
-grid.addEventListener('click', event => {
-  const saveButton = event.target.closest('.save');
-  if (saveButton) {
-    toggleFavorite(saveButton.dataset.id);
-    return;
-  }
-  const card = event.target.closest('.store-card');
-  if (card) openStoreDetail(card.dataset.storeId);
-});
-
-function openFeaturedStore() { openStoreDetail('ongi'); }
-$('#featuredStorePreview').addEventListener('click', openFeaturedStore);
-$('#featuredStorePreview').addEventListener('keydown', event => {
-  if (event.key === 'Enter' || event.key === ' ') {
-    event.preventDefault();
-    openFeaturedStore();
-  }
-});
-
-$$('.filter').forEach(button => button.addEventListener('click', () => {
-  activeFilter = button.dataset.filter;
-  $$('.filter').forEach(item => item.classList.toggle('active', item === button));
-  renderStores();
-}));
-$('#favoritesFilter').addEventListener('click', event => {
-  favoritesOnly = !favoritesOnly;
-  event.currentTarget.classList.toggle('active', favoritesOnly);
-  event.currentTarget.setAttribute('aria-pressed', String(favoritesOnly));
-  renderStores();
-});
-searchInput.addEventListener('input', event => { searchTerm = event.target.value; renderStores(); });
-$('#clearSearch').addEventListener('click', () => { searchTerm = ''; searchInput.value = ''; searchInput.focus(); renderStores(); });
-$('.all-button').addEventListener('click', resetDiscovery);
-
-function openStoreDetail(id) {
-  const store = stores.find(item => item.id === id);
-  if (!store) return;
-  currentStore = store;
-  const extra = contributionAmount(id);
-  const progress = Math.min(100, Math.round((store.funded + extra) / store.target * 100));
-  const planTotal = store.plan.reduce((sum, [, amount]) => sum + amount, 0);
-  $('#storeDetailContent').innerHTML = `
-    <div class="store-detail-hero" style="--tone:${store.tone}"><div><span class="badge">${store.badge}</span><p>${store.area} · ${store.category} · since ${store.since}</p><h2 id="storeDetailTitle">${store.name}</h2><h3>${store.campaign}</h3></div><button class="detail-save ${favorites.has(id) ? 'saved' : ''}" id="detailSaveButton" type="button">${favorites.has(id) ? '♥ 찜함' : '♡ 찜하기'}</button></div>
-    <div class="store-detail-body">
-      <section class="funding-summary"><div class="funding-numbers"><div><small>모인 금액</small><strong>${won(store.funded + extra)}</strong><span>목표 ${won(store.target)}</span></div><div><small>참여 이웃</small><strong>${store.investors + (extra ? 1 : 0)}명</strong></div><div><small>남은 기간</small><strong>${store.daysLeft}일</strong></div></div><div class="detail-progress"><span style="width:${progress}%"></span></div><b>${progress}% 달성</b></section>
-      <div class="detail-grid"><div>
-        <section class="detail-section"><div class="detail-heading"><span>01</span><h3>사업계획과 자금 사용</h3></div><p>${store.desc}</p><div class="plan-table">${store.plan.map(([name, amount]) => `<div><span>${name}</span><b>${won(amount)}</b></div>`).join('')}<div class="total"><span>합계</span><b>${won(planTotal)}</b></div></div></section>
-        <section class="detail-section"><div class="detail-heading"><span>02</span><h3>AI가 정리한 판단 근거</h3><button id="askStoreAiButton" type="button">AI에게 더 묻기</button></div><div class="analysis-columns"><div class="positive"><h4>투자 포인트</h4><ul>${store.points.map(point => `<li>${point}</li>`).join('')}</ul></div><div class="negative"><h4>위험 및 확인사항</h4><ul>${store.risks.map(risk => `<li>${risk}</li>`).join('')}</ul></div></div><p class="source-note">예시 데이터 기반 AI 요약 · 실제 투자 판단 전 원자료 확인 필요</p></section>
-        <section class="detail-section"><div class="detail-heading"><span>03</span><h3>단계별 지급 계획</h3></div><div class="milestone-list"><div class="done"><b>1</b><p><strong>계약 확인 · 20%</strong><small>견적서와 장비 계약 확인 후</small></p><span>검토완료</span></div><div class="active"><b>2</b><p><strong>구매 착수 · 40%</strong><small>세금계산서와 결제 증빙 확인 후</small></p><span>예정</span></div><div><b>3</b><p><strong>설치 완료 · 40%</strong><small>완료 사진과 최종 비용 검수 후</small></p><span>예정</span></div></div></section>
-      </div><aside class="participation-card"><span class="reward-label">참여 리워드</span><h3>${store.coupon.title}</h3><p>${store.coupon.benefit}<small>${store.coupon.condition}</small></p><form id="participationForm"><label>참여 금액</label><div class="amount-options"><button type="button" data-amount="10000">1만원</button><button type="button" data-amount="30000" class="selected">3만원</button><button type="button" data-amount="50000">5만원</button></div><input id="participationAmount" type="number" min="1000" step="1000" value="30000" aria-label="참여 금액"><label class="check-line"><input id="riskConsent" type="checkbox" required> 손실 가능성과 데모 서비스임을 확인했습니다.</label><button class="primary-button full-button" type="submit">펀딩 참여하기</button></form><small class="prototype-note">실제 결제는 발생하지 않는 프로토타입입니다.</small></aside></div>
-    </div>`;
-  openModal('storeModal');
-
-  $('#detailSaveButton').addEventListener('click', async () => {
-    await toggleFavorite(id);
-    if ($('#storeModal').classList.contains('open')) openStoreDetail(id);
-  });
-  $$('.amount-options button', $('#storeModal')).forEach(button => button.addEventListener('click', () => {
-    $$('.amount-options button', $('#storeModal')).forEach(item => item.classList.toggle('selected', item === button));
-    $('#participationAmount').value = button.dataset.amount;
-  }));
-  $('#askStoreAiButton').addEventListener('click', () => {
-    closeModal($('#storeModal'));
-    openAiDrawer(`이 가게의 투자 포인트와 위험요인을 균형 있게 설명해줘. 특히 추가로 확인할 자료를 알려줘.`);
-  });
-  $('#participationForm').addEventListener('submit', event => {
-    event.preventDefault();
-    const amount = Number($('#participationAmount')?.value || 0);
-    const riskConsent = Boolean($('#riskConsent')?.checked);
-    if (amount < 1000) { showToast('1,000원 이상 입력해 주세요.', 'error'); return; }
-    if (!riskConsent) { showToast('위험 확인에 동의해 주세요.', 'error'); return; }
-    requireLogin('consumer', () => completeParticipation(store, amount));
-  });
-  updateAiContextLabel();
-}
-
-async function completeParticipation(store, amount) {
-  try {
-    const data = await apiRequest('/api/contributions', {
-      method: 'POST', body: JSON.stringify({ storeId: store.id, amount, riskConsent: true })
+    await apiRequest('/api/commitments', {
+      method: 'POST',
+      body: JSON.stringify({
+        campaignId: state.currentCampaign.id,
+        amount,
+        riskConsent: true
+      })
     });
-    contributions[store.id] = data.total;
-    const index = coupons.findIndex(coupon => coupon.id === data.coupon.id);
-    if (index >= 0) coupons[index] = data.coupon; else coupons.unshift(data.coupon);
-    closeModal($('#storeModal'));
-    renderStores(); updateCouponUI();
-    showToast(`${won(amount)} 참여가 DB에 기록되고 쿠폰이 지급됐어요.`);
-    setTimeout(() => openCouponWallet(), 450);
-  } catch (error) { showToast(error.message, 'error'); }
+    closeModal($('#campaignModal'));
+    await refreshData('참여 의사가 등록되었습니다. 예치 확인 전에는 자금이 지급되지 않습니다.');
+    $('#myCommitmentsSection').scrollIntoView({ behavior: 'smooth' });
+  } catch (error) {
+    showToast(error.message, 'error');
+  } finally {
+    submit.disabled = false;
+  }
 }
 
-function updateCouponUI() {
-  const available = coupons.filter(coupon => !coupon.used).length;
-  $('#couponCount').textContent = available;
+function ownerModel() {
+  if (state.user?.role === 'owner') {
+    const campaign = state.owner?.campaigns?.[0] || null;
+    return {
+      business: state.owner?.business || null,
+      campaigns: state.owner?.campaigns || [],
+      campaign,
+      disclosures: state.owner?.disclosures || [],
+      metrics: state.owner?.metrics || null,
+      assessment: state.owner?.assessment || null,
+      readOnly: false
+    };
+  }
+  const campaign = state.adminPreviewCampaign || state.admin?.campaigns?.[0] || null;
+  return {
+    business: campaign?.business || null,
+    campaigns: campaign ? [campaign] : [],
+    campaign,
+    disclosures: [],
+    metrics: null,
+    assessment: campaign?.assessment || null,
+    readOnly: true
+  };
 }
 
-function openCouponWallet() {
-  requireLogin('consumer', () => {
-    renderCoupons();
-    openModal('couponModal');
+function renderOwner() {
+  if (!state.user || !['owner', 'admin'].includes(state.user.role)) return;
+  const model = ownerModel();
+  const campaign = model.campaign;
+  $('#ownerName').textContent = model.readOnly
+    ? (model.business?.name || '선택된 사업')
+    : state.user.name + ' 사장님';
+  renderOwnerProgress(model);
+  renderDisclosures(model.disclosures);
+  fillBusinessForm(model.business);
+  fillMetricsForm(model);
+  renderAssessment(model.assessment);
+  fillCampaignForm(campaign);
+  renderOwnerExecution(campaign);
+  setOwnerReadOnly(model.readOnly);
+  showOwnerStep(state.ownerStep, false);
+}
+
+function renderOwnerProgress(model) {
+  const campaign = model.campaign;
+  $('#businessStepState').textContent = model.business ? '저장 완료' : '시작 전';
+  $('#riskStepState').textContent = model.assessment ? '점검 완료' : '시작 전';
+  $('#campaignStepState').textContent = campaign
+    ? (campaignStatusLabels[campaign.status] || campaign.status) : '시작 전';
+  const releasedCount = campaign?.milestones?.filter(item => item.status === 'released').length || 0;
+  $('#executionStepState').textContent = campaign?.status === 'published'
+    ? releasedCount + ' / ' + campaign.milestones.length + ' 지급' : '공개 승인 후';
+  const status = $('#ownerCampaignStatus');
+  status.textContent = campaign ? (campaignStatusLabels[campaign.status] || campaign.status) : '모집안 없음';
+  status.className = 'status-pill ' + (campaign?.status || '');
+  const complete = {
+    business: Boolean(model.business),
+    risk: Boolean(model.assessment),
+    campaign: Boolean(campaign),
+    execution: Boolean(campaign?.milestones?.some(item => item.status === 'released'))
+  };
+  $$('[data-owner-step]').forEach(button => {
+    button.classList.toggle('complete', complete[button.dataset.ownerStep]);
   });
 }
 
-function renderCoupons() {
-  const list = $('#couponList');
-  if (!coupons.length) {
-    list.innerHTML = '<div class="empty-wallet"><span>🎟</span><p>아직 받은 쿠폰이 없어요.</p></div>';
-    return;
-  }
-  list.innerHTML = coupons.map(coupon => `<article class="coupon-ticket ${coupon.used ? 'used' : ''}"><div><small>${escapeHTML(coupon.store)}</small><h3>${escapeHTML(coupon.title)}</h3><strong>${escapeHTML(coupon.benefit)}</strong><p>${escapeHTML(coupon.condition)} · ${escapeHTML(coupon.expires)}까지</p><code>${coupon.used ? '사용 완료' : escapeHTML(coupon.code)}</code></div><button type="button" data-use-coupon="${escapeHTML(coupon.id)}" ${coupon.used ? 'disabled' : ''}>${coupon.used ? '사용함' : '매장에서 사용'}</button></article>`).join('');
-  $$('[data-use-coupon]', list).forEach(button => button.addEventListener('click', async () => {
-    const coupon = coupons.find(item => item.id === button.dataset.useCoupon);
-    if (!coupon || coupon.used) return;
-    if (!confirm(`${coupon.title} 쿠폰을 사용 처리할까요?\n데모에서는 실제 매장 확인 없이 사용 상태가 변경됩니다.`)) return;
-    try {
-      const data = await apiRequest('/api/coupons/use', { method: 'POST', body: JSON.stringify({ couponId: coupon.id }) });
-      Object.assign(coupon, data.coupon); renderCoupons(); updateCouponUI(); showToast('쿠폰 사용 기록을 DB에 저장했어요.');
-    } catch (error) { showToast(error.message, 'error'); }
-  }));
-}
-$('#couponWalletButton').addEventListener('click', openCouponWallet);
+const ownerStepMeta = {
+  business: ['1단계', '사업체 기본정보'],
+  risk: ['2단계', '재무·위험 자료'],
+  campaign: ['3단계', '모집안과 지급조건'],
+  execution: ['4단계', '증빙과 자금 집행']
+};
 
-function fillBusinessForm() {
-  if (!business) return;
-  $('#businessName').value = business.name || '';
-  $('#businessCategory').value = business.category || '한식';
-  $('#businessNumber').value = business.number || '';
-  $('#businessAddress').value = business.address || '';
-  $('#businessSales').value = business.sales || '';
-  $('#businessAge').value = business.age || '';
-  $('#businessDescription').value = business.description || '';
+function showOwnerStep(step, scroll = true) {
+  state.ownerStep = step;
+  $$('.owner-step').forEach(section => section.classList.toggle('active', section.id === 'ownerStep-' + step));
+  $$('[data-owner-step]').forEach(button => button.classList.toggle('active', button.dataset.ownerStep === step));
+  $('#ownerStepEyebrow').textContent = ownerStepMeta[step][0];
+  $('#ownerStepTitle').textContent = ownerStepMeta[step][1];
+  if (scroll) $('.workspace-main').scrollIntoView({ behavior: 'smooth' });
 }
-function openBusinessForm() { requireLogin('owner', () => { fillBusinessForm(); openModal('businessModal'); }); }
-$('#registerBusinessButton').addEventListener('click', openBusinessForm);
-$('#editBusinessInline').addEventListener('click', openBusinessForm);
+$$('[data-owner-step]').forEach(button => {
+  button.addEventListener('click', () => showOwnerStep(button.dataset.ownerStep));
+});
+
+function setOwnerReadOnly(readOnly) {
+  if (!readOnly) return;
+  ['businessForm', 'metricsForm', 'disclosureForm', 'campaignForm', 'evidenceForm'].forEach(id => {
+    $$('input, select, textarea, button', $('#' + id)).forEach(element => { element.disabled = true; });
+  });
+  $('#businessVerificationBadge').textContent = '운영자 미리보기';
+}
+
+function fillBusinessForm(business) {
+  $('#businessName').value = business?.name || '';
+  $('#businessCategory').value = business?.category || '한식';
+  $('#businessNumber').value = business?.number || '';
+  $('#businessAge').value = business?.age || '';
+  $('#businessAddress').value = business?.address || '';
+  $('#businessDescription').value = business?.description || '';
+  $('#businessSales').value = business?.sales || '';
+  const labels = {
+    unverified: '미확인',
+    pending: '확인 중',
+    verified: '운영자 확인',
+    rejected: '보완 필요'
+  };
+  $('#businessVerificationBadge').textContent = labels[business?.verificationStatus] || '미확인';
+}
+
 $('#businessForm').addEventListener('submit', async event => {
   event.preventDefault();
-  const values = { name: $('#businessName').value.trim(), category: $('#businessCategory').value, number: $('#businessNumber').value.trim(), address: $('#businessAddress').value.trim(), sales: Number($('#businessSales').value || 0), age: Number($('#businessAge').value || 0), description: $('#businessDescription').value.trim() };
-  const submit = $('#businessForm button[type="submit"]'); submit.disabled = true;
+  if (state.user?.role !== 'owner') return;
+  const button = $('#businessForm button[type="submit"]');
+  button.disabled = true;
   try {
-    const data = await apiRequest('/api/business', { method: 'POST', body: JSON.stringify(values) });
-    business = data.business; closeModal($('#businessModal')); await refreshIntelligence(); updateOwnerUI(); showToast('사업체 정보를 DB에 저장했어요.');
-  } catch (error) { showToast(error.message, 'error'); }
-  finally { submit.disabled = false; }
-});
-
-function openCampaignForm() {
-  requireLogin('owner', () => {
-    if (!business) { showToast('사업체 정보를 먼저 등록해 주세요.', 'info'); openBusinessForm(); return; }
-    if (campaign) { $('#campaignName').value = campaign.name || ''; $('#campaignTarget').value = campaign.target || ''; $('#campaignDuration').value = campaign.duration || '30'; $('#campaignPlan').value = campaign.plan || ''; $('#campaignRisk').value = campaign.risk || ''; }
-    openModal('campaignModal');
-  });
-}
-$('#createCampaignButton').addEventListener('click', openCampaignForm);
-$('#campaignForm').addEventListener('submit', async event => {
-  event.preventDefault();
-  const values = { id: campaign?.id, name: $('#campaignName').value.trim(), target: Number($('#campaignTarget').value), duration: Number($('#campaignDuration').value), plan: $('#campaignPlan').value.trim(), risk: $('#campaignRisk').value.trim() };
-  const submit = $('#campaignForm button[type="submit"]'); submit.disabled = true;
-  try {
-    const data = await apiRequest('/api/campaign', { method: 'POST', body: JSON.stringify(values) });
-    campaign = data.campaign; $('#expensePlan').value = campaign.plan; closeModal($('#campaignModal')); updateOwnerUI(); showToast('펀딩 초안을 DB에 저장했어요.');
-  } catch (error) { showToast(error.message, 'error'); }
-  finally { submit.disabled = false; }
-});
-
-function updateOwnerUI() {
-  const strip = $('#ownerStatusStrip');
-  if (business) {
-    strip.classList.add('registered');
-    $('p', strip).innerHTML = `<strong>${escapeHTML(business.name)}</strong> · ${escapeHTML(business.category)} · ${escapeHTML(business.address)}${campaign ? ` · 펀딩 ${escapeHTML(campaign.status)}` : ''}`;
-    $('#editBusinessInline').textContent = '정보 수정';
-  } else {
-    strip.classList.remove('registered');
-    $('p', strip).innerHTML = '<strong>데모 사업체</strong> · 정보를 등록하면 대시보드와 AI 분석에 반영됩니다.';
-    $('#editBusinessInline').textContent = '정보 등록';
-  }
-  if (issuedCoupon) renderIssuedCoupon(issuedCoupon);
-  else {
-    $('#issuedCouponSummary').classList.remove('active');
-    $('#issuedCouponSummary').innerHTML = '<span>🎟</span><p><strong>아직 발행된 쿠폰이 없어요.</strong><small>펀딩 참여 리워드로 자동 지급할 수 있습니다.</small></p>';
-  }
-  renderIntelligence();
-}
-
-async function refreshIntelligence() {
-  if (!currentUser || currentUser.role !== 'owner' || !business) { intelligence = null; return; }
-  try {
-    const data = await apiRequest('/api/knowledge-graph');
-    intelligence = data.intelligence;
+    await apiRequest('/api/business', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: $('#businessName').value.trim(),
+        category: $('#businessCategory').value,
+        number: $('#businessNumber').value.trim(),
+        age: Number($('#businessAge').value),
+        address: $('#businessAddress').value.trim(),
+        description: $('#businessDescription').value.trim(),
+        sales: Number($('#businessSales').value)
+      })
+    });
+    await refreshData('사업체 정보를 저장했습니다.');
+    showOwnerStep('risk');
   } catch (error) {
-    intelligence = null;
-    showToast(`진단 갱신 실패: ${error.message}`, 'error');
+    showToast(error.message, 'error');
+  } finally {
+    button.disabled = false;
   }
-}
+});
 
-function renderIntelligence() {
-  const empty = $('#intelligenceEmpty');
-  const grid = $('#intelligenceGrid');
-  if (!empty || !grid) return;
-  if (!intelligence?.assessment) {
-    empty.classList.remove('hidden'); grid.classList.add('hidden');
+function renderDisclosures(values = []) {
+  $$('input[name="disclosure"]').forEach(input => {
+    input.checked = values.includes(input.value);
+  });
+  $('#disclosureProgress').textContent = values.length + ' / 6';
+}
+$('#disclosureForm').addEventListener('change', () => {
+  $('#disclosureProgress').textContent = $$('input[name="disclosure"]:checked').length + ' / 6';
+});
+$('#disclosureForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  if (state.user?.role !== 'owner') return;
+  const values = $$('input[name="disclosure"]:checked').map(input => input.value);
+  try {
+    await apiRequest('/api/disclosures', {
+      method: 'POST',
+      body: JSON.stringify({ values })
+    });
+    await refreshData('투자자 공개 항목을 저장했습니다.');
+  } catch (error) {
+    showToast(error.message, 'error');
+  }
+});
+
+function fillMetricsForm(model) {
+  const metrics = model.metrics;
+  if (!metrics) {
+    if (!$('#metricsSales6m').value && model.business?.sales) {
+      $('#metricsSales6m').value = Array(6).fill(model.business.sales).join(', ');
+    }
     return;
   }
-  empty.classList.add('hidden'); grid.classList.remove('hidden');
-  const assessment = intelligence.assessment;
-  $('#growthGrade').textContent = assessment.grade;
-  $('#growthScore').textContent = `${assessment.score}점`;
-  $('#fundingLimit').textContent = `설명용 한도 ${won(assessment.fundingLimit)}`;
-  $('#assessmentNotice').textContent = assessment.notice;
-  const maximums = { '매출 성장': 25, '상권 내 경쟁력': 15, '현금흐름 지속성': 20, '부채 회복력': 20, '경영 안정성': 10, '비계량 가점': 10 };
-  $('#factorBars').innerHTML = Object.entries(assessment.components).map(([name, value]) => `<div class="factor-row"><div><span>${escapeHTML(name)}</span><b>${escapeHTML(value)} / ${maximums[name]}</b></div><i><em style="width:${Math.min(100, Number(value) / maximums[name] * 100)}%"></em></i></div>`).join('');
-  $('#diagnosisText').textContent = intelligence.diagnosis;
-  $('#graphSummary').innerHTML = `<span>${intelligence.graph.nodes.length}개 노드</span><span>${intelligence.graph.edges.length}개 관계</span><span>${(assessment.missing || []).length}개 부족자료</span>`;
+  $('#metricsSales6m').value = (metrics.sales_6m || []).join(', ');
+  $('#metricsCashFlow').value = metrics.operating_cash_flow;
+  $('#metricsDebtTotal').value = metrics.debt_total;
+  $('#metricsDebtPayment').value = metrics.monthly_debt_payment;
+  $('#metricsOverdue').value = metrics.overdue_count;
+  $('#metricsEmployees').value = metrics.employee_count;
+  $('#metricsTax').value = String(metrics.tax_compliant);
+  $('#metricsFootTraffic').value = metrics.foot_traffic_growth;
+  $('#metricsLocalGrowth').value = metrics.local_sales_growth;
+  $('#metricsCompetition').value = metrics.competitor_density;
+  $('#metricsClosure').value = metrics.closure_rate;
+  $('#metricsRepeat').value = metrics.repeat_rate;
+  $('#metricsDigital').value = metrics.digital_sales_ratio;
 }
 
-$('#askDiagnosisAi')?.addEventListener('click', () => openAiDrawer('내 성장등급에서 모자란 기준과 이를 보완할 원자료를 근거 경로별로 설명해줘.'));
-
-$('#openMetricsButton')?.addEventListener('click', () => requireLogin('owner', () => {
-  if (!business) { showToast('사업체 정보를 먼저 등록해 주세요.', 'info'); openBusinessForm(); return; }
-  if (!$('#metricsSales6m').value) $('#metricsSales6m').value = Array(6).fill(business.sales || 0).join(', ');
-  openModal('metricsModal');
-}));
-
-$('#metricsForm')?.addEventListener('submit', async event => {
+$('#metricsForm').addEventListener('submit', async event => {
   event.preventDefault();
+  if (state.user?.role !== 'owner') return;
+  if (!state.owner?.business) {
+    showToast('사업체 정보를 먼저 저장해 주세요.', 'info');
+    showOwnerStep('business');
+    return;
+  }
   const sales6m = $('#metricsSales6m').value.split(/[\s,]+/).filter(Boolean).map(Number);
   if (sales6m.length !== 6 || sales6m.some(value => !Number.isFinite(value) || value < 0)) {
     showToast('최근 6개월 매출을 쉼표로 구분해 정확히 6개 입력해 주세요.', 'error');
     return;
   }
-  const values = {
-    sales6m,
-    operatingCashFlow: Number($('#metricsCashFlow').value), debtTotal: Number($('#metricsDebtTotal').value),
-    monthlyDebtPayment: Number($('#metricsDebtPayment').value), overdueCount: Number($('#metricsOverdue').value),
-    employeeCount: Number($('#metricsEmployees').value), taxCompliant: $('#metricsTax').value === 'true',
-    footTrafficGrowth: Number($('#metricsFootTraffic').value), localSalesGrowth: Number($('#metricsLocalGrowth').value),
-    competitorDensity: Number($('#metricsCompetition').value), closureRate: Number($('#metricsClosure').value),
-    repeatRate: Number($('#metricsRepeat').value), digitalSalesRatio: Number($('#metricsDigital').value)
-  };
-  const submit = $('#metricsForm button[type="submit"]'); submit.disabled = true;
+  const button = $('#metricsForm button[type="submit"]');
+  button.disabled = true;
   try {
-    const data = await apiRequest('/api/business/metrics', { method: 'POST', body: JSON.stringify(values) });
-    intelligence = data.intelligence;
-    renderIntelligence(); closeModal($('#metricsModal'));
-    showToast('평가자료와 지식그래프를 갱신했어요.');
-  } catch (error) { showToast(error.message, 'error'); }
-  finally { submit.disabled = false; }
-});
-
-$('#editDisclosureButton').addEventListener('click', () => requireLogin('owner', () => openModal('disclosureModal')));
-$('#disclosureForm').addEventListener('submit', async event => {
-  event.preventDefault();
-  const values = $$('input[name="disclosure"]:checked').map(input => input.value);
-  try {
-    const data = await apiRequest('/api/disclosures', { method: 'POST', body: JSON.stringify({ values }) });
-    disclosureValues = data.disclosures;
-    updateDisclosureUI(); closeModal($('#disclosureModal')); showToast('공시 상태를 DB에 저장했어요.');
-  } catch (error) { showToast(error.message, 'error'); }
-});
-function updateDisclosureUI() {
-  $$('input[name="disclosure"]').forEach(input => { input.checked = disclosureValues.includes(input.value); });
-  const percent = Math.round(disclosureValues.length / 6 * 100);
-  $('#disclosureDone').textContent = disclosureValues.length;
-  $('#disclosurePercent').textContent = `${percent}%`;
-  $('#disclosureRing').style.setProperty('--value', percent);
-}
-
-$('#regionButton').addEventListener('click', () => openModal('regionModal'));
-$$('[data-region]').forEach(button => button.addEventListener('click', () => requireLogin('owner', async () => {
-  const region = button.dataset.region;
-  try {
-    const data = await apiRequest('/api/preferences/region', { method: 'POST', body: JSON.stringify({ region }) });
-    selectedRegion = data.region; updateRegionUI(); closeModal($('#regionModal')); showToast(`${region} 기준으로 DB에 저장했어요.`, 'info');
-  } catch (error) { showToast(error.message, 'error'); }
-})));
-
-function updateRegionUI() {
-  $('#regionButton').textContent = `${selectedRegion} ▾`;
-  $$('[data-region]').forEach(button => { $('span', button).textContent = button.dataset.region === selectedRegion ? '✓' : ''; });
-}
-
-$('#couponIssueForm').addEventListener('submit', event => {
-  event.preventDefault();
-  requireLogin('owner', async () => {
-    const values = { name: $('#couponName').value.trim(), benefit: $('#couponBenefit').value.trim(), quantity: Number($('#couponQuantity').value), condition: $('#couponCondition').value.trim() };
-    try {
-      const data = await apiRequest('/api/coupons/issue', { method: 'POST', body: JSON.stringify(values) });
-      issuedCoupon = data.issuedCoupon; renderIssuedCoupon(issuedCoupon); showToast(`${issuedCoupon.quantity}장의 쿠폰 발행 정보를 DB에 저장했어요.`);
-    } catch (error) { showToast(error.message, 'error'); }
-  });
-});
-function renderIssuedCoupon(coupon) {
-  $('#issuedCouponSummary').innerHTML = `<span>🎟</span><p><strong>${escapeHTML(coupon.name)}</strong><small>${escapeHTML(coupon.benefit)} · ${coupon.quantity}장 · ${escapeHTML(coupon.condition)}</small></p>`;
-  $('#issuedCouponSummary').classList.add('active');
-}
-
-function validateReceiptFile(file) {
-  if (!file) return false;
-  if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) { showToast('PNG, JPG 또는 WebP 이미지만 올릴 수 있어요.', 'error'); return false; }
-  if (file.size > 6 * 1024 * 1024) { showToast('이미지는 6MB 이하여야 해요.', 'error'); return false; }
-  return true;
-}
-function loadReceipt(file) {
-  if (!validateReceiptFile(file)) return;
-  receiptFilename = file.name || '증빙 이미지';
-  const reader = new FileReader();
-  reader.onload = () => {
-    receiptDataUrl = reader.result;
-    $('#receiptPreview').src = receiptDataUrl;
-    $('#receiptPreview').classList.add('visible');
-    $('#receiptDropzone').classList.add('has-file');
-    $('#runOcrButton').disabled = false;
-    $('#runOcrButton').innerHTML = 'AI로 증빙 분석하기 <span>→</span>';
-  };
-  reader.readAsDataURL(file);
-}
-$('#receiptFile').addEventListener('change', event => loadReceipt(event.target.files[0]));
-const dropzone = $('#receiptDropzone');
-['dragenter', 'dragover'].forEach(type => dropzone.addEventListener(type, event => { event.preventDefault(); dropzone.classList.add('dragging'); }));
-['dragleave', 'drop'].forEach(type => dropzone.addEventListener(type, event => { event.preventDefault(); dropzone.classList.remove('dragging'); }));
-dropzone.addEventListener('drop', event => loadReceipt(event.dataTransfer.files[0]));
-$('#runOcrButton').addEventListener('click', () => requireLogin('owner', runOcr));
-
-async function runOcr() {
-  if (!receiptDataUrl) { showToast('분석할 증빙 이미지를 선택해 주세요.', 'error'); return; }
-  const button = $('#runOcrButton');
-  button.disabled = true; button.innerHTML = '<span class="button-spinner"></span> 문서를 분석하는 중…';
-  $('#ocrResultPanel').innerHTML = '<div class="empty-tool-state loading"><span class="scan-icon">▣</span><h3>증빙 내용을 분석하고 있어요</h3><p>금액과 품목을 추출하고 사용계획과 비교합니다.</p></div>';
-  try {
-    const data = await apiRequest('/api/ai/ocr', { method: 'POST', body: JSON.stringify({ image: receiptDataUrl, filename: receiptFilename, plan: $('#expensePlan').value }) });
-    lastOcrResult = data.result;
-    renderOcrResult(data.result, data.model);
-    showToast('AI 증빙 분석이 완료됐어요.');
+    await apiRequest('/api/business/metrics', {
+      method: 'POST',
+      body: JSON.stringify({
+        sales6m,
+        operatingCashFlow: Number($('#metricsCashFlow').value),
+        debtTotal: Number($('#metricsDebtTotal').value),
+        monthlyDebtPayment: Number($('#metricsDebtPayment').value),
+        overdueCount: Number($('#metricsOverdue').value),
+        employeeCount: Number($('#metricsEmployees').value),
+        taxCompliant: $('#metricsTax').value === 'true',
+        footTrafficGrowth: Number($('#metricsFootTraffic').value),
+        localSalesGrowth: Number($('#metricsLocalGrowth').value),
+        competitorDensity: Number($('#metricsCompetition').value),
+        closureRate: Number($('#metricsClosure').value),
+        repeatRate: Number($('#metricsRepeat').value),
+        digitalSalesRatio: Number($('#metricsDigital').value)
+      })
+    });
+    await refreshData('재무·위험 점검을 갱신했습니다.');
+    showOwnerStep('campaign');
   } catch (error) {
-    $('#ocrResultPanel').innerHTML = `<div class="empty-tool-state error"><span>!</span><h3>분석을 완료하지 못했어요</h3><p>${escapeHTML(error.message)}</p><button type="button" id="retryOcrButton">다시 시도</button></div>`;
-    $('#retryOcrButton').addEventListener('click', runOcr);
     showToast(error.message, 'error');
   } finally {
-    button.disabled = false; button.innerHTML = '다시 분석하기 <span>↻</span>';
+    button.disabled = false;
   }
+});
+
+function renderAssessment(assessment) {
+  const panel = $('#assessmentPanel');
+  panel.classList.toggle('hidden', !assessment);
+  if (!assessment) return;
+  $('#assessmentScore').textContent = assessment.score;
+  const labels = { low: '낮은 보완 위험', review: '추가 확인 필요', high: '집중 확인 필요' };
+  $('#assessmentRisk').textContent = labels[assessment.riskLevel] || '추가 확인 필요';
+  $('#assessmentRisk').className = 'risk-badge ' + assessment.riskLevel;
+  $('#assessmentFactors').innerHTML = Object.entries(assessment.components || {}).map(([name, value]) =>
+    '<div class="factor-row"><div><span>' + escapeHTML(name) + '</span><b>'
+    + escapeHTML(value) + '점</b></div><i><span style="width:' + Math.min(100, Number(value)) + '%"></span></i></div>'
+  ).join('');
+  $('#assessmentMissing').textContent = assessment.missing?.length
+    ? '추가 확인 자료: ' + assessment.missing.join(', ')
+    : '필수 입력값은 채워졌습니다. 운영자가 원자료와 모순 여부를 별도로 확인합니다.';
 }
 
-function renderOcrResult(result, model) {
-  const warnings = Array.isArray(result.warnings) ? result.warnings : [];
-  const items = Array.isArray(result.items) ? result.items : [];
-  const matchClass = result.planMatch === '적합' ? 'match-good' : result.planMatch === '부적합' ? 'match-bad' : 'match-review';
-  $('#ocrResultPanel').innerHTML = `<div class="ocr-result-header"><div><small>AI 판독 완료</small><h3>${escapeHTML(result.documentType || '증빙 문서')}</h3></div><span class="confidence">신뢰도 ${escapeHTML(result.confidence ?? '-')}%</span></div>
-    <div class="ocr-match ${matchClass}"><span>${result.planMatch === '적합' ? '✓' : '!'}</span><div><small>사용계획 일치도</small><strong>${escapeHTML(result.planMatch || '검토 필요')}</strong></div></div>
-    <dl class="ocr-fields"><div><dt>공급자</dt><dd>${escapeHTML(result.merchant || '판독 안 됨')}</dd></div><div><dt>사업자번호</dt><dd>${escapeHTML(result.businessNumber || '판독 안 됨')}</dd></div><div><dt>거래일</dt><dd>${escapeHTML(result.date || '판독 안 됨')}</dd></div><div><dt>합계 금액</dt><dd class="amount">${won(result.total)}</dd></div></dl>
-    <div class="ocr-items"><h4>추출 품목</h4>${items.length ? items.map(item => `<div><span>${escapeHTML(item.name || '품목 미상')} × ${escapeHTML(item.quantity || 1)}</span><b>${won(item.amount)}</b></div>`).join('') : '<p>추출된 품목이 없습니다.</p>'}</div>
-    <div class="ocr-warnings"><h4>사람이 확인할 항목</h4>${warnings.length ? `<ul>${warnings.map(item => `<li>${escapeHTML(item)}</li>`).join('')}</ul>` : '<p>AI가 표시한 추가 경고가 없습니다. 원본 대조는 필요합니다.</p>'}</div>
-    <div class="ocr-result-actions"><button type="button" id="askOcrAiButton">AI에게 결과 질문</button><button type="button" id="approveEvidenceButton">검토 완료 처리</button></div><small class="model-note">${escapeHTML(model)} 분석 · AI 자동 지급 아님</small>`;
-  $('#askOcrAiButton').addEventListener('click', () => openAiDrawer('방금 OCR 결과에서 사람이 반드시 확인해야 할 항목을 정리해줘.'));
-  $('#approveEvidenceButton').addEventListener('click', () => showToast('1차 검토 완료로 표시했어요. 실제 지급에는 운영자 승인이 필요합니다.'));
+function defaultMilestones() {
+  return [
+    { title: '계약 확인', condition: '견적서와 공급 계약 확인', percent: 20, dueDate: '' },
+    { title: '구매 착수', condition: '세금계산서와 결제 증빙 확인', percent: 40, dueDate: '' },
+    { title: '설치 완료', condition: '완료 사진과 최종 비용 검수', percent: 40, dueDate: '' }
+  ];
 }
 
-async function checkApiHealth() {
+function renderMilestoneRows(items) {
+  const rows = items?.length ? items : defaultMilestones();
+  $('#milestoneRows').innerHTML = rows.map((item, index) =>
+    '<div class="milestone-row"><b>' + (index + 1) + '</b>'
+    + '<label>단계명<input class="milestone-title" required value="' + escapeHTML(item.title) + '"></label>'
+    + '<label>달성 조건·필수 증빙<input class="milestone-condition" required value="' + escapeHTML(item.condition) + '"></label>'
+    + '<label>지급 %<input class="milestone-percent" type="number" min="1" max="100" required value="' + item.percent + '"></label>'
+    + '<button type="button" class="remove-milestone" aria-label="지급 단계 삭제">×</button></div>'
+  ).join('');
+  updateMilestoneTotal();
+}
+
+function updateMilestoneTotal() {
+  const total = $$('.milestone-percent').reduce((sum, input) => sum + Number(input.value || 0), 0);
+  $('#milestoneTotal').textContent = total + '%';
+  $('#milestoneTotal').style.color = total === 100 ? '#397c65' : '#a84838';
+}
+
+function fillCampaignForm(campaign) {
+  $('#campaignName').value = campaign?.name || '';
+  $('#campaignTarget').value = campaign?.target || 30000000;
+  $('#campaignDuration').value = String(campaign?.duration || 30);
+  $('#campaignPlan').value = campaign?.plan || '';
+  $('#campaignRisk').value = campaign?.risk || '';
+  renderMilestoneRows(campaign?.milestones);
+  const editable = !campaign || ['draft', 'needs_changes'].includes(campaign.status);
+  $('#submitCampaign').disabled = !editable || state.user?.role !== 'owner';
+  $('#campaignForm button[type="submit"]').disabled = !editable || state.user?.role !== 'owner';
+  const message = $('#campaignReviewMessage');
+  message.classList.toggle('hidden', !campaign?.reviewNote);
+  message.textContent = campaign?.reviewNote ? '운영자 의견: ' + campaign.reviewNote : '';
+}
+
+$('#addMilestone').addEventListener('click', () => {
+  const items = collectMilestones(false);
+  if (items.length >= 8) {
+    showToast('지급 단계는 최대 8개까지 만들 수 있습니다.', 'info');
+    return;
+  }
+  items.push({ title: '', condition: '', percent: 0, dueDate: '' });
+  renderMilestoneRows(items);
+});
+$('#milestoneRows').addEventListener('input', updateMilestoneTotal);
+$('#milestoneRows').addEventListener('click', event => {
+  const button = event.target.closest('.remove-milestone');
+  if (!button) return;
+  if ($$('.milestone-row').length <= 2) {
+    showToast('지급 단계는 최소 2개가 필요합니다.', 'info');
+    return;
+  }
+  button.closest('.milestone-row').remove();
+  $$('.milestone-row').forEach((row, index) => { $('b', row).textContent = index + 1; });
+  updateMilestoneTotal();
+});
+
+function collectMilestones(validate = true) {
+  const items = $$('.milestone-row').map(row => ({
+    title: $('.milestone-title', row).value.trim(),
+    condition: $('.milestone-condition', row).value.trim(),
+    percent: Number($('.milestone-percent', row).value),
+    dueDate: ''
+  }));
+  if (validate) {
+    if (items.length < 2 || items.some(item => !item.title || !item.condition || item.percent <= 0)) {
+      throw new Error('각 지급 단계의 이름, 조건과 지급 비율을 모두 입력해 주세요.');
+    }
+    const total = items.reduce((sum, item) => sum + item.percent, 0);
+    if (total !== 100) throw new Error('지급 비율 합계가 100%여야 합니다.');
+  }
+  return items;
+}
+
+async function persistCampaign() {
+  if (state.user?.role !== 'owner') throw new Error('소상공인 계정에서만 저장할 수 있습니다.');
+  if (!state.owner?.business) throw new Error('사업체 정보를 먼저 저장해 주세요.');
+  const campaign = state.owner?.campaigns?.[0] || null;
+  const result = await apiRequest('/api/campaign', {
+    method: 'POST',
+    body: JSON.stringify({
+      id: campaign?.id,
+      name: $('#campaignName').value.trim(),
+      target: Number($('#campaignTarget').value),
+      duration: Number($('#campaignDuration').value),
+      plan: $('#campaignPlan').value.trim(),
+      risk: $('#campaignRisk').value.trim(),
+      milestones: collectMilestones()
+    })
+  });
+  return result.campaignId;
+}
+
+$('#campaignForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  const button = $('#campaignForm button[type="submit"]');
+  button.disabled = true;
   try {
-    const response = await fetch('/api/health', { cache: 'no-store' });
-    const data = await response.json();
-    const configured = response.ok && (data.apiConfigured || ['auto', 'ollama'].includes(data.ocrEngine));
-    $('#apiStatusBadge').textContent = data.ocrEngine === 'ollama' ? `Ollama · ${data.ollamaModel}` : (configured ? `GPT · ${data.chatModel || 'gpt-4o-mini'}` : 'API 키 필요');
-    $('#apiStatusBadge').classList.toggle('connected', configured);
-    $('#aiStatusDot').classList.toggle('offline', !configured);
-  } catch {
-    $('#apiStatusBadge').textContent = '전용 서버로 실행 필요';
-    $('#aiStatusDot').classList.add('offline');
+    await persistCampaign();
+    await refreshData('모집안과 지급 조건을 저장했습니다.');
+  } catch (error) {
+    showToast(error.message, 'error');
+  } finally {
+    button.disabled = false;
+  }
+});
+
+$('#submitCampaign').addEventListener('click', async () => {
+  const button = $('#submitCampaign');
+  button.disabled = true;
+  try {
+    const campaignId = await persistCampaign();
+    await apiRequest('/api/campaign/submit', {
+      method: 'POST',
+      body: JSON.stringify({ campaignId })
+    });
+    await refreshData('운영자 심사를 요청했습니다. 승인 전에는 투자자에게 공개되지 않습니다.');
+  } catch (error) {
+    showToast(error.message, 'error');
+  } finally {
+    button.disabled = false;
+  }
+});
+
+function renderOwnerExecution(campaign) {
+  const timeline = $('#ownerMilestoneFlow');
+  if (!campaign) {
+    timeline.innerHTML = '<div class="empty-state"><strong>저장된 모집안이 없습니다</strong>'
+      + '<p>모집안과 단계별 지급 조건을 먼저 작성해 주세요.</p></div>';
+    $('#evidenceMilestone').innerHTML = '<option value="">제출 가능한 단계 없음</option>';
+    $('#analyzeEvidence').disabled = true;
+    return;
+  }
+  timeline.innerHTML = campaign.milestones.map(item =>
+    '<article class="execution-item ' + item.status + '"><b>' + item.sequence + '</b><div><strong>'
+    + escapeHTML(item.title) + ' · ' + item.percent + '%</strong><small>'
+    + escapeHTML(item.condition) + '</small></div><span>'
+    + escapeHTML(milestoneStatusLabels[item.status] || item.status) + '</span></article>'
+  ).join('');
+  const eligible = campaign.milestones.filter((item, index) =>
+    ['planned', 'rejected'].includes(item.status)
+    && campaign.status === 'published'
+    && campaign.milestones.slice(0, index).every(previous => previous.status === 'released')
+  );
+  $('#evidenceMilestone').innerHTML = eligible.length
+    ? eligible.map(item => '<option value="' + item.id + '">' + item.sequence + '. '
+      + escapeHTML(item.title) + ' (' + item.percent + '%)</option>').join('')
+    : '<option value="">현재 제출 가능한 단계 없음</option>';
+  $('#analyzeEvidence').disabled = !eligible.length || !state.evidenceImage || state.user?.role !== 'owner';
+}
+
+$('#evidenceFile').addEventListener('change', event => {
+  const file = event.target.files[0];
+  state.evidenceImage = '';
+  state.evidenceResult = null;
+  state.evidenceAnalysisId = null;
+  $('#evidenceAnalysis').classList.add('hidden');
+  $('#sendEvidence').disabled = true;
+  if (!file) return;
+  if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 6 * 1024 * 1024) {
+    showToast('PNG, JPG, WebP 형식의 6MB 이하 이미지를 선택해 주세요.', 'error');
+    event.target.value = '';
+    return;
+  }
+  state.evidenceFilename = file.name;
+  const reader = new FileReader();
+  reader.onload = () => {
+    state.evidenceImage = reader.result;
+    $('#evidencePreview').src = state.evidenceImage;
+    $('#evidencePreview').classList.remove('hidden');
+    $('#analyzeEvidence').disabled = !$('#evidenceMilestone').value;
+  };
+  reader.readAsDataURL(file);
+});
+
+$('#analyzeEvidence').addEventListener('click', async () => {
+  const campaign = ownerModel().campaign;
+  const milestone = campaign?.milestones.find(item => item.id === $('#evidenceMilestone').value);
+  if (!state.evidenceImage || !milestone) return;
+  const button = $('#analyzeEvidence');
+  button.disabled = true;
+  button.textContent = '증빙을 분석하고 있습니다…';
+  try {
+    const data = await apiRequest('/api/ai/ocr', {
+      method: 'POST',
+      body: JSON.stringify({
+        image: state.evidenceImage,
+        filename: state.evidenceFilename,
+        plan: campaign.plan + '\n현재 지급 조건: ' + milestone.condition
+      })
+    });
+    state.evidenceResult = data.result;
+    state.evidenceAnalysisId = data.analysisId;
+    const warnings = Array.isArray(data.result.warnings) ? data.result.warnings : [];
+    $('#evidenceAnalysis').innerHTML = '<strong>계획 일치: '
+      + escapeHTML(data.result.planMatch || '검토 필요') + '</strong>'
+      + '<span>공급자 ' + escapeHTML(data.result.merchant || '판독 안 됨')
+      + ' · 합계 ' + won(data.result.total) + '</span>'
+      + (warnings.length ? '<p>' + warnings.map(escapeHTML).join(' · ') + '</p>' : '');
+    $('#evidenceAnalysis').classList.remove('hidden');
+    $('#sendEvidence').disabled = false;
+    showToast('증빙 분석이 끝났습니다. 결과를 확인한 뒤 제출해 주세요.');
+  } catch (error) {
+    showToast(error.message, 'error');
+  } finally {
+    button.disabled = false;
+    button.textContent = '증빙 내용 다시 분석';
+  }
+});
+
+$('#evidenceForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  if (!state.evidenceResult || !$('#evidenceMilestone').value) return;
+  const button = $('#sendEvidence');
+  button.disabled = true;
+  try {
+    await apiRequest('/api/evidence', {
+      method: 'POST',
+      body: JSON.stringify({
+        milestoneId: $('#evidenceMilestone').value,
+        analysisId: state.evidenceAnalysisId,
+        filename: state.evidenceFilename,
+        claimedAmount: Number($('#evidenceAmount').value),
+        planMatch: state.evidenceResult.planMatch || '검토 필요',
+        result: state.evidenceResult
+      })
+    });
+    state.evidenceImage = '';
+    state.evidenceResult = null;
+    state.evidenceAnalysisId = null;
+    $('#evidenceForm').reset();
+    $('#evidencePreview').classList.add('hidden');
+    $('#evidenceAnalysis').classList.add('hidden');
+    await refreshData('증빙을 운영자 검토 대기열에 제출했습니다.');
+    showOwnerStep('execution');
+  } catch (error) {
+    showToast(error.message, 'error');
+  } finally {
+    button.disabled = false;
+  }
+});
+
+function renderAdmin() {
+  if (state.user?.role !== 'admin' || !state.admin) return;
+  const campaigns = state.admin.campaigns || [];
+  const commitments = state.admin.commitments || [];
+  const evidence = state.admin.evidence || [];
+  const campaignQueue = campaigns.filter(item => item.status === 'submitted');
+  const escrowQueue = commitments.filter(item => item.status === 'committed');
+  const evidenceQueue = evidence.filter(item => item.status === 'pending');
+  const releaseQueue = campaigns.flatMap(item =>
+    item.milestones.filter(milestone => milestone.status === 'approved')
+  );
+  $('#adminStats').innerHTML =
+    '<article><small>모집 심사 대기</small><strong>' + campaignQueue.length + '</strong></article>'
+    + '<article><small>예치 확인 대기</small><strong>' + escrowQueue.length + '</strong></article>'
+    + '<article><small>증빙·지급 대기</small><strong>' + (evidenceQueue.length + releaseQueue.length) + '</strong></article>';
+  $('#campaignQueueCount').textContent = campaignQueue.length;
+  $('#escrowQueueCount').textContent = escrowQueue.length;
+  $('#evidenceQueueCount').textContent = evidenceQueue.length + releaseQueue.length;
+  renderAdminCampaigns(campaigns);
+  renderAdminEscrow(commitments, campaigns);
+  renderAdminEvidence(evidence, campaigns);
+  renderAdminAudit(state.admin.audit || []);
+  showAdminTab(state.adminTab);
+}
+
+function renderAdminCampaigns(campaigns) {
+  const list = $('#adminCampaignList');
+  const visible = campaigns.filter(item => ['submitted', 'needs_changes', 'published', 'rejected'].includes(item.status));
+  if (!visible.length) {
+    list.innerHTML = '<div class="empty-state"><strong>심사할 모집안이 없습니다</strong></div>';
+    return;
+  }
+  list.innerHTML = visible.map(item => {
+    const assessment = item.assessment;
+    return '<article class="review-card"><div class="review-card-header"><div><span class="status-pill '
+      + item.status + '">' + escapeHTML(campaignStatusLabels[item.status] || item.status)
+      + '</span><h3>' + escapeHTML(item.business?.name || item.name) + '</h3><p>'
+      + escapeHTML(item.name) + ' · ' + escapeHTML(item.business?.address || '') + '</p></div>'
+      + '<button class="plain-button" type="button" data-preview-owner="' + item.id + '">소상공인 화면으로 보기</button></div>'
+      + '<div class="review-card-grid"><div><small>사업자 상태</small><strong>'
+      + escapeHTML(item.business?.verificationStatus || '미확인') + '</strong></div>'
+      + '<div><small>위험 점검</small><strong>' + (assessment ? assessment.score + '점' : '자료 없음') + '</strong></div>'
+      + '<div><small>목표 금액</small><strong>' + won(item.target) + '</strong></div>'
+      + '<div><small>지급 조건</small><strong>' + item.milestones.length + '단계 · '
+      + item.milestones.reduce((sum, milestone) => sum + milestone.percent, 0) + '%</strong></div></div>'
+      + '<div class="risk-review"><div><strong>자금 사용계획</strong><br>'
+      + escapeHTML(item.plan) + '</div><div><strong>사업자가 공개한 위험</strong><br>'
+      + escapeHTML(item.risk) + '</div></div>'
+      + '<div class="review-actions"><input id="campaignNote-' + item.id
+      + '" placeholder="승인 근거 또는 보완 요청 사유" value="' + escapeHTML(item.reviewNote || '') + '">'
+      + '<button type="button" data-campaign-review="needs_changes" data-id="' + item.id + '">보완 요청</button>'
+      + '<button class="reject" type="button" data-campaign-review="rejected" data-id="' + item.id + '">반려</button>'
+      + '<button class="approve" type="button" data-campaign-review="published" data-id="' + item.id
+      + '">승인하고 공개</button></div></article>';
+  }).join('');
+}
+
+function renderAdminEscrow(commitments, campaigns) {
+  const list = $('#adminEscrowList');
+  const visible = commitments.filter(item => ['committed', 'escrowed'].includes(item.status));
+  if (!visible.length) {
+    list.innerHTML = '<div class="empty-state"><strong>확인할 참여 약정이 없습니다</strong></div>';
+    return;
+  }
+  list.innerHTML = visible.map(item => {
+    const campaign = campaigns.find(value => value.id === item.campaignId);
+    return '<article class="review-card"><div class="review-card-header"><div><span class="status-pill '
+      + (item.status === 'escrowed' ? 'published' : 'submitted') + '">'
+      + escapeHTML(commitmentStatusLabels[item.status]) + '</span><h3>'
+      + escapeHTML(campaign?.business?.name || '모집') + '</h3><p>'
+      + escapeHTML(campaign?.name || '') + ' · ' + shortDate(item.createdAt) + '</p></div><strong>'
+      + won(item.amount) + '</strong></div><div class="review-actions">'
+      + '<button class="approve" type="button" data-confirm-escrow="' + item.id + '" '
+      + (item.status === 'escrowed' ? 'disabled' : '') + '>예치 확인 완료</button></div></article>';
+  }).join('');
+}
+
+function renderAdminEvidence(evidence, campaigns) {
+  const list = $('#adminEvidenceList');
+  const pending = evidence.filter(item => ['pending', 'approved'].includes(item.status));
+  const releaseItems = campaigns.flatMap(campaign =>
+    campaign.milestones.filter(item => item.status === 'approved').map(item => ({ campaign, milestone: item }))
+  );
+  if (!pending.length && !releaseItems.length) {
+    list.innerHTML = '<div class="empty-state"><strong>검토할 증빙이나 지급 단계가 없습니다</strong></div>';
+    return;
+  }
+  const evidenceCards = pending.map(item => {
+    const campaign = campaigns.find(value => value.id === item.campaignId);
+    const milestone = campaign?.milestones.find(value => value.id === item.milestoneId);
+    const result = item.result || {};
+    return '<article class="review-card"><div class="review-card-header"><div><span class="status-pill '
+      + (item.status === 'approved' ? 'published' : 'submitted') + '">'
+      + (item.status === 'pending' ? '증빙 심사 대기' : '증빙 승인') + '</span><h3>'
+      + escapeHTML(campaign?.business?.name || '') + ' · ' + escapeHTML(milestone?.title || '') + '</h3><p>'
+      + escapeHTML(item.filename) + ' · ' + shortDate(item.createdAt) + '</p></div><strong>'
+      + won(item.claimedAmount) + '</strong></div>'
+      + '<div class="review-card-grid"><div><small>계획 일치</small><strong>'
+      + escapeHTML(item.planMatch) + '</strong></div><div><small>공급자</small><strong>'
+      + escapeHTML(result.merchant || '판독 안 됨') + '</strong></div><div><small>문서 합계</small><strong>'
+      + won(result.total) + '</strong></div><div><small>AI 신뢰도</small><strong>'
+      + escapeHTML(result.confidence ?? '-') + '%</strong></div></div>'
+      + (item.status === 'pending'
+        ? '<div class="review-actions"><input id="evidenceNote-' + item.id
+          + '" placeholder="원본 대조 결과와 승인·반려 사유"><button class="reject" type="button" data-evidence-review="rejected" data-id="'
+          + item.id + '">증빙 반려</button><button class="approve" type="button" data-evidence-review="approved" data-id="'
+          + item.id + '">증빙 승인</button></div>'
+        : '') + '</article>';
+  }).join('');
+  const releaseCards = releaseItems.map(({ campaign, milestone }) =>
+    '<article class="review-card"><div class="review-card-header"><div><span class="status-pill submitted">최종 지급 확인</span><h3>'
+    + escapeHTML(campaign.business?.name || '') + ' · ' + escapeHTML(milestone.title) + '</h3><p>앞 단계 완료, 증빙 승인, 예치 잔액을 다시 확인합니다.</p></div><strong>'
+    + won(Math.floor(campaign.target * milestone.percent / 100)) + '</strong></div>'
+    + '<div class="review-actions"><button class="approve" type="button" data-release-milestone="'
+    + milestone.id + '">조건 확인 후 지급 승인</button></div></article>'
+  ).join('');
+  list.innerHTML = evidenceCards + releaseCards;
+}
+
+function renderAdminAudit(rows) {
+  $('#adminAuditList').innerHTML = rows.length
+    ? rows.map(item =>
+      '<div class="audit-row"><time>' + escapeHTML(shortDate(item.created_at)) + '</time><strong>'
+      + escapeHTML(item.action) + '</strong><span>' + escapeHTML(item.entity_type)
+      + ' · ' + escapeHTML(item.entity_id) + '</span></div>'
+    ).join('')
+    : '<div class="empty-state"><strong>감사 기록이 없습니다</strong></div>';
+}
+
+function showAdminTab(tab) {
+  state.adminTab = tab;
+  $$('.admin-tab').forEach(section => section.classList.toggle('active', section.id === 'adminTab-' + tab));
+  $$('[data-admin-tab]').forEach(button => button.classList.toggle('active', button.dataset.adminTab === tab));
+}
+$$('[data-admin-tab]').forEach(button => {
+  button.addEventListener('click', () => showAdminTab(button.dataset.adminTab));
+});
+
+$('#adminCampaignList').addEventListener('click', async event => {
+  const preview = event.target.closest('[data-preview-owner]');
+  if (preview) {
+    state.adminPreviewCampaign = state.admin.campaigns.find(item => item.id === preview.dataset.previewOwner);
+    switchView('owner');
+    return;
+  }
+  const button = event.target.closest('[data-campaign-review]');
+  if (!button) return;
+  const note = $('#campaignNote-' + button.dataset.id).value.trim();
+  if (button.dataset.campaignReview !== 'published' && !note) {
+    showToast('보완 요청이나 반려 사유를 입력해 주세요.', 'error');
+    return;
+  }
+  await runAdminAction(button, '/api/admin/campaign', {
+    campaignId: button.dataset.id,
+    decision: button.dataset.campaignReview,
+    note
+  }, '모집 심사 결과를 저장했습니다.');
+});
+
+$('#adminEscrowList').addEventListener('click', async event => {
+  const button = event.target.closest('[data-confirm-escrow]');
+  if (!button) return;
+  await runAdminAction(button, '/api/admin/escrow', {
+    commitmentId: button.dataset.confirmEscrow
+  }, '예치 확인 상태를 저장했습니다.');
+});
+
+$('#adminEvidenceList').addEventListener('click', async event => {
+  const review = event.target.closest('[data-evidence-review]');
+  if (review) {
+    const note = $('#evidenceNote-' + review.dataset.id).value.trim();
+    if (review.dataset.evidenceReview === 'rejected' && !note) {
+      showToast('반려 사유를 입력해 주세요.', 'error');
+      return;
+    }
+    await runAdminAction(review, '/api/admin/evidence', {
+      evidenceId: review.dataset.id,
+      decision: review.dataset.evidenceReview,
+      note
+    }, '증빙 검토 결과를 저장했습니다.');
+    return;
+  }
+  const release = event.target.closest('[data-release-milestone]');
+  if (release) {
+    await runAdminAction(release, '/api/admin/release', {
+      milestoneId: release.dataset.releaseMilestone
+    }, '조건과 예치 잔액을 확인해 지급 승인 기록을 남겼습니다.');
+  }
+});
+
+async function runAdminAction(button, path, body, message) {
+  button.disabled = true;
+  try {
+    await apiRequest(path, { method: 'POST', body: JSON.stringify(body) });
+    await refreshData(message);
+    switchView('admin', false);
+  } catch (error) {
+    showToast(error.message, 'error');
+    button.disabled = false;
   }
 }
 
 function buildAiContext() {
   const parts = [];
-  if (currentStore) parts.push(`선택 가게: ${currentStore.name}, 지역 ${currentStore.area}, 업종 ${currentStore.category}, 목표 ${won(currentStore.target)}, 기본 달성률 ${currentStore.support}%, 사업계획: ${currentStore.campaign}, 투자 포인트: ${currentStore.points.join(' / ')}, 위험: ${currentStore.risks.join(' / ')}`);
-  if (business) parts.push(`등록 사업체: ${business.name}, ${business.category}, ${business.address}, 월평균매출 ${won(business.sales)}, 업력 ${business.age}년, 소개: ${business.description}`);
-  if (campaign) parts.push(`작성 펀딩: ${campaign.name}, 목표 ${won(campaign.target)}, 계획: ${campaign.plan}, 위험: ${campaign.risk}`);
-  if (lastOcrResult) parts.push(`최근 OCR 결과: ${JSON.stringify(lastOcrResult)}`);
-  if (intelligence) parts.push(`DB 지식그래프 진단: ${JSON.stringify(intelligence)}`);
+  if (state.currentCampaign) {
+    parts.push('현재 투자자가 보는 모집: ' + JSON.stringify(state.currentCampaign));
+  }
+  const owner = ownerModel();
+  if (owner.business) parts.push('현재 소상공인 사업: ' + JSON.stringify(owner.business));
+  if (owner.campaign) parts.push('현재 모집안과 지급 단계: ' + JSON.stringify(owner.campaign));
+  if (state.user?.role === 'admin' && state.admin) {
+    parts.push('운영자 대기열 요약: 모집 ' + state.admin.campaigns.filter(item => item.status === 'submitted').length
+      + '건, 증빙 ' + state.admin.evidence.filter(item => item.status === 'pending').length + '건');
+  }
   return parts.join('\n');
 }
-function updateAiContextLabel() {
-  const label = $('#aiContextLabel');
-  if (currentStore && $('#consumerView').classList.contains('active')) label.textContent = `${currentStore.name} 펀딩 정보를 함께 보고 있어요.`;
-  else if ($('#ownerView').classList.contains('active')) label.textContent = business ? `${business.name} 사업계획과 증빙을 함께 보고 있어요.` : '사업체 등록과 펀딩 계획 작성을 도와드려요.';
-  else label.textContent = '플랫폼 이용과 펀딩 분석을 도와드려요.';
+
+function updateChatContext() {
+  const active = $('.view.active')?.id;
+  $('#aiContextLabel').textContent = active === 'ownerView'
+    ? '현재 사업·모집 단계의 자료를 함께 봅니다'
+    : active === 'adminView'
+      ? '현재 심사 대기열과 승인 조건을 함께 봅니다'
+      : state.currentCampaign
+        ? state.currentCampaign.business?.name + ' 모집을 함께 봅니다'
+        : '현재 화면을 바탕으로 답합니다';
 }
-function openAiDrawer(prefill = '') {
-  $('#aiDrawer').classList.add('open'); $('#aiDrawer').setAttribute('aria-hidden', 'false'); $('#drawerBackdrop').classList.add('open'); document.body.classList.add('drawer-open');
-  updateAiContextLabel();
+
+function openChat(prefill = '') {
+  $('#aiDrawer').classList.add('open');
+  $('#aiDrawer').setAttribute('aria-hidden', 'false');
+  $('#drawerBackdrop').classList.add('open');
+  document.body.classList.add('drawer-open');
   if (prefill) $('#chatInput').value = prefill;
-  setTimeout(() => $('#chatInput').focus(), 50);
+  updateChatContext();
+  setTimeout(() => $('#chatInput').focus(), 30);
 }
-function closeAiDrawer() { $('#aiDrawer').classList.remove('open'); $('#aiDrawer').setAttribute('aria-hidden', 'true'); $('#drawerBackdrop').classList.remove('open'); document.body.classList.remove('drawer-open'); }
-$('#aiFab').addEventListener('click', () => openAiDrawer());
-$('#closeAiDrawer').addEventListener('click', closeAiDrawer);
-$('#drawerBackdrop').addEventListener('click', closeAiDrawer);
-$$('#chatSuggestions button').forEach(button => button.addEventListener('click', () => { $('#chatInput').value = button.textContent; $('#chatForm').requestSubmit(); }));
-$('#chatInput').addEventListener('input', event => { event.target.style.height = 'auto'; event.target.style.height = `${Math.min(event.target.scrollHeight, 120)}px`; });
+
+function closeChat() {
+  $('#aiDrawer').classList.remove('open');
+  $('#aiDrawer').setAttribute('aria-hidden', 'true');
+  $('#drawerBackdrop').classList.remove('open');
+  document.body.classList.remove('drawer-open');
+}
+
+$('#aiFab').addEventListener('click', () => openChat());
+$('#closeAiDrawer').addEventListener('click', closeChat);
+$('#drawerBackdrop').addEventListener('click', closeChat);
+$$('[data-open-chat]').forEach(button => {
+  button.addEventListener('click', () => openChat(button.dataset.openChat));
+});
+$$('#chatSuggestions button').forEach(button => {
+  button.addEventListener('click', () => {
+    $('#chatInput').value = button.textContent;
+    $('#chatForm').requestSubmit();
+  });
+});
+
+$('#chatInput').addEventListener('input', event => {
+  event.target.style.height = 'auto';
+  event.target.style.height = Math.min(event.target.scrollHeight, 120) + 'px';
+});
+$('#chatInput').addEventListener('keydown', event => {
+  if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+    event.preventDefault();
+    $('#chatForm').requestSubmit();
+  }
+});
 
 function appendChatMessage(role, content, loading = false) {
   const wrapper = document.createElement('div');
-  wrapper.className = `chat-message ${role}${loading ? ' loading-message' : ''}`;
-  const avatar = document.createElement('span'); avatar.textContent = role === 'assistant' ? 'AI' : (currentUser?.name?.slice(0, 1) || '나');
-  const paragraph = document.createElement('p'); paragraph.textContent = content;
-  wrapper.append(avatar, paragraph); $('#chatMessages').append(wrapper); $('#chatMessages').scrollTop = $('#chatMessages').scrollHeight;
+  wrapper.className = 'chat-message ' + role + (loading ? ' loading' : '');
+  const avatar = document.createElement('span');
+  avatar.textContent = role === 'assistant' ? 'AI' : (state.user?.name?.slice(0, 1) || '나');
+  const paragraph = document.createElement('p');
+  paragraph.textContent = content;
+  wrapper.append(avatar, paragraph);
+  $('#chatMessages').append(wrapper);
+  $('#chatMessages').scrollTop = $('#chatMessages').scrollHeight;
   return wrapper;
 }
+
 $('#chatForm').addEventListener('submit', async event => {
   event.preventDefault();
-  const input = $('#chatInput'); const question = input.value.trim(); if (!question) return;
-  input.value = ''; input.style.height = 'auto';
-  appendChatMessage('user', question); chatHistory.push({ role: 'user', content: question });
-  const loading = appendChatMessage('assistant', '답변을 준비하고 있어요…', true);
-  const submit = $('button[type="submit"]', $('#chatForm')); submit.disabled = true;
+  const input = $('#chatInput');
+  const question = input.value.trim();
+  if (!question) return;
+  input.value = '';
+  input.style.height = 'auto';
+  appendChatMessage('user', question);
+  state.chatHistory.push({ role: 'user', content: question });
+  const loading = appendChatMessage('assistant', '근거와 확인할 자료를 정리하고 있습니다…', true);
+  const submit = $('#chatForm button[type="submit"]');
+  submit.disabled = true;
   try {
-    const response = await fetch('/api/ai/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: chatHistory, context: buildAiContext() }) });
-    const data = await response.json();
-    if (!response.ok || !data.ok) throw new Error(data.error || 'AI 답변을 받지 못했습니다.');
-    loading.remove(); appendChatMessage('assistant', data.message); chatHistory.push({ role: 'assistant', content: data.message });
+    const data = await apiRequest('/api/ai/chat', {
+      method: 'POST',
+      body: JSON.stringify({
+        messages: state.chatHistory,
+        context: buildAiContext()
+      })
+    });
+    loading.remove();
+    appendChatMessage('assistant', data.message);
+    state.chatHistory.push({ role: 'assistant', content: data.message });
   } catch (error) {
-    loading.remove(); appendChatMessage('assistant', `연결 오류: ${error.message}\nAPI 키 설정(.env.gptapi) 또는 서버(server.py) 상태를 확인해 주세요.`);
-  } finally { submit.disabled = false; input.focus(); }
+    loading.remove();
+    appendChatMessage('assistant', '지금은 답변을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.');
+  } finally {
+    submit.disabled = false;
+    input.focus();
+  }
 });
 
 async function initialize() {
-  renderStores(); renderRecommendations(); updateAuthUI(); updateOwnerUI(); updateDisclosureUI(); updateRegionUI(); checkApiHealth();
   try {
     const data = await apiRequest('/api/bootstrap');
     applyBootstrap(data);
-    renderStores(); renderRecommendations(); updateAuthUI(); updateOwnerUI(); updateDisclosureUI(); updateRegionUI();
-    if (campaign?.plan) $('#expensePlan').value = campaign.plan;
-    updateAiContextLabel();
+    renderDisclosures(state.owner?.disclosures || []);
+    renderAll();
   } catch (error) {
-    showToast(`DB 연결 실패: ${error.message}`, 'error');
+    $('#appLoading').innerHTML = '<div class="empty-state"><strong>서비스를 불러오지 못했습니다</strong><p>'
+      + escapeHTML(error.message) + '</p></div>';
+    showToast(error.message, 'error');
   }
 }
 
