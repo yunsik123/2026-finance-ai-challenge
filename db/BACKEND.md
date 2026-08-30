@@ -29,7 +29,7 @@
 
 ## 데이터베이스 스키마 (Supabase PostgreSQL)
 
-스키마 원본: [`db/schema.sql`](./db/schema.sql)
+스키마 원본: [`schema.sql`](./schema.sql)
 
 | 테이블 | 저장 내용 |
 |---|---|

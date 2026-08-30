@@ -123,7 +123,8 @@ function businessDto(row) {
     age: Number(row.business_age),
     description: row.description,
     verificationStatus: row.verification_status,
-    verificationNote: row.verification_note || ''
+    verificationNote: row.verification_note || '',
+    isDemo: Boolean(row.is_demo)
   } : null;
 }
 
@@ -168,6 +169,7 @@ function campaignDto(row, relations = {}) {
     status: row.status,
     reviewNote: row.review_note || '',
     publishedAt: row.published_at,
+    isDemo: Boolean(business?.is_demo),
     business: businessDto(business),
     milestones: (relations.milestones?.get(row.id) || [])
       .sort((a, b) => a.sequence_no - b.sequence_no).map(milestoneDto),

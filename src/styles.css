@@ -39,6 +39,14 @@ textarea:focus-visible {
   outline-offset: 2px;
 }
 .hidden { display: none !important; }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
 
 .site-header {
   position: sticky;
@@ -311,6 +319,85 @@ button:disabled {
 .protection-grid p { margin: 0; color: #b5c7c1; font-size: 12px; line-height: 1.75; }
 
 .campaign-section { background: #f6f4ee; }
+.location-discovery {
+  margin: -10px 0 28px;
+  padding: 22px;
+  background: linear-gradient(135deg, #fff 0%, #edf4f0 100%);
+}
+.location-discovery-copy,
+.location-discovery-copy > div,
+.owner-location-heading,
+.commercial-header,
+.location-match-summary {
+  display: flex;
+  align-items: center;
+}
+.location-discovery-copy { gap: 13px; }
+.location-discovery-copy > div { display: block; }
+.location-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--ink);
+  color: white;
+  font-size: 20px;
+}
+.location-discovery h3 { margin: 0 0 4px; font-size: 16px; }
+.location-discovery-copy p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.6; }
+.location-search-form { display: grid; grid-template-columns: 1fr auto; gap: 9px; margin-top: 17px; }
+.location-search-form .primary-button { padding: 10px 20px; }
+.location-quick-picks { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
+.location-quick-picks span { margin-right: 3px; color: var(--muted); font-size: 9px; }
+.location-quick-picks button,
+.location-match-summary button {
+  border: 1px solid #d4ddd8;
+  border-radius: 16px;
+  padding: 5px 10px;
+  background: rgba(255,255,255,.8);
+  color: var(--ink);
+  font-size: 9px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.location-result { margin-top: 18px; }
+.location-empty { padding: 17px; border-radius: 8px; background: #f4f2eb; }
+.location-empty strong { display: block; margin-bottom: 5px; font-size: 11px; }
+.location-empty p { margin: 0; color: var(--muted); font-size: 9px; line-height: 1.7; }
+.location-match-summary { justify-content: space-between; gap: 12px; margin-top: 9px; font-size: 10px; }
+.commercial-insight-box {
+  overflow: hidden;
+  border: 1px solid #dce4df;
+  border-radius: 10px;
+  background: white;
+}
+.commercial-header { justify-content: space-between; gap: 15px; padding: 14px 16px 0; }
+.commercial-header strong { font-size: 13px; text-align: right; }
+.commercial-tag {
+  border-radius: 14px;
+  padding: 5px 9px;
+  background: var(--green-soft);
+  color: #397c65;
+  font-size: 8px;
+  font-weight: 800;
+}
+.commercial-summary { margin: 9px 16px 13px; color: var(--muted); font-size: 9px; line-height: 1.6; }
+.commercial-metrics-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--line); }
+.c-metric { padding: 13px; background: #faf9f5; }
+.c-metric small,
+.c-metric b,
+.c-metric span { display: block; }
+.c-metric small { color: var(--muted); font-size: 8px; }
+.c-metric b { margin: 4px 0; font-size: 14px; }
+.c-metric span { color: var(--muted); font-size: 7px; }
+.c-metric .trend.up { color: #397c65; }
+.c-metric .trend.down { color: var(--danger); }
+.commercial-investor-view { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 12px 14px 4px; }
+.commercial-investor-view p { margin: 0; color: var(--muted); font-size: 8px; line-height: 1.65; }
+.commercial-investor-view b { display: block; margin-bottom: 2px; color: var(--ink); font-size: 9px; }
+.commercial-source { margin: 7px 14px 12px; color: #8c9893; font-size: 7px; }
 .search-box {
   color: var(--muted);
   font-size: 10px;
@@ -389,6 +476,7 @@ button:disabled {
   color: var(--muted);
   font-size: 9px;
 }
+.campaign-facts .area-fact { grid-column: 1 / -1; color: #397c65; }
 .campaign-card button {
   width: 100%;
   margin-top: 16px;
@@ -565,6 +653,23 @@ button:disabled {
   font-size: 10px;
   font-weight: 700;
 }
+.address-analysis-field { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 9px; margin-bottom: 17px; }
+.address-analysis-field label { margin: 0; color: var(--muted); font-size: 10px; font-weight: 700; }
+.address-analysis-field button { margin-bottom: 0; white-space: nowrap; }
+.owner-location-result { margin: -4px 0 19px; padding: 16px; border: 1px solid #d6e3dc; border-radius: 9px; background: #f4f8f6; }
+.owner-location-heading { justify-content: space-between; gap: 12px; }
+.owner-location-heading span,
+.owner-location-heading strong { display: block; }
+.owner-location-heading span { color: var(--muted); font-size: 8px; }
+.owner-location-heading strong { margin-top: 3px; font-size: 12px; }
+.owner-location-heading button { padding: 8px 11px; font-size: 9px; }
+.preview-label { color: var(--muted); font-size: 8px; font-weight: 700; }
+.owner-location-metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 12px 0 8px; }
+.owner-location-metrics span { padding: 9px; border-radius: 6px; background: white; color: var(--muted); font-size: 8px; }
+.owner-location-metrics b { display: block; margin-top: 3px; color: var(--ink); font-size: 11px; }
+.owner-location-result > p { margin: 8px 0 0; color: var(--muted); font-size: 8px; line-height: 1.65; }
+.owner-location-result > p b { color: var(--ink); }
+.location-metric-source { margin: -4px 0 13px; padding: 9px 11px; border-radius: 6px; background: var(--green-soft); color: #397c65; font-size: 8px; line-height: 1.6; }
 input,
 select,
 textarea {
@@ -1077,6 +1182,13 @@ textarea { resize: vertical; line-height: 1.6; }
 .detail-section { margin-bottom: 13px; padding: 19px; border: 1px solid var(--line); border-radius: 9px; }
 .detail-section h3 { margin: 0 0 10px; font-size: 14px; }
 .detail-section p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.75; white-space: pre-wrap; }
+.detail-section-title { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.detail-score { color: var(--coral); font-size: 18px; }
+.detail-factor-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 11px; }
+.detail-factor-chips span { padding: 6px 8px; border-radius: 13px; background: #f3f2ed; color: var(--muted); font-size: 8px; }
+.detail-factor-chips b { color: var(--ink); }
+.commercial-detail-section { padding: 0; overflow: hidden; border: 0; }
+.commercial-detail-section > h3 { padding: 0 0 2px; }
 .detail-milestones { display: grid; gap: 7px; }
 .detail-milestone { display: grid; grid-template-columns: 28px 1fr auto; align-items: center; gap: 10px; padding: 9px; border-radius: 6px; background: #f6f5f1; }
 .detail-milestone > b { display: grid; width: 27px; height: 27px; place-items: center; border-radius: 50%; background: var(--ink); color: white; font-size: 8px; }
@@ -1292,6 +1404,13 @@ textarea { resize: vertical; line-height: 1.6; }
   .section-title > p { margin-top: 15px; }
   .search-box { display: block; margin-top: 18px; }
   .search-box input { width: 100%; }
+  .location-search-form { grid-template-columns: 1fr; }
+  .location-search-form button { width: 100%; }
+  .commercial-metrics-grid,
+  .owner-location-metrics { grid-template-columns: 1fr 1fr; }
+  .commercial-investor-view { grid-template-columns: 1fr; }
+  .location-match-summary,
+  .owner-location-heading { align-items: stretch; flex-direction: column; }
   .protection-grid,
   .campaign-grid { grid-template-columns: 1fr; }
   .commitment-row { grid-template-columns: 1fr 1fr; }
@@ -1322,6 +1441,7 @@ textarea { resize: vertical; line-height: 1.6; }
   .assessment-panel,
   .risk-review { grid-template-columns: 1fr; }
   .assessment-score { width: 160px; }
+  .address-analysis-field { grid-template-columns: 1fr; }
   .milestone-row {
     grid-template-columns: 30px 1fr 55px 35px;
     align-items: end;

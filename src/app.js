@@ -1,4 +1,10 @@
-import { cloudConfigured, cloudRequest, cloudSessionHeaders } from './src/supabase-cloud.js';
+import { cloudConfigured, cloudRequest, cloudSessionHeaders } from './supabase-cloud.js';
+import { DEMO_CAMPAIGNS } from './demo-campaigns.js';
+import {
+  getCommercialAreaByAddress,
+  getCommercialInsightCards,
+  renderCommercialInsightCards
+} from '../commercial_area/commercial_client.js';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -51,8 +57,18 @@ const state = {
   evidenceFilename: '',
   evidenceResult: null,
   evidenceAnalysisId: null,
-  chatHistory: []
+  chatHistory: [],
+  investorAreaCode: '',
+  ownerAreaCode: ''
 };
+
+function campaignsWithExamples(campaigns = []) {
+  const liveIds = new Set(campaigns.map(item => item.id));
+  const liveBusinessNames = new Set(campaigns.map(item => item.business?.name).filter(Boolean));
+  return [...campaigns, ...DEMO_CAMPAIGNS.filter(item =>
+    !liveIds.has(item.id) && !liveBusinessNames.has(item.business?.name)
+  )];
+}
 
 async function apiRequest(path, options = {}) {
   if (cloudConfigured) {
@@ -113,7 +129,7 @@ document.addEventListener('keydown', event => {
 
 function applyBootstrap(data) {
   state.user = data.user || null;
-  state.campaigns = data.campaigns || [];
+  state.campaigns = campaignsWithExamples(data.campaigns || []);
   state.commitments = data.commitments || [];
   state.loginHistory = data.loginHistory || [];
   state.owner = data.owner || null;
@@ -357,6 +373,47 @@ function renderInvestor() {
   renderCommitments();
 }
 
+function renderInvestorLocation(address, updateInput = true) {
+  const result = $('#investorLocationResult');
+  const area = getCommercialAreaByAddress(address);
+  if (updateInput) $('#investorLocation').value = address;
+  result.classList.remove('hidden');
+  if (!area) {
+    state.investorAreaCode = '';
+    result.innerHTML = '<div class="location-empty"><strong>아직 연결된 상권 데이터가 없습니다</strong>'
+      + '<p>현재는 성수·연남·서촌·행궁동·전포·대전 중앙로 예시 상권을 지원합니다. 주소는 저장하거나 검색할 수 있지만, 수치 자동 반영 전 최신 공공데이터 확인이 필요합니다.</p></div>';
+    renderCampaignGrid();
+    return;
+  }
+  state.investorAreaCode = area.areaCode;
+  const nearby = state.campaigns.filter(item => getCommercialAreaByAddress(item.business?.address)?.areaCode === area.areaCode).length;
+  result.innerHTML = renderCommercialInsightCards(area)
+    + '<div class="location-match-summary"><strong>이 상권의 예시 모집 ' + nearby + '건을 추렸습니다.</strong>'
+    + '<button type="button" id="clearInvestorLocation">전체 모집 다시 보기</button></div>';
+  $('#clearInvestorLocation')?.addEventListener('click', () => {
+    state.investorAreaCode = '';
+    $('#investorLocation').value = '';
+    result.classList.add('hidden');
+    renderCampaignGrid();
+  });
+  renderCampaignGrid();
+}
+
+$('#investorLocationForm').addEventListener('submit', event => {
+  event.preventDefault();
+  const address = $('#investorLocation').value.trim();
+  if (!address) {
+    showToast('관심 지역이나 주소를 입력해 주세요.', 'info');
+    $('#investorLocation').focus();
+    return;
+  }
+  renderInvestorLocation(address, false);
+});
+
+$$('[data-location-pick]').forEach(button => {
+  button.addEventListener('click', () => renderInvestorLocation(button.dataset.locationPick));
+});
+
 function renderCampaignGrid() {
   const grid = $('#campaignGrid');
   const query = $('#campaignSearch').value.trim().toLocaleLowerCase('ko');
@@ -365,7 +422,9 @@ function renderCampaignGrid() {
       item.name, item.business?.name, item.business?.category,
       item.business?.address, item.plan
     ].join(' ').toLocaleLowerCase('ko');
-    return !query || haystack.includes(query);
+    const itemArea = getCommercialAreaByAddress(item.business?.address);
+    const locationMatches = !state.investorAreaCode || itemArea?.areaCode === state.investorAreaCode;
+    return locationMatches && (!query || haystack.includes(query));
   });
   if (!campaigns.length) {
     grid.innerHTML = '<div class="empty-state"><strong>현재 공개된 모집이 없습니다</strong>'
@@ -380,15 +439,17 @@ function renderCampaignGrid() {
       ? assessment.riskLevel === 'low' ? '낮은 보완 위험'
         : assessment.riskLevel === 'high' ? '집중 확인 필요' : '추가 확인 필요'
       : '자료 확인 필요';
+    const area = getCommercialAreaByAddress(item.business?.address);
     return '<article class="campaign-card">'
       + '<div class="campaign-card-top" style="--card-tone:' + tones[index % tones.length] + '">'
-      + '<span>운영자 심사 완료</span><h3>' + escapeHTML(item.business?.name || item.name) + '</h3>'
+      + '<span>' + (item.isDemo ? '가상 투자 검토 예시' : '운영자 심사 완료') + '</span><h3>' + escapeHTML(item.business?.name || item.name) + '</h3>'
       + '<p>' + escapeHTML(item.business?.address || '') + ' · ' + escapeHTML(item.business?.category || '') + '</p></div>'
       + '<div class="campaign-card-body"><p>' + escapeHTML(item.name) + '</p>'
       + '<div class="funding-bar"><span style="width:' + percent + '%"></span></div>'
       + '<div class="campaign-numbers"><strong>' + won(item.escrowTotal) + ' 예치 확인</strong><span>목표 ' + won(item.target) + '</span></div>'
       + '<div class="campaign-facts"><span>' + item.milestones.length + '단계 조건부 지급</span>'
-      + '<span>' + escapeHTML(risk) + '</span></div>'
+      + '<span>' + escapeHTML(risk) + '</span>'
+      + (area ? '<span class="area-fact">유동인구 ' + Math.round(area.dailyFootTraffic / 100) / 100 + '만 · 상권매출 +' + area.localSalesGrowth + '%</span>' : '') + '</div>'
       + '<button type="button" data-open-campaign="' + item.id + '">계획·위험·지급 조건 보기 →</button></div></article>';
   }).join('');
 }
@@ -444,13 +505,24 @@ function openCampaignDetail(id) {
   ).join('');
   const isGuest = !state.user;
   const canCommit = state.user?.role === 'investor';
-  const commitButtonHtml = isGuest
+  const area = getCommercialAreaByAddress(campaign.business?.address);
+  const assessment = campaign.assessment;
+  const assessmentHtml = assessment
+    ? '<section class="detail-section"><div class="detail-section-title"><h3>지속가능성 점검</h3><strong class="detail-score">'
+      + assessment.score + '점</strong></div><p>점수만으로 승인하지 않습니다. 매출·현금흐름·부채·업력·상권 자료를 함께 본 보조 지표입니다.</p>'
+      + '<div class="detail-factor-chips">' + Object.entries(assessment.components || {}).map(([key, value]) =>
+        '<span>' + escapeHTML(key) + ' <b>' + escapeHTML(value) + '</b></span>'
+      ).join('') + '</div></section>'
+    : '';
+  const commitButtonHtml = campaign.isDemo
+    ? '<button class="primary-button full-button" type="submit">예시 투자 검토 완료 <span>→</span></button>'
+    : isGuest
     ? '<button class="primary-button full-button" type="button" id="promptLoginCommit">로그인하고 참여하기 <span>→</span></button>'
     : '<button class="primary-button full-button" type="submit" ' + (canCommit ? '' : 'disabled')
       + '>' + (canCommit ? '참여 의사 등록' : '투자자 계정에서 참여 가능') + '</button>';
 
   $('#campaignDetailContent').innerHTML =
-    '<div class="detail-hero"><span>운영자 심사 완료 · 조건부 지급</span><h2 id="campaignDetailTitle">'
+    '<div class="detail-hero"><span>' + (campaign.isDemo ? '가상 투자 검토 예시 · 실제 모집 아님' : '운영자 심사 완료 · 조건부 지급') + '</span><h2 id="campaignDetailTitle">'
     + escapeHTML(campaign.business?.name || campaign.name) + '</h2><p>'
     + escapeHTML(campaign.name) + '</p></div><div class="detail-body">'
     + '<div class="detail-summary"><div><small>목표 금액</small><strong>' + won(campaign.target) + '</strong></div>'
@@ -461,10 +533,13 @@ function openCampaignDetail(id) {
     + '<section class="detail-section"><h3>사업과 자금 사용계획</h3><p>'
     + escapeHTML(campaign.business?.description || '') + '\n\n' + escapeHTML(campaign.plan) + '</p></section>'
     + '<section class="detail-section"><h3>공개된 주요 위험</h3><p>' + escapeHTML(campaign.risk) + '</p></section>'
+    + assessmentHtml
+    + (area ? '<section class="detail-section commercial-detail-section"><h3>주소로 확인한 입지</h3>'
+      + renderCommercialInsightCards(area, campaign.business?.category) + '</section>' : '')
     + '<section class="detail-section"><h3>단계별 지급 조건</h3><div class="detail-milestones">'
     + milestones + '</div></section></div>'
-    + '<aside class="commitment-form"><h3>참여 약정</h3>'
-    + '<p>아래 금액은 참여 의사 등록입니다. 결제·예치 확인 전에는 지급 재원으로 계산되지 않습니다.</p>'
+    + '<aside class="commitment-form"><h3>' + (campaign.isDemo ? '투자 검토 연습' : '참여 약정') + '</h3>'
+    + '<p>' + (campaign.isDemo ? '가상 사업체로 계획·위험·입지·지급 조건을 확인하는 예시입니다. 실제 금액은 등록되지 않습니다.' : '아래 금액은 참여 의사 등록입니다. 결제·예치 확인 전에는 지급 재원으로 계산되지 않습니다.') + '</p>'
     + '<form id="commitmentForm"><label>참여 금액<input id="commitmentAmount" type="number" min="1000" step="1000" value="100000" required></label>'
     + '<label class="check-line"><input id="commitmentRisk" type="checkbox" required> 원금 손실 가능성과 사업·증빙 위험을 확인했습니다.</label>'
     + commitButtonHtml + '</form></aside>'
@@ -480,6 +555,11 @@ function openCampaignDetail(id) {
 
 async function submitCommitment(event) {
   event.preventDefault();
+  if (state.currentCampaign?.isDemo) {
+    closeModal($('#campaignModal'));
+    showToast('가상 예시 검토를 완료했습니다. 실제 참여금은 등록되지 않았습니다.', 'info');
+    return;
+  }
   if (!state.user) {
     showToast('로그인이 필요합니다. 간편 로그인을 진행해 주세요.', 'info');
     closeModal($('#campaignModal'));
@@ -622,7 +702,69 @@ function fillBusinessForm(business) {
     rejected: '보완 필요'
   };
   $('#businessVerificationBadge').textContent = labels[business?.verificationStatus] || '미확인';
+  if (business?.address) renderOwnerLocationAnalysis(business.address, false);
+  else {
+    state.ownerAreaCode = '';
+    $('#ownerLocationResult').classList.add('hidden');
+    $('#locationMetricsSource').textContent = '사업체 주소를 분석하면 아래 4개 지표를 자동으로 채울 수 있습니다.';
+  }
 }
+
+function renderOwnerLocationAnalysis(address, applyMetrics = false) {
+  const result = $('#ownerLocationResult');
+  const area = getCommercialAreaByAddress(address);
+  result.classList.remove('hidden');
+  if (!area) {
+    state.ownerAreaCode = '';
+    result.innerHTML = '<div class="location-empty"><strong>주소는 입력할 수 있지만 자동 분석 데이터가 아직 없습니다</strong>'
+      + '<p>현재 연결된 예시 상권은 성수·연남·서촌·행궁동·전포·대전 중앙로입니다. 지원 외 주소는 운영자가 최신 공공데이터를 확인한 뒤 지표를 보완해야 합니다.</p></div>';
+    $('#locationMetricsSource').textContent = '입력한 주소에 연결된 예시 상권 데이터가 없어 직접 입력이 필요합니다.';
+    return;
+  }
+  state.ownerAreaCode = area.areaCode;
+  const category = $('#businessCategory').value;
+  const insight = getCommercialInsightCards(area, category);
+  const applyButton = state.user?.role === 'owner'
+    ? '<button class="secondary-button" type="button" id="applyLocationMetrics">상권 지표 4개 자동 채우기</button>'
+    : '<span class="preview-label">읽기 전용 입지 분석</span>';
+  result.innerHTML = '<div class="owner-location-heading"><div><span>매칭된 상권</span><strong>'
+    + escapeHTML(area.areaName) + '</strong></div>' + applyButton + '</div>'
+    + '<div class="owner-location-metrics"><span>유동인구 증감 <b>+' + area.growthRate + '%</b></span>'
+    + '<span>상권 매출 증감 <b>+' + area.localSalesGrowth + '%</b></span>'
+    + '<span>경쟁 밀도 <b>' + area.competitorDensity + '</b></span>'
+    + '<span>주변 폐업률 <b>' + area.closureRate + '%</b></span></div>'
+    + '<p><b>사업자 관점</b> ' + escapeHTML(insight.opportunity) + ' ' + escapeHTML(insight.caution) + '</p>';
+  $('#locationMetricsSource').textContent = area.areaName + ' 데이터가 매칭되었습니다. 자동 채우기 후 원자료와 기준일을 확인해 주세요.';
+  $('#applyLocationMetrics')?.addEventListener('click', () => applyOwnerAreaMetrics(area));
+  if (applyMetrics) applyOwnerAreaMetrics(area);
+}
+
+function applyOwnerAreaMetrics(area) {
+  if (!area || state.user?.role !== 'owner') return;
+  $('#metricsFootTraffic').value = area.growthRate;
+  $('#metricsLocalGrowth').value = area.localSalesGrowth;
+  $('#metricsCompetition').value = area.competitorDensity;
+  $('#metricsClosure').value = area.closureRate;
+  $('#locationMetricsSource').innerHTML = '<b>' + escapeHTML(area.areaName)
+    + '</b> 예시 데이터가 반영되었습니다. 기준일과 원자료는 운영자 심사에서 다시 확인합니다.';
+  showToast('주소 기반 상권 지표 4개를 재무·위험 자료에 반영했습니다.');
+}
+
+$('#analyzeOwnerLocation').addEventListener('click', () => {
+  const address = $('#businessAddress').value.trim();
+  if (!address) {
+    showToast('사업장 주소를 먼저 입력해 주세요.', 'info');
+    $('#businessAddress').focus();
+    return;
+  }
+  renderOwnerLocationAnalysis(address, false);
+});
+
+$('#businessAddress').addEventListener('change', () => {
+  state.ownerAreaCode = '';
+  $('#ownerLocationResult').classList.add('hidden');
+  $('#locationMetricsSource').textContent = '주소가 변경되었습니다. 입지 분석 후 지표를 다시 반영해 주세요.';
+});
 
 $('#businessForm').addEventListener('submit', async event => {
   event.preventDefault();
@@ -1212,9 +1354,13 @@ function buildAiContext() {
   const parts = [];
   if (state.currentCampaign) {
     parts.push('현재 투자자가 보는 모집: ' + JSON.stringify(state.currentCampaign));
+    const campaignArea = getCommercialAreaByAddress(state.currentCampaign.business?.address);
+    if (campaignArea) parts.push('주소 기반 상권 분석: ' + JSON.stringify(campaignArea));
   }
   const owner = ownerModel();
   if (owner.business) parts.push('현재 소상공인 사업: ' + JSON.stringify(owner.business));
+  const ownerArea = getCommercialAreaByAddress(owner.business?.address);
+  if (ownerArea) parts.push('사업장 주소 기반 상권 분석: ' + JSON.stringify(ownerArea));
   if (owner.campaign) parts.push('현재 모집안과 지급 단계: ' + JSON.stringify(owner.campaign));
   if (state.user?.role === 'admin' && state.admin) {
     parts.push('운영자 대기열 요약: 모집 ' + state.admin.campaigns.filter(item => item.status === 'submitted').length
@@ -1327,9 +1473,9 @@ async function initialize() {
     renderDisclosures(state.owner?.disclosures || []);
     renderAll();
   } catch (error) {
-    $('#appLoading').innerHTML = '<div class="empty-state"><strong>서비스를 불러오지 못했습니다</strong><p>'
-      + escapeHTML(error.message) + '</p></div>';
-    showToast(error.message, 'error');
+    applyBootstrap({ campaigns: [] });
+    renderAll();
+    showToast('실시간 연결 없이 가상 투자 검토 예시를 표시합니다.', 'info');
   }
 }
 

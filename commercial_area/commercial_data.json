@@ -219,6 +219,30 @@
         "rentGrowthRate": 5.2,
         "gentrificationRisk": "중상 (외지 방문객 급증에 따른 임대료 상승세)"
       }
+    },
+    "BUSAN_BUSANJIN_JEONPO": {
+      "areaCode": "BUSAN_BUSANJIN_JEONPO",
+      "region": "부산 부산진구",
+      "areaName": "전포카페거리·전포공구길 상권",
+      "aliases": ["부산", "부산진구", "전포", "전포동", "전포대로", "서면"],
+      "summary": "카페·편집숍과 기존 공구상가가 공존하며 관광객 유입이 큰 부산의 생활문화 상권",
+      "footTraffic": { "dailyAverage": 46800, "growthRate": 4.7, "peakTimes": ["12:00~15:00", "18:00~21:00"], "weekdayRatio": 51.2, "weekendRatio": 48.8 },
+      "demographics": { "workerPopulation": 30100, "residentPopulation": 20900, "primaryCustomerProfile": "부산권 2030 방문객 및 서면 직장인", "transitAccessibility": "도시철도 2호선 전포역·서면역 도보권" },
+      "marketDynamics": { "totalStores": 690, "foodBeverageRatio": 59.1, "competitorDensity": 0.76, "closureRate": 11.8, "averageLifespanYears": 3.8 },
+      "spending": { "averageTicketSize": 23800, "localSalesGrowth": 4.1, "externalConsumerRatio": 69.3, "peakSpendingDay": "금요일 / 토요일" },
+      "realEstate": { "averageRentPerPyung": 142000, "rentGrowthRate": 4.1, "gentrificationRisk": "다소 높음" }
+    },
+    "DAEJEON_JUNG_EUNHAENG": {
+      "areaCode": "DAEJEON_JUNG_EUNHAENG",
+      "region": "대전 중구",
+      "areaName": "은행동·중앙로 으능정이 상권",
+      "aliases": ["대전", "대전 중구", "은행동", "중앙로", "으능정이", "대흥동"],
+      "summary": "광역 교통과 전통 도심 수요가 결합되고 지역 대표 먹거리 방문이 이어지는 중심상권",
+      "footTraffic": { "dailyAverage": 39700, "growthRate": 5.9, "peakTimes": ["11:30~14:00", "17:30~20:30"], "weekdayRatio": 54.0, "weekendRatio": 46.0 },
+      "demographics": { "workerPopulation": 24800, "residentPopulation": 17400, "primaryCustomerProfile": "대전·충청권 가족 방문객 및 도심 직장인", "transitAccessibility": "도시철도 중앙로역 초역세권, 대전역 연계" },
+      "marketDynamics": { "totalStores": 530, "foodBeverageRatio": 55.8, "competitorDensity": 0.58, "closureRate": 8.6, "averageLifespanYears": 4.3 },
+      "spending": { "averageTicketSize": 21600, "localSalesGrowth": 6.4, "externalConsumerRatio": 63.7, "peakSpendingDay": "금요일 / 토요일" },
+      "realEstate": { "averageRentPerPyung": 98000, "rentGrowthRate": 2.7, "gentrificationRisk": "보통" }
     }
   }
 }

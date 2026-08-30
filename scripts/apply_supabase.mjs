@@ -128,9 +128,12 @@ async function main() {
     throw new Error('SUPABASE_ACCESS_TOKEN, Supabase 프로젝트 URL/참조값이 필요합니다.');
   }
   const schemaSql = fs.readFileSync(path.join(rootDir, 'db', 'schema.sql'), 'utf8');
-  console.log('1/2 데이터베이스 스키마와 접근 정책을 적용합니다.');
+  const seedSql = fs.readFileSync(path.join(rootDir, 'db', 'seed.sql'), 'utf8');
+  console.log('1/3 데이터베이스 스키마와 접근 정책을 적용합니다.');
   await executeSql(schemaSql);
-  console.log('2/2 데모 계정들(운영자, 소상공인, 투자자)을 생성하거나 갱신합니다.');
+  console.log('2/3 투자 검토용 가상 사업체·모집 6건을 적용합니다.');
+  await executeSql(seedSql);
+  console.log('3/3 데모 계정들(운영자, 소상공인, 투자자)을 생성하거나 갱신합니다.');
   const admin = await ensureDemoAccounts();
   console.log('완료: 운영자, 소상공인, 투자자 계정 준비 완료');
   console.log('운영자 ID: ' + admin.email);

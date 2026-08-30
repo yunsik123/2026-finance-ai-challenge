@@ -63,6 +63,8 @@ create table if not exists public.businesses (
   updated_at timestamptz not null default now()
 );
 alter table public.businesses add column if not exists verification_note text not null default '';
+-- 운영 계정이 없는 공개 가상 예시는 user_id를 비워 둘 수 있다. 일반 사용자의 쓰기 정책은 auth.uid() 일치를 계속 강제한다.
+alter table public.businesses alter column user_id drop not null;
 
 create table if not exists public.business_metrics (
   business_id uuid primary key references public.businesses(id) on delete cascade,
@@ -124,6 +126,7 @@ create table if not exists public.campaigns (
 );
 alter table public.campaigns add column if not exists review_note text not null default '';
 alter table public.campaigns add column if not exists published_at timestamptz;
+alter table public.campaigns alter column user_id drop not null;
 
 create table if not exists public.campaign_milestones (
   id uuid primary key default gen_random_uuid(),

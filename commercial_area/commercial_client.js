@@ -74,6 +74,40 @@ export const COMMERCIAL_AREAS = {
     localSalesGrowth: 5.8,
     primaryCustomer: '경기 남부권 2030 주말 나들이객 및 관광객',
     transit: '수원역 연계 버스 10분, 행궁광장 인접'
+  },
+  BUSAN_BUSANJIN_JEONPO: {
+    areaCode: 'BUSAN_BUSANJIN_JEONPO',
+    region: '부산 부산진구',
+    areaName: '전포카페거리·전포공구길 상권',
+    aliases: ['부산', '부산진구', '전포', '전포동', '전포대로', '서면'],
+    summary: '카페·편집숍과 기존 공구상가가 공존하며 관광객 유입이 큰 부산의 생활문화 상권',
+    dailyFootTraffic: 46800,
+    growthRate: 4.7,
+    workerPopulation: 30100,
+    externalRatio: 69.3,
+    competitorDensity: 0.76,
+    closureRate: 11.8,
+    averageTicketSize: 23800,
+    localSalesGrowth: 4.1,
+    primaryCustomer: '부산권 2030 방문객 및 서면 직장인',
+    transit: '도시철도 2호선 전포역·서면역 도보권'
+  },
+  DAEJEON_JUNG_EUNHAENG: {
+    areaCode: 'DAEJEON_JUNG_EUNHAENG',
+    region: '대전 중구',
+    areaName: '은행동·중앙로 으능정이 상권',
+    aliases: ['대전', '대전 중구', '은행동', '중앙로', '으능정이', '대흥동'],
+    summary: '광역 교통과 전통 도심 수요가 결합되고 지역 대표 먹거리 방문이 이어지는 중심상권',
+    dailyFootTraffic: 39700,
+    growthRate: 5.9,
+    workerPopulation: 24800,
+    externalRatio: 63.7,
+    competitorDensity: 0.58,
+    closureRate: 8.6,
+    averageTicketSize: 21600,
+    localSalesGrowth: 6.4,
+    primaryCustomer: '대전·충청권 가족 방문객 및 도심 직장인',
+    transit: '도시철도 중앙로역 초역세권, 대전역 연계'
   }
 };
 
@@ -82,24 +116,48 @@ export const COMMERCIAL_AREAS = {
  */
 export function getCommercialAreaByAddress(address = '') {
   const clean = String(address || '').trim().toLowerCase();
+  if (!clean) return null;
   for (const area of Object.values(COMMERCIAL_AREAS)) {
     if (area.aliases.some(alias => clean.includes(alias.toLowerCase()))) {
       return area;
     }
   }
-  // 기본값으로 성수동 상권 반환
-  return COMMERCIAL_AREAS.SEOUL_SEONGDONG_SEONGSU;
+  return null;
+}
+
+export function getCommercialInsightCards(area, category = '') {
+  if (!area) return null;
+  const competition = area.competitorDensity >= .75 ? '높음' : area.competitorDensity >= .6 ? '보통' : '낮음';
+  const stability = area.closureRate <= 9 ? '안정' : area.closureRate <= 12 ? '관찰' : '주의';
+  const demandFit = category === '카페' && area.externalRatio >= 70
+    ? '외지 방문 수요와 업종 적합도가 높습니다.'
+    : category === '생활·서비스' && area.workerPopulation >= 25000
+      ? '배후 직장인의 반복 이용 수요를 기대할 수 있습니다.'
+      : area.localSalesGrowth >= 5
+        ? '상권 매출 증가세가 사업 성장에 우호적입니다.'
+        : '입지 수요는 확인되지만 업종별 매출 자료를 추가로 봐야 합니다.';
+  return {
+    competition,
+    stability,
+    opportunity: `${demandFit} 일 유동인구는 ${area.dailyFootTraffic.toLocaleString('ko-KR')}명, 상권 매출 증가율은 ${area.localSalesGrowth}%입니다.`,
+    caution: area.closureRate >= 12
+      ? `주변 폐업률이 ${area.closureRate}%로 높아 임대료·원가와 실제 생존기간 확인이 필요합니다.`
+      : area.competitorDensity >= .7
+        ? `경쟁 밀도가 ${area.competitorDensity}로 높아 단골률과 차별화 증빙을 함께 확인해야 합니다.`
+        : `현재 폐업률은 ${area.closureRate}%이지만 임대료 상승과 계절별 변동은 별도 확인해야 합니다.`
+  };
 }
 
 /**
  * 투자자용 상권 인사이트 HTML 카드 컴포넌트 생성
  */
-export function renderCommercialInsightCards(area) {
+export function renderCommercialInsightCards(area, category = '') {
   if (!area) return '';
+  const insight = getCommercialInsightCards(area, category);
   return `
     <div class="commercial-insight-box">
       <div class="commercial-header">
-        <span class="commercial-tag">📍 상권 분석</span>
+        <span class="commercial-tag">주소 기반 입지 분석</span>
         <strong>${area.areaName}</strong>
       </div>
       <p class="commercial-summary">${area.summary}</p>
@@ -125,6 +183,11 @@ export function renderCommercialInsightCards(area) {
           <span class="note">경쟁 밀도 ${area.competitorDensity}</span>
         </div>
       </div>
+      <div class="commercial-investor-view">
+        <p><b>기회</b>${insight.opportunity}</p>
+        <p><b>확인할 위험</b>${insight.caution}</p>
+      </div>
+      <p class="commercial-source">예시 상권 데이터 · 실제 투자 판단 전 최신 공공데이터와 현장 확인 필요</p>
     </div>
   `;
 }

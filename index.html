@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@700&family=Noto+Sans+KR:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/src/styles.css">
 </head>
 <body>
   <header class="site-header">
@@ -63,8 +63,29 @@
 
       <section class="content-section campaign-section" id="campaigns">
         <div class="section-title">
-          <div><p class="eyebrow">운영자 심사 완료</p><h2>현재 참여 가능한 모집</h2></div>
+          <div><p class="eyebrow">투자 검토 예시 6건</p><h2>사업과 입지를 함께 비교해 보세요</h2></div>
           <label class="search-box">모집 검색<input id="campaignSearch" type="search" placeholder="상호, 지역, 업종 검색"></label>
+        </div>
+        <div class="location-discovery panel">
+          <div class="location-discovery-copy">
+            <span class="location-icon" aria-hidden="true">⌖</span>
+            <div><h3>관심 위치부터 분석하기</h3><p>동네나 주소를 입력하면 해당 상권의 수요·경쟁·폐업 위험과 주변 모집을 같이 보여드립니다.</p></div>
+          </div>
+          <form class="location-search-form" id="investorLocationForm">
+            <label class="sr-only" for="investorLocation">관심 지역 또는 주소</label>
+            <input id="investorLocation" autocomplete="street-address" placeholder="예: 성수동, 부산 전포대로 186">
+            <button class="primary-button" type="submit">입지 분석</button>
+          </form>
+          <div class="location-quick-picks" aria-label="예시 상권 빠른 선택">
+            <span>빠른 선택</span>
+            <button type="button" data-location-pick="성수동">성수</button>
+            <button type="button" data-location-pick="연남동">연남</button>
+            <button type="button" data-location-pick="서촌">서촌</button>
+            <button type="button" data-location-pick="행궁동">행궁동</button>
+            <button type="button" data-location-pick="전포동">전포</button>
+            <button type="button" data-location-pick="대전 중앙로">대전 중앙로</button>
+          </div>
+          <div class="location-result hidden" id="investorLocationResult" aria-live="polite"></div>
         </div>
         <div class="campaign-grid" id="campaignGrid" aria-live="polite"></div>
       </section>
@@ -117,7 +138,11 @@
                 <label>사업자등록번호<input id="businessNumber" required inputmode="numeric" placeholder="123-45-67890"></label>
                 <label>업력(년)<input id="businessAge" required type="number" min="0" step="0.5" placeholder="3"></label>
               </div>
-              <label>사업장 주소<input id="businessAddress" required autocomplete="street-address" placeholder="서울 성동구 성수이로 00"></label>
+              <div class="address-analysis-field">
+                <label>사업장 주소<input id="businessAddress" required autocomplete="street-address" placeholder="서울 성동구 성수이로 00"></label>
+                <button class="secondary-button" id="analyzeOwnerLocation" type="button">주소로 입지 분석</button>
+              </div>
+              <div class="owner-location-result hidden" id="ownerLocationResult" aria-live="polite"></div>
               <label>가게와 성장 계획 소개<textarea id="businessDescription" required rows="4" placeholder="현재 사업의 강점과 이번 자금으로 해결하려는 문제를 적어주세요."></textarea></label>
               <label>최근 월평균 매출<input id="businessSales" required type="number" min="0" step="10000" placeholder="30000000"></label>
               <button class="primary-button" type="submit">사업체 정보 저장 <span>→</span></button>
@@ -161,6 +186,7 @@
               </div>
               </fieldset>
               <fieldset class="field-group"><legend>상권 환경 지표</legend>
+              <p class="location-metric-source" id="locationMetricsSource">사업체 주소를 분석하면 아래 4개 지표를 자동으로 채울 수 있습니다.</p>
               <div class="field-grid two">
                 <label>상권 유동인구 증감률(%)<input id="metricsFootTraffic" type="number" step="0.1" value="0"></label>
                 <label>상권 매출 증감률(%)<input id="metricsLocalGrowth" type="number" step="0.1" value="0"></label>
@@ -363,6 +389,6 @@
   <div class="drawer-backdrop" id="drawerBackdrop"></div>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="/app.js"></script>
+  <script type="module" src="/src/app.js"></script>
 </body>
 </html>

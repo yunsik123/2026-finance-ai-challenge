@@ -1,56 +1,95 @@
--- 개발/심사용 가상 데이터 3건. 실제 고객·신용정보가 아니다.
+-- 개발/심사용 가상 사업체·모집 6건. 실제 고객·신용정보나 투자상품이 아니다.
+begin;
 
-insert into public.stores(id, payload) values
-('ongi', '{"id":"ongi","name":"온기린 식당","category":"한식","area":"서울 성동구","growth":"+18.2%","support":92,"target":30000000,"funded":27600000,"coupon":{"title":"온기린 10% 감사 쿠폰","benefit":"식사 금액 10% 할인","condition":"2만원 이상 주문 시"},"risks":["식재료 원가 상승","공사 중 매출 공백"]}'),
-('mokhwa', '{"id":"mokhwa","name":"목화 로스터리","category":"카페","area":"서울 마포구","growth":"+12.6%","support":74,"target":24000000,"funded":17760000,"coupon":{"title":"목화 커피 1잔 쿠폰","benefit":"아메리카노 1잔","condition":"참여자 전용"},"risks":["원두 가격·환율 변동","장비 도입 효과 지연"]}'),
-('table', '{"id":"table","name":"일구의 식탁","category":"양식","area":"서울 종로구","growth":"+9.4%","support":61,"target":40000000,"funded":24400000,"coupon":{"title":"생면 파스타 쿠폰","benefit":"5,000원 할인","condition":"3만원 이상 주문 시"},"risks":["업력과 장기자료 부족","상환부담이 현금흐름보다 큼"]}')
-on conflict(id) do update set payload=excluded.payload, updated_at=now();
-
-insert into public.businesses(id, name, category, business_number, address, monthly_sales, business_age, description, verification_status, is_demo) values
-('10000000-0000-4000-8000-000000000001','온기린 식당','한식','101-81-10001','서울 성동구 성수이로 18',31800000,8,'제철 식재료와 단골 중심 운영 가상 사업체','demo_verified',true),
-('10000000-0000-4000-8000-000000000002','목화 로스터리','카페','101-81-10002','서울 마포구 성미산로 42',24100000,6,'직접 로스팅과 정기구독 가상 사업체','demo_verified',true),
-('10000000-0000-4000-8000-000000000003','일구의 식탁','양식','101-81-10003','서울 종로구 자하문로 91',19600000,4,'제품력은 높지만 자료 보완이 필요한 가상 사업체','demo_verified',true)
-on conflict(id) do update set name=excluded.name, monthly_sales=excluded.monthly_sales, business_age=excluded.business_age, description=excluded.description;
+alter table public.businesses disable trigger guard_business_review_trigger;
+insert into public.businesses(
+  id, user_id, name, category, business_number, address, monthly_sales,
+  business_age, description, verification_status, verification_note, is_demo
+) values
+('10000000-0000-4000-8000-000000000001',null,'온기린 식당','한식','101-81-10001','서울 성동구 성수이로 18',31800000,8,'제철 식재료와 인근 직장인 단골을 중심으로 8년째 운영 중인 한식당입니다.','verified','가상 투자 검토 예시',true),
+('10000000-0000-4000-8000-000000000002',null,'목화 로스터리','카페','101-81-10002','서울 마포구 성미산로 42',24100000,6,'직접 로스팅한 원두와 정기구독 매출을 함께 운영하는 연남동 소형 로스터리입니다.','verified','가상 투자 검토 예시',true),
+('10000000-0000-4000-8000-000000000003',null,'일구의 식탁','양식','101-81-10003','서울 종로구 자하문로 91',19600000,4,'예약제 생면 파스타와 계절 코스를 운영하는 서촌 레스토랑입니다.','verified','가상 투자 검토 예시',true),
+('10000000-0000-4000-8000-000000000004',null,'행궁 종이공방','생활·서비스','101-81-10004','경기 수원시 팔달구 행궁로 27',16400000,5,'관광객 한지 공예 체험과 기업 워크숍을 운영하는 로컬 공방입니다.','verified','가상 투자 검토 예시',true),
+('10000000-0000-4000-8000-000000000005',null,'전포 소리수선소','생활·서비스','101-81-10005','부산 부산진구 전포대로 186',22400000,7,'오디오 수리와 중고 기기 판매를 결합한 전포동 전문 수리점입니다.','verified','가상 투자 검토 예시',true),
+('10000000-0000-4000-8000-000000000006',null,'은행동 빵실험실','카페','101-81-10006','대전 중구 중앙로 164',28700000,3,'지역 농산물 발효빵과 온라인 선물세트를 판매하는 베이커리입니다.','verified','가상 투자 검토 예시',true)
+on conflict(id) do update set
+  name=excluded.name, category=excluded.category, address=excluded.address,
+  monthly_sales=excluded.monthly_sales, business_age=excluded.business_age,
+  description=excluded.description, verification_status='verified', is_demo=true, updated_at=now();
+alter table public.businesses enable trigger guard_business_review_trigger;
 
 insert into public.business_metrics(
- business_id,segment,cb_grade,sales_6m,operating_cash_flow,debt_total,monthly_debt_payment,overdue_count,employee_count,tax_compliant,admin_penalties,owner_changes,foot_traffic_growth,local_sales_growth,competitor_density,closure_rate,repeat_rate,rating,digital_sales_ratio,qualitative_bonus,source_dates
+  business_id, sales_6m, operating_cash_flow, debt_total, monthly_debt_payment,
+  overdue_count, employee_count, tax_compliant, foot_traffic_growth,
+  local_sales_growth, competitor_density, closure_rate, repeat_rate,
+  digital_sales_ratio, source_dates
 ) values
-('10000000-0000-4000-8000-000000000001','숙박·음식점업',5,array[25200000,26700000,27400000,28900000,30100000,31800000],6400000,42000000,1450000,0,5,true,0,0,8.4,6.1,.54,7.8,62,4.7,31,7.5,'{"sales":"2026-07","commercial_area":"2026-06"}'),
-('10000000-0000-4000-8000-000000000002','숙박·음식점업',4,array[21800000,22100000,22900000,22600000,23600000,24100000],4200000,35000000,1320000,0,3,true,0,0,3.2,4.5,.71,10.4,48,4.5,44,6.2,'{"sales":"2026-07","commercial_area":"2026-06"}'),
-('10000000-0000-4000-8000-000000000003','숙박·음식점업',7,array[18100000,20500000,19200000,21400000,18700000,19600000],1900000,68000000,2650000,1,4,true,0,0,5.1,3.8,.83,13.7,41,4.6,22,5.4,'{"sales":"2026-07","commercial_area":"2026-06"}')
-on conflict(business_id) do update set sales_6m=excluded.sales_6m, operating_cash_flow=excluded.operating_cash_flow, debt_total=excluded.debt_total, monthly_debt_payment=excluded.monthly_debt_payment, updated_at=now();
+('10000000-0000-4000-8000-000000000001',array[25200000,26700000,27400000,28900000,30100000,31800000],6400000,42000000,1450000,0,5,true,8.4,6.1,.54,7.8,62,31,'{"sales":"2026-07","commercial_area":"2026-06"}'),
+('10000000-0000-4000-8000-000000000002',array[21800000,22100000,22900000,22600000,23600000,24100000],4200000,35000000,1320000,0,3,true,3.2,4.5,.71,10.4,48,44,'{"sales":"2026-07","commercial_area":"2026-06"}'),
+('10000000-0000-4000-8000-000000000003',array[18100000,20500000,19200000,21400000,18700000,19600000],1900000,68000000,2650000,1,4,true,5.1,3.8,.83,13.7,41,22,'{"sales":"2026-07","commercial_area":"2026-06"}'),
+('10000000-0000-4000-8000-000000000004',array[13900000,14500000,15100000,14900000,15800000,16400000],3600000,18000000,720000,0,2,true,6.8,5.8,.62,9.1,55,18,'{"sales":"2026-07","commercial_area":"2026-06"}'),
+('10000000-0000-4000-8000-000000000005',array[20500000,21100000,20800000,21600000,21900000,22400000],4700000,26000000,950000,0,3,true,4.7,4.1,.76,11.8,68,27,'{"sales":"2026-07","commercial_area":"2026-06"}'),
+('10000000-0000-4000-8000-000000000006',array[22100000,23600000,24800000,25900000,27300000,28700000],5900000,31000000,1100000,0,5,true,5.9,6.4,.58,8.6,49,46,'{"sales":"2026-07","commercial_area":"2026-06"}')
+on conflict(business_id) do update set
+  sales_6m=excluded.sales_6m, operating_cash_flow=excluded.operating_cash_flow,
+  debt_total=excluded.debt_total, monthly_debt_payment=excluded.monthly_debt_payment,
+  foot_traffic_growth=excluded.foot_traffic_growth, local_sales_growth=excluded.local_sales_growth,
+  competitor_density=excluded.competitor_density, closure_rate=excluded.closure_rate,
+  source_dates=excluded.source_dates, updated_at=now();
 
-insert into public.credit_assessments(business_id,score,s_grade,funding_limit,components,missing_fields) values
-('10000000-0000-4000-8000-000000000001',84.3,'S2',41900000,'{"매출 성장":25,"상권 내 경쟁력":11,"현금흐름 지속성":18.3,"부채 회복력":13.6,"경영 안정성":8.9,"비계량 가점":7.5}','{}'),
-('10000000-0000-4000-8000-000000000002',71.8,'S4',28300000,'{"매출 성장":19.3,"상권 내 경쟁력":8.7,"현금흐름 지속성":16.8,"부채 회복력":12.7,"경영 안정성":8.1,"비계량 가점":6.2}','{}'),
-('10000000-0000-4000-8000-000000000003',52.8,'S6',18700000,'{"매출 성장":17.8,"상권 내 경쟁력":8.4,"현금흐름 지속성":13.9,"부채 회복력":0,"경영 안정성":7.3,"비계량 가점":5.4}','{}');
+delete from public.credit_assessments
+where business_id in (
+  '10000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000002',
+  '10000000-0000-4000-8000-000000000003','10000000-0000-4000-8000-000000000004',
+  '10000000-0000-4000-8000-000000000005','10000000-0000-4000-8000-000000000006'
+);
+insert into public.credit_assessments(
+  business_id, score, s_grade, risk_level, funding_limit, components, missing_fields, model_version, is_official
+) values
+('10000000-0000-4000-8000-000000000001',84.3,'S2','low',41900000,'{"매출 지속성":88,"현금흐름 여력":86,"부채 부담":78,"사업 운영 안정성":91,"상권 회복력":83}','{}','moa-risk-v2-demo',false),
+('10000000-0000-4000-8000-000000000002',71.8,'S3','review',28300000,'{"매출 지속성":76,"현금흐름 여력":72,"부채 부담":70,"사업 운영 안정성":79,"상권 회복력":61}','{}','moa-risk-v2-demo',false),
+('10000000-0000-4000-8000-000000000003',52.8,'S5','high',18700000,'{"매출 지속성":61,"현금흐름 여력":49,"부채 부담":34,"사업 운영 안정성":66,"상권 회복력":54}','{}','moa-risk-v2-demo',false),
+('10000000-0000-4000-8000-000000000004',76.4,'S3','low',22600000,'{"매출 지속성":73,"현금흐름 여력":78,"부채 부담":84,"사업 운영 안정성":81,"상권 회복력":72}','{}','moa-risk-v2-demo',false),
+('10000000-0000-4000-8000-000000000005',73.1,'S3','review',29500000,'{"매출 지속성":77,"현금흐름 여력":75,"부채 부담":82,"사업 운영 안정성":80,"상권 회복력":51}','{}','moa-risk-v2-demo',false),
+('10000000-0000-4000-8000-000000000006',80.2,'S2','low',37400000,'{"매출 지속성":87,"현금흐름 여력":82,"부채 부담":76,"사업 운영 안정성":72,"상권 회복력":82}','{}','moa-risk-v2-demo',false);
 
-do $$
-declare b record; prefix text;
-begin
-  for b in select id,name,address,category from public.businesses where is_demo loop
-    prefix := 'business:' || b.id::text;
-    insert into public.knowledge_nodes(id,business_id,node_type,label) values
-      (prefix,b.id,'Business',b.name),
-      ('owner:'||b.id,b.id,'Owner','가상 대표자'),
-      ('area:'||b.id,b.id,'CommercialArea',split_part(b.address,' ',2)),
-      ('category:'||b.id,b.id,'Category',b.category),
-      ('sales:'||b.id,b.id,'Metric','최근 6개월 매출'),
-      ('cash:'||b.id,b.id,'Metric','영업현금흐름'),
-      ('debt:'||b.id,b.id,'Risk','부채·상환부담'),
-      ('grade:'||b.id,b.id,'Assessment','성장등급')
-    on conflict(id) do update set label=excluded.label;
+alter table public.campaigns disable trigger guard_campaign_status_trigger;
+insert into public.campaigns(
+  id, user_id, business_id, name, target_amount, duration_days, plan, risk, status, review_note, published_at
+) values
+('20000000-0000-4000-8000-000000000001',null,'10000000-0000-4000-8000-000000000001','노후 주방을 안전한 저전력 설비로 바꿉니다',30000000,45,'인덕션·환기 설비와 전기 증설, 공사 중 운영비에 사용합니다.','원재료 가격 상승과 공사 기간 중 매출 공백을 공급가 고정 계약과 단기 공정표로 대응합니다.','published','가상 투자 검토 예시','2026-08-01 09:00:00+09'),
+('20000000-0000-4000-8000-000000000002',null,'10000000-0000-4000-8000-000000000002','로스터 교체로 구독 원두 생산량을 늘립니다',24000000,45,'12kg 로스터와 집진·덕트, 설치·검사비에 사용합니다.','원두 가격·환율 변동과 장비 도입 효과 지연을 선계약과 구독 사전예약으로 대응합니다.','published','가상 투자 검토 예시','2026-08-02 09:00:00+09'),
+('20000000-0000-4000-8000-000000000003',null,'10000000-0000-4000-8000-000000000003','점심 좌석과 생면 작업실을 확장합니다',40000000,60,'인접 공간 보증금과 제면 장비, 인테리어에 사용합니다.','주변 폐업률과 경쟁 밀도, 상환 부담을 점심 사전예약 달성 조건으로 통제합니다.','published','가상 투자 검토 예시','2026-08-03 09:00:00+09'),
+('20000000-0000-4000-8000-000000000004',null,'10000000-0000-4000-8000-000000000004','단체 체험실을 열어 평일 매출을 보완합니다',18000000,45,'체험 집기와 안전·환기 공사, 단체 예약 시스템에 사용합니다.','주말 관광객 의존과 임대료 상승을 평일 단체 계약 확보로 대응합니다.','published','가상 투자 검토 예시','2026-08-04 09:00:00+09'),
+('20000000-0000-4000-8000-000000000005',null,'10000000-0000-4000-8000-000000000005','정밀 계측 장비로 수리 대기시간을 줄입니다',22000000,45,'정밀 계측기와 방음 작업대, 수리 부품 재고에 사용합니다.','전문 수요 의존과 기술 인력 부족을 장비 교육과 외주 기사 계약으로 대응합니다.','published','가상 투자 검토 예시','2026-08-05 09:00:00+09'),
+('20000000-0000-4000-8000-000000000006',null,'10000000-0000-4000-8000-000000000006','발효실과 포장 설비로 온라인 출고를 안정화합니다',28000000,45,'저온 발효실과 자동 포장기, 전기 공사와 시험 생산에 사용합니다.','신규 경쟁과 택배 품질 위험을 온도 기록 테스트와 반품률 조건으로 통제합니다.','published','가상 투자 검토 예시','2026-08-06 09:00:00+09')
+on conflict(id) do update set
+  name=excluded.name, target_amount=excluded.target_amount, plan=excluded.plan,
+  risk=excluded.risk, status='published', review_note=excluded.review_note,
+  published_at=excluded.published_at, updated_at=now();
+alter table public.campaigns enable trigger guard_campaign_status_trigger;
 
-    insert into public.knowledge_edges(id,business_id,source_node_id,target_node_id,relation_type,evidence) values
-      ('owner-business:'||b.id,b.id,'owner:'||b.id,prefix,'OPERATES','가상 프로필'),
-      ('business-area:'||b.id,b.id,prefix,'area:'||b.id,'LOCATED_IN',b.address),
-      ('business-category:'||b.id,b.id,prefix,'category:'||b.id,'BELONGS_TO',b.category),
-      ('business-sales:'||b.id,b.id,prefix,'sales:'||b.id,'HAS_SIGNAL','월별 카드매출'),
-      ('business-cash:'||b.id,b.id,prefix,'cash:'||b.id,'HAS_SIGNAL','영업현금흐름'),
-      ('business-debt:'||b.id,b.id,prefix,'debt:'||b.id,'EXPOSED_TO','부채·월상환액'),
-      ('sales-grade:'||b.id,b.id,'sales:'||b.id,'grade:'||b.id,'SUPPORTS','매출 성장 구성점수'),
-      ('cash-grade:'||b.id,b.id,'cash:'||b.id,'grade:'||b.id,'SUPPORTS','현금흐름 구성점수'),
-      ('debt-grade:'||b.id,b.id,'debt:'||b.id,'grade:'||b.id,'LIMITS','부채 회복력 구성점수')
-    on conflict(id) do update set evidence=excluded.evidence;
-  end loop;
-end $$;
+insert into public.campaign_milestones(id, campaign_id, sequence_no, title, condition_text, release_percent) values
+('30000000-0000-4000-8000-000000000001','20000000-0000-4000-8000-000000000001',1,'설비 계약','공급계약서와 계약금 세금계산서 확인',20),
+('30000000-0000-4000-8000-000000000002','20000000-0000-4000-8000-000000000001',2,'공사 착수','전기 증설·철거 작업 사진 확인',40),
+('30000000-0000-4000-8000-000000000003','20000000-0000-4000-8000-000000000001',3,'설치 완료','설비 시운전과 잔금 세금계산서 확인',40),
+('30000000-0000-4000-8000-000000000004','20000000-0000-4000-8000-000000000002',1,'장비 발주','제조사 견적서와 발주서 확인',30),
+('30000000-0000-4000-8000-000000000005','20000000-0000-4000-8000-000000000002',2,'반입·설치','장비 일련번호와 설치 사진 확인',40),
+('30000000-0000-4000-8000-000000000006','20000000-0000-4000-8000-000000000002',3,'검사·가동','안전검사서와 첫 생산 기록 확인',30),
+('30000000-0000-4000-8000-000000000007','20000000-0000-4000-8000-000000000003',1,'수요 검증','점심 사전예약 300건 확인',10),
+('30000000-0000-4000-8000-000000000008','20000000-0000-4000-8000-000000000003',2,'임대차 계약','확정일자 있는 계약서 원본 확인',50),
+('30000000-0000-4000-8000-000000000009','20000000-0000-4000-8000-000000000003',3,'공간 완공','완공 사진과 제면 장비 검수',40),
+('30000000-0000-4000-8000-000000000010','20000000-0000-4000-8000-000000000004',1,'단체 계약','학교·기업 예약 계약 8건 확인',20),
+('30000000-0000-4000-8000-000000000011','20000000-0000-4000-8000-000000000004',2,'안전 공사','소방·환기 공사 완료 확인',45),
+('30000000-0000-4000-8000-000000000012','20000000-0000-4000-8000-000000000004',3,'체험실 개장','집기 검수와 첫 단체 수업 확인',35),
+('30000000-0000-4000-8000-000000000013','20000000-0000-4000-8000-000000000005',1,'장비·교육 계약','장비 견적과 교육 일정 확인',30),
+('30000000-0000-4000-8000-000000000014','20000000-0000-4000-8000-000000000005',2,'작업대 완공','방음 측정값과 완공 사진 확인',30),
+('30000000-0000-4000-8000-000000000015','20000000-0000-4000-8000-000000000005',3,'운영 개선','수리 대기시간 20% 단축 기록 확인',40),
+('30000000-0000-4000-8000-000000000016','20000000-0000-4000-8000-000000000006',1,'설비 계약','발효실·포장기 통합 견적 확인',25),
+('30000000-0000-4000-8000-000000000017','20000000-0000-4000-8000-000000000006',2,'시험 생산','온도 기록과 포장 파손 테스트 확인',35),
+('30000000-0000-4000-8000-000000000018','20000000-0000-4000-8000-000000000006',3,'출고 안정화','4주 반품률 2% 이하 자료 확인',40)
+on conflict(campaign_id, sequence_no) do update set
+  title=excluded.title, condition_text=excluded.condition_text,
+  release_percent=excluded.release_percent, updated_at=now();
+
+commit;
