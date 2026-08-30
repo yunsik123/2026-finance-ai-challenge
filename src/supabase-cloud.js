@@ -102,10 +102,10 @@ const grouped = (rows, field) => {
   return result;
 };
 
-function userDto(row) {
+function userDto(row, session = null) {
   return row ? {
     id: row.id,
-    name: row.display_name,
+    name: session?.custom_name || row.display_name || '사용자',
     email: row.email,
     role: row.role
   } : null;
@@ -333,7 +333,7 @@ async function bootstrap() {
     saveSession(null);
     return empty;
   }
-  const user = userDto(profile);
+  const user = userDto(profile, session);
   const history = await loginHistory(user.id);
   if (user.role === 'owner') {
     return { ...empty, user, loginHistory: history, owner: await ownerData(user.id) };
@@ -377,16 +377,14 @@ async function authenticate(values) {
     if (!session?.access_token) {
       throw new Error('간편 로그인을 완료하지 못했습니다. 다시 시도해 주세요.');
     }
+    session.custom_name = name;
     session.user = result.user || session.user;
     saveSession(session);
 
-    let profile = first(await rest('profiles?select=*&id=eq.' + session.user.id + '&limit=1'));
-    if (profile && profile.display_name !== name) {
-      await rest('profiles?id=eq.' + session.user.id, {
-        method: 'PATCH',
-        body: { display_name: name }
-      }).catch(() => {});
-    }
+    await rest('profiles?id=eq.' + session.user.id, {
+      method: 'PATCH',
+      body: { display_name: name }
+    }).catch(() => {});
 
     await rest('login_events', {
       method: 'POST',

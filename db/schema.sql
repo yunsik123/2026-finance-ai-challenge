@@ -465,6 +465,9 @@ drop policy if exists "profiles own update" on public.profiles;
 drop policy if exists "profiles scoped read" on public.profiles;
 create policy "profiles scoped read" on public.profiles for select
   using (id = auth.uid() or public.is_admin());
+create policy "profiles own update" on public.profiles for update
+  using (id = auth.uid() or public.is_admin())
+  with check (id = auth.uid() or public.is_admin());
 
 drop policy if exists "login own select" on public.login_events;
 drop policy if exists "login own insert" on public.login_events;
@@ -565,7 +568,7 @@ grant select on public.profiles, public.login_events, public.businesses, public.
 grant insert on public.login_events, public.businesses, public.business_metrics,
   public.credit_assessments, public.user_settings, public.campaigns, public.campaign_milestones,
   public.funding_commitments, public.ocr_analyses to authenticated;
-grant update on public.businesses, public.business_metrics, public.user_settings,
+grant update on public.profiles, public.businesses, public.business_metrics, public.user_settings,
   public.campaigns, public.campaign_milestones to authenticated;
 grant delete on public.campaign_milestones to authenticated;
 grant usage, select on all sequences in schema public to authenticated;
