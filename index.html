@@ -66,7 +66,7 @@
           <article><b>1</b><strong>가게에 투자</strong><span>모집 중에는 바로 참여</span></article><i>→</i>
           <article><b>2</b><strong>할인율 성장</strong><span>투자금·유지기간에 따라 누적</span></article><i>→</i>
           <article><b>3</b><strong>검증 매출 성장 보너스</strong><span>확인된 매출이 성장하면 추가 적립</span></article><i>→</i>
-          <article><b>4</b><strong>쿠폰 발급·사용</strong><span>실제 음식점 소비 혜택</span></article><i>→</i>
+          <article><b>4</b><strong>쿠폰 발급·사용</strong><span>매장 사용을 가정한 혜택 기록</span></article><i>→</i>
           <article><b>5</b><strong>회수 대기열</strong><span>모집 종료 후 새 투자자와 매칭</span></article>
         </div>
       </section>
@@ -155,14 +155,6 @@
               <span id="businessVerificationBadge">미확인</span>
             </div>
             <div class="step-tip"><strong>💡 작성 팁</strong> 사업자등록증에 기재된 내용과 동일하게 작성하면 운영자 심사가 빨라집니다. 소개란에는 현재 매출 규모, 강점, 자금 활용 계획을 구체적으로 적어주세요.</div>
-            <div class="ai-story-banner">
-              <div>
-                <span class="ai-badge">AI 서비스</span>
-                <strong>🪄 AI 매장 스토리 & 시그니처 메뉴 자동 생성</strong>
-                <p>상호명과 업종을 분석하여 사장님의 인사말, 가게 소개글, 추천 메뉴판을 1초 만에 자동 작성해 드립니다.</p>
-              </div>
-              <button class="secondary-button" type="button" id="generateAiStoreStory">AI로 스토리·메뉴 채우기 ✨</button>
-            </div>
             <form class="panel form-panel" id="businessForm">
               <div class="field-grid two">
                 <label>상호명<input id="businessName" required autocomplete="organization" placeholder="예: 온기 식당"></label>
@@ -376,14 +368,60 @@
   </main>
 
   <footer class="site-footer">
-    <div class="footer-inner">
-      <div class="footer-brand">
-        <strong><span>ㅁ</span> 모아 (MOA)</strong>
-        <p>소상공인과 동네 투자자를 잇는 AI 기반 신용평가 & 마일스톤 크라우드펀딩 플랫폼</p>
+    <div class="footer-top">
+      <div class="footer-container">
+        <div class="footer-brand-section">
+          <a class="footer-brand" href="#top"><span>ㅁ</span> 모아 (MOA)</a>
+          <p class="footer-slogan">소상공인 제출자료와 상권지표를 함께 검토하는 쿠폰형 크라우드펀딩 프로토타입</p>
+          <div class="footer-badges">
+            <span class="cert-badge">OCR 판독 보조</span>
+            <span class="cert-badge">설명 가능한 예비평가</span>
+            <span class="cert-badge">마일스톤 지급 시뮬레이션</span>
+          </div>
+        </div>
+
+        <div class="footer-links-grid">
+          <div class="footer-col">
+            <h4>서비스</h4>
+            <ul>
+              <li><a href="#campaigns">펀딩 프로젝트 둘러보기</a></li>
+              <li><a href="#" data-switch-role="owner">소상공인 펀딩 신청</a></li>
+              <li><a href="#campaigns">상권 입지 분석</a></li>
+              <li><button type="button" class="footer-text-btn" data-open-chat="예비평가의 5대 요인과 현재 계산 원리를 설명해줘">예비평가 안내</button></li>
+            </ul>
+          </div>
+          <div class="footer-col">
+            <h4>투자자 보호</h4>
+            <ul>
+              <li><button type="button" class="footer-text-btn" data-open-modal="processModal">5단계 지급 검토 절차</button></li>
+              <li><button type="button" class="footer-text-btn" data-open-chat="마일스톤 기반 지급 시뮬레이션 원칙이 뭐야?">마일스톤 지급 원칙</button></li>
+              <li><button type="button" class="footer-text-btn" data-open-chat="투자 참여 시 유의해야 할 위험 요인을 알려줘">투자 위험 고지 안내</button></li>
+              <li><button type="button" class="footer-text-btn" data-open-chat="소상공인 증빙 제출과 OCR 검증 기준은 어떻게 돼?">증빙 검증 기준</button></li>
+            </ul>
+          </div>
+          <div class="footer-col">
+            <h4>현재 구현 경계</h4>
+            <div class="cs-info">
+              <p>실제 PG·은행 자금이동, POS 결제, 정부기관 진위조회는 아직 연결되지 않았습니다.</p>
+              <p>OCR·점수·AI 답변은 운영자의 원자료 검토를 돕는 보조 정보입니다.</p>
+            </div>
+          </div>
+        </div>
       </div>
-      <div class="footer-meta">
-        <span>© 2026 MOA Platform. All rights reserved.</span>
-        <button type="button" class="footer-admin-link" id="openAdminLogin">운영자 심사 페이지</button>
+    </div>
+
+    <div class="footer-bottom">
+      <div class="footer-container">
+        <div class="company-legal-info">
+          <p class="risk-notice">
+            <strong>프로토타입 안내:</strong> 이 화면은 인허가를 받은 금융·전자금융 서비스나 실제 투자 권유 화면이 아닙니다. 표시된 모집·자금·쿠폰 흐름은 제품 검증용이며 실제 서비스 전 법률·보안·결제 검토가 필요합니다.
+          </p>
+        </div>
+
+        <div class="footer-copyright-row">
+          <p class="copyright">MOA product prototype · 2026</p>
+          <button type="button" class="footer-admin-link" id="openAdminLogin">운영자 심사 페이지</button>
+        </div>
       </div>
     </div>
   </footer>
@@ -479,7 +517,7 @@
     <div class="modal-backdrop" data-close-modal></div>
     <div class="modal-card process-card" role="dialog" aria-modal="true" aria-labelledby="processTitle">
       <button class="modal-close" type="button" data-close-modal aria-label="닫기">×</button>
-      <p class="eyebrow">자금 보호 절차</p>
+      <p class="eyebrow">지급 검토 시뮬레이션</p>
       <h2 id="processTitle">모집부터 지급까지 다섯 번 확인합니다</h2>
       <ol>
         <li><b>사업자 확인</b><span>사업 실체와 제출자 관계를 확인합니다.</span></li>

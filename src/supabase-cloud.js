@@ -301,7 +301,7 @@ function couponDto(row) {
     campaignId: row.campaign_id,
     ownerId: row.owner_id,
     originalInvestorId: row.original_investor_id,
-    discountRate: Number(row.discount_rate),
+    discountRate: Number(Number(row.discount_rate || 0).toFixed(4)),
     couponType: row.coupon_type,
     benefitKind: row.benefit_kind || 'percent',
     description: row.description || '',
@@ -586,39 +586,41 @@ async function authenticate(values) {
         if (data.session?.access_token) {
           session = data.session;
         }
-      } else {
-        const errData = await serverAuthRes.json().catch(() => ({}));
-        if (serverAuthRes.status === 409 || errData?.error?.includes('이미 사용 중인')) {
-          throw new Error('이미 사용 중인 로그인 이름입니다. 다시 로그인해 주세요.');
-        }
       }
     } catch (directErr) {
-      if (directErr.message?.includes('이미 사용 중인')) throw directErr;
       // 서버리스가 없는 로컬/오프라인 환경일 경우 아래 Supabase 직접 호출로 fallback
     }
 
-    // 2. 만약 Direct Auth 세션이 없으면 Supabase Auth Client로 가입 시도
+    // 2. 만약 Direct Auth 세션이 없으면 Supabase Auth Client로 가입 또는 자동 로그인 시도
     if (!session?.access_token) {
-      try {
-        const signupRes = await auth('signup', {
-          email,
-          password,
-          data: { name: displayName, role, account_type: isEmailInput ? 'email' : 'quick' }
-        });
-        session = signupRes?.access_token ? signupRes : signupRes?.session;
-        if (!session?.access_token) {
-          // 자동 로그인을 위해 토큰 발급 시도
-          const tokenRes = await auth('token?grant_type=password', { email, password }).catch(() => null);
-          if (tokenRes?.access_token) session = tokenRes;
+      // 먼저 기존 계정인지 비밀번호 로그인을 시도
+      const autoLogin = await auth('token?grant_type=password', { email, password }).catch(() => null);
+      if (autoLogin?.access_token) {
+        session = autoLogin;
+      } else {
+        try {
+          const signupRes = await auth('signup', {
+            email,
+            password,
+            data: { name: displayName, role, account_type: isEmailInput ? 'email' : 'quick' }
+          });
+          session = signupRes?.access_token ? signupRes : signupRes?.session;
+          if (!session?.access_token) {
+            const tokenRes = await auth('token?grant_type=password', { email, password }).catch(() => null);
+            if (tokenRes?.access_token) session = tokenRes;
+          }
+        } catch (signupError) {
+          // 가입 에러 시 마지막으로 비밀번호 로그인 재시도
+          const lastTryLogin = await auth('token?grant_type=password', { email, password }).catch(() => null);
+          if (lastTryLogin?.access_token) {
+            session = lastTryLogin;
+          } else {
+            if ([400, 409, 422].includes(signupError.status) || signupError.message?.includes('already registered')) {
+              throw new Error('이미 등록된 로그인 아이디입니다. 비밀번호를 확인하거나 다른 이름을 입력해 주세요.');
+            }
+            throw new Error('계정을 준비하지 못했습니다. 비밀번호를 확인해 주세요.');
+          }
         }
-      } catch (signupError) {
-        if ([400, 409, 422].includes(signupError.status) || signupError.message?.includes('already registered')) {
-          throw new Error('이미 사용 중인 로그인 이름입니다. 다시 로그인해 주세요.');
-        }
-        if (signupError.message?.includes('rate limit') || signupError.status === 429) {
-          throw new Error('요청이 많습니다. 이미 가입된 이름이라면 [다시 로그인]을 선택해 주세요.');
-        }
-        throw signupError;
       }
     }
   } else {

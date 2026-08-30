@@ -55,7 +55,6 @@ export function assessMetrics(body = {}, business = {}) {
   const missing = [];
   if (!business.number) missing.push('사업자등록 확인');
   if (!sales.some(Number)) missing.push('최근 매출');
-  if (finite(body.employeeCount) === 0) missing.push('고용 현황 확인');
 
   const density = finite(body.competitorDensity);
   const contextualAlerts = [];

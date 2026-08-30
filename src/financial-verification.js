@@ -9,14 +9,16 @@ export function normalizeOcrBoxes(value) {
     if (box.length !== 4 || box.some(number => !Number.isFinite(number))) return [];
     const [x, y, width, height] = box;
     if (width <= 0 || height <= 0) return [];
+    const safeX = Math.max(0, Math.min(999, x));
+    const safeY = Math.max(0, Math.min(999, y));
     return [{
       field: String(item.field || 'unknown').slice(0, 80),
       label: String(item.label || item.field || '필드').slice(0, 120),
       value: String(item.value ?? '').slice(0, 300),
       bbox: [
-        Math.max(0, Math.min(1000, x)), Math.max(0, Math.min(1000, y)),
-        Math.max(1, Math.min(1000 - Math.max(0, x), width)),
-        Math.max(1, Math.min(1000 - Math.max(0, y), height))
+        safeX, safeY,
+        Math.max(1, Math.min(1000 - safeX, width)),
+        Math.max(1, Math.min(1000 - safeY, height))
       ],
       confidence: Math.max(0, Math.min(1, Number(item.confidence || 0)))
     }];

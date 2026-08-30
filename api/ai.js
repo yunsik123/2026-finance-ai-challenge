@@ -322,46 +322,6 @@ export function generateFallbackStoreStory({ name = '가게', category = '한식
     menuItems: [],
     requiresOwnerConfirmation: true
   };
-
-  if (category === '카페' || category === '디저트') {
-    return {
-      description: `${region}에서 직접 엄선한 스페셜티 생두를 매일 로스팅하며, 향긋한 커피와 수제 디저트를 선보이는 로스터리 카페 ${storeName}입니다.`,
-      ownerStory: `${region}의 조용한 골목에서 손님들께 일상의 작은 휴식과 위로를 전하고자 문을 열었습니다. 매일 아침 새벽부터 기후와 생두 상태를 점검하며 최적의 로스팅 프로파일을 연구합니다. 단골분들의 하루 시작을 책임진다는 자부심으로, 언제나 한결같이 신선하고 깊은 풍미의 커피를 약속드립니다.`,
-      highlights: [`#${storeName.replace(/\s+/g, '')}`, '#스페셜티로스터리', '#핸드드립전문', '#수제디저트페어링', '#단골아지트'],
-      menuItems: [
-        { name: '시그니처 하우스 블렌드 핸드드립', price: 6500, description: '다크초콜릿의 묵직함과 헤이즐넛의 고소한 단맛이 어우러진 대표 커피', isSignature: true, category: '핸드드립' },
-        { name: '스페셜티 싱글오리진 필터커피', price: 7000, description: '화사한 꽃향기와 은은한 과일 산미가 매력적인 시즌 한정 원두', isSignature: true, category: '핸드드립' },
-        { name: '수제 바닐라빈 까눌레', price: 3800, description: '천연 바닐라빈을 듬뿍 넣어 겉은 바삭하고 속은 촉촉한 매일 아침 구워내는 구움과자', isSignature: false, category: '디저트' },
-        { name: '이달의 로스터리 구독 원두 (200g)', price: 16000, description: '집에서도 카페의 맛을 그대로 즐길 수 있는 신선한 원두 정기 패키지', isSignature: false, category: '원두' }
-      ]
-    };
-  }
-
-  if (category === '양식' || category === '이탈리안') {
-    return {
-      description: `${region}에서 매일 아침 유기농 밀가루로 직접 제면하는 생면 파스타와 신선한 제철 요리를 선보이는 감성 레스토랑 ${storeName}입니다.`,
-      ownerStory: `건면에서는 느낄 수 없는 생면 고유의 쫄깃한 식감과 계절 식재료의 본연의 맛을 한 접시에 담아내고 있습니다. 소중한 사람들과 특별한 추억을 나눌 수 있는 따뜻한 식탁을 꿈꾸며, 정직한 재료와 정성으로 음식을 만듭니다.`,
-      highlights: [`#${storeName.replace(/\s+/g, '')}`, '#자가제면파스타', '#서촌핫플', '#와인페어링', '#데이트명소'],
-      menuItems: [
-        { name: '트러플 크림 생면 타야린', price: 24000, description: '직접 뽑은 쫄깃한 생면에 고급 트러플 버터와 크림 소스를 곁들인 시그니처', isSignature: true, category: '파스타' },
-        { name: '진한 비프 라구 파파르델레', price: 22000, description: '장시간 뭉근하게 끓여낸 소고기 라구 소스와 넓은 생면 파스타', isSignature: true, category: '파스타' },
-        { name: '숙성 한우 채끝 스테이크 (200g)', price: 45000, description: '최상급 한우를 저온 숙성하여 숯불 향을 입힌 대표 메인 요리', isSignature: false, category: '스테이크' },
-        { name: '수제 클래식 티라미수', price: 8500, description: '마스카포네 치즈와 에스프레소의 조화가 일품인 수제 디저트', isSignature: false, category: '디저트' }
-      ]
-    };
-  }
-
-  return {
-    description: `${region}에서 신선한 제철 로컬 식재료와 정갈한 손맛으로 오랜 단골들의 든든한 한 끼를 책임져온 ${storeName}입니다.`,
-    ownerStory: `어릴 적 어머니가 차려주시던 따뜻한 집밥처럼, 매일 먹어도 속이 편안하고 든든한 밥상을 차리는 것이 저희의 신념입니다. 유행에 흔들리지 않고 좋은 식재료만을 고집하며, 찾아주시는 모든 손님들을 가족처럼 정성껏 모시겠습니다.`,
-    highlights: [`#${storeName.replace(/\s+/g, '')}`, '#제철건강밥상', '#정갈한한상', '#현지인추천', '#정직한재료'],
-    menuItems: [
-      { name: '제철 영양 솥밥 정식', price: 14000, description: '제철 식재료와 갓 지은 가마솥밥, 정갈한 7첩 계절 반상이 제공되는 대표 메뉴', isSignature: true, category: '정식' },
-      { name: '한우 사골 된장찌개와 직화구이', price: 13000, description: '24시간 푹 끓여낸 깊은 사골 육수에 불향 가득한 고기구이 세트', isSignature: true, category: '정식' },
-      { name: '수제 떡갈비 구이', price: 12000, description: '국내산 암퇘지와 소고기를 황금비율로 다져 구워낸 육즙 가득 떡갈비', isSignature: false, category: '일품' },
-      { name: '해물 파전과 계절 막걸리', price: 16000, description: '각종 해물과 쪽파를 바삭하게 부쳐낸 일품 안주 요리', isSignature: false, category: '안주' }
-    ]
-  };
 }
 
 async function handleStoryGenerator(body) {
@@ -370,48 +330,6 @@ async function handleStoryGenerator(body) {
   const address = String(body.address || '').trim();
   const keywords = String(body.keywords || '').trim();
   return { ok: true, story: generateFallbackStoreStory({ name, category, address, keywords }), model: 'moa-fact-only-copy-v1' };
-
-  try {
-    const prompt = `소상공인 펀딩 및 소개를 위한 매력적인 스토리텔링을 JSON으로 작성하세요.
-상호: ${name || '가게'}
-업종: ${category}
-위치: ${address || '지역'}
-키워드/특징: ${keywords || '단골, 정성, 맛있는 메뉴'}
-
-JSON 형식:
-{
-  "description": "가게에 대한 1~2문장의 감성적이고 신뢰감 넘치는 소개글 (100~150자)",
-  "ownerStory": "사장님의 창업 철학, 인사말, 손님에게 전하는 진심 어린 한마디 (200~300자)",
-  "highlights": ["#해시태그1", "#해시태그2", "#해시태그3", "#해시태그4"],
-  "menuItems": [
-    { "name": "메뉴명1", "price": 14000, "description": "메뉴 특징 및 맛 설명", "isSignature": true, "category": "분류1" },
-    { "name": "메뉴명2", "price": 12000, "description": "메뉴 특징 및 맛 설명", "isSignature": true, "category": "분류2" },
-    { "name": "메뉴명3", "price": 8000, "description": "메뉴 특징 및 맛 설명", "isSignature": false, "category": "분류3" },
-    { "name": "메뉴명4", "price": 6000, "description": "메뉴 특징 및 맛 설명", "isSignature": false, "category": "분류4" }
-  ]
-}`;
-
-    const result = await callOpenAi({
-      model: CHAT_MODEL,
-      messages: [
-        { role: 'system', content: '당신은 소상공인을 위한 브랜드 스토리텔링 및 메뉴 브랜딩 전문가입니다. 한국어로 감동적이고 읽기 쉬운 문장으로 JSON을 생성하세요.' },
-        { role: 'user', content: prompt }
-      ],
-      response_format: { type: 'json_object' },
-      max_tokens: 1500,
-      temperature: 0.7
-    });
-
-    const parsed = jsonBlock(result?.choices?.[0]?.message?.content || '');
-    if (parsed.ownerStory && parsed.menuItems?.length) {
-      return { ok: true, story: parsed, model: result.model || CHAT_MODEL };
-    }
-  } catch (err) {
-    // Fallback to rule-based generator
-  }
-
-  const fallback = generateFallbackStoreStory({ name, category, address, keywords });
-  return { ok: true, story: fallback, model: 'moa-story-rules-v1' };
 }
 
 async function handleDirectAuth(body) {
@@ -444,14 +362,14 @@ async function handleDirectAuth(body) {
       });
       const createData = await adminCreateRes.json().catch(() => ({}));
       if (!adminCreateRes.ok) {
-        if (createData?.msg?.includes('already registered') || createData?.message?.includes('already registered') || createData?.error_description?.includes('already registered') || adminCreateRes.status === 422) {
-          throw Object.assign(new Error('이미 사용 중인 로그인 이름 또는 이메일입니다. 다시 로그인해 주세요.'), { status: 409 });
+        // 이미 가입된 이메일/계정이면 에러를 던지지 않고 아래의 token 발급(로그인)으로 자연스럽게 진행
+        if (!createData?.msg?.includes('already registered') && !createData?.message?.includes('already registered') && !createData?.error_description?.includes('already registered') && adminCreateRes.status !== 422) {
+          throw Object.assign(new Error(createData?.message || createData?.msg || '계정 생성에 실패했습니다.'), { status: adminCreateRes.status });
         }
-        throw Object.assign(new Error(createData?.message || createData?.msg || '계정 생성에 실패했습니다.'), { status: adminCreateRes.status });
       }
     } else if (SUPABASE_URL && SUPABASE_KEY) {
       // Service Key가 없는 환경에서는 일반 signup 호출
-      const signupRes = await fetch(`${SUPABASE_URL}/auth/v1/signup`, {
+      await fetch(`${SUPABASE_URL}/auth/v1/signup`, {
         method: 'POST',
         headers: {
           apikey: SUPABASE_KEY,
@@ -463,14 +381,7 @@ async function handleDirectAuth(body) {
           password,
           data: { name: name || email.split('@')[0], role }
         })
-      });
-      const signupData = await signupRes.json().catch(() => ({}));
-      if (!signupRes.ok) {
-        if ([400, 409, 422].includes(signupRes.status) || signupData?.message?.includes('rate limit')) {
-          throw Object.assign(new Error('이미 사용 중인 이름이거나 요청이 많습니다. 잠시 후 다시 시도해 주세요.'), { status: signupRes.status });
-        }
-        throw Object.assign(new Error(signupData?.message || '계정 생성 실패'), { status: signupRes.status });
-      }
+      }).catch(() => ({}));
     }
   }
 

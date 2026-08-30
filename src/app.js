@@ -16,6 +16,7 @@ import {
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const won = value => Number(value || 0).toLocaleString('ko-KR') + '원';
+const formatRate = (rate, maxDigits = 4) => Number(Number(rate || 0).toFixed(maxDigits)).toLocaleString('ko-KR', { maximumFractionDigits: maxDigits });
 const shortDate = value => value ? new Intl.DateTimeFormat('ko-KR', {
   year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
 }).format(new Date(value)) : '-';
@@ -44,6 +45,13 @@ const commitmentStatusLabels = {
   escrowed: '예치 확인',
   cancelled: '취소',
   refunded: '환불'
+};
+const couponStatusLabels = {
+  available: '사용 가능',
+  used: '사용 완료',
+  trade_pending: '교환 대기 중',
+  transferred: '교환 완료',
+  expired: '기간 만료'
 };
 
 const state = {
@@ -463,11 +471,11 @@ function renderPortfolio() {
     ...(portfolio.withdrawals || []).map(item => '<div><b>회수 대기</b><span>' + escapeHTML(campaignLabel(item.campaignId)) + '</span><strong>' + won(item.requestedAmount - item.matchedAmount) + ' 남음</strong></div>')
   ];
   const coupons = portfolio.coupons || [];
-  wallet.innerHTML = '<div class="panel-heading"><div><h3>내 쿠폰 지갑</h3><p>발급된 쿠폰의 소유자와 사용 상태는 DB에서 관리됩니다.</p></div><strong>' + coupons.length + '장</strong></div>'
+  wallet.innerHTML = '<div class="panel-heading"><div><h3>내 쿠폰 지갑</h3><p>투자 유지를 통해 발급받은 매장 전용 할인 쿠폰입니다. 매장에서 사용하거나 교환소에서 거래할 수 있습니다.</p></div><strong>' + coupons.length + '장</strong></div>'
     + (queueRows.length ? '<div class="queue-list">' + queueRows.join('') + '</div>' : '')
     + '<div class="coupon-grid">' + (coupons.length ? coupons.map(item => '<article class="coupon-ticket ' + item.status + '"><small>'
-      + escapeHTML(campaignLabel(item.campaignId)) + '</small><strong>' + (item.benefitKind === 'percent' ? item.discountRate + '% 할인' : escapeHTML(item.description)) + '</strong><span>'
-      + (item.status === 'available' ? '사용 가능' : item.status === 'used' ? '사용 완료' : '상태 ' + escapeHTML(item.status)) + '</span>'
+      + escapeHTML(campaignLabel(item.campaignId)) + '</small><strong>' + (item.benefitKind === 'percent' ? formatRate(item.discountRate) + '% 할인' : escapeHTML(item.description)) + '</strong><span>'
+      + (couponStatusLabels[item.status] || ('상태 ' + escapeHTML(item.status))) + '</span>'
       + (item.status === 'available' ? '<div class="coupon-actions"><button type="button" data-use-coupon="' + item.id + '">음식점 사용</button><button type="button" data-list-coupon="' + item.id + '">교환 등록</button></div>' : '') + '</article>').join('')
       : '<p class="empty-copy">발급된 쿠폰이 없습니다.</p>') + '</div>'
     + renderCouponMarket(portfolio);
@@ -480,8 +488,8 @@ function renderCouponMarket(portfolio) {
     const offered = marketCoupons.get(trade.offered_coupon_id);
     if (!offered) return '';
     const candidate = ownAvailable.find(item => item.id !== offered.id && Math.abs(item.discountRate - offered.discountRate) < 10);
-    return '<article class="trade-row"><span><b>' + escapeHTML(campaignLabel(offered.campaignId)) + ' ' + offered.discountRate + '%</b><small>할인율 차이 10%p 미만 쿠폰만 가능</small></span>'
-      + (trade.offered_by === state.user.id ? '<em>내 교환 제안</em>' : candidate ? '<button type="button" data-accept-trade="' + trade.id + '" data-coupon-id="' + candidate.id + '">내 ' + candidate.discountRate + '% 쿠폰과 교환</button>' : '<em>교환 가능한 내 쿠폰 없음</em>') + '</article>';
+    return '<article class="trade-row"><span><b>' + escapeHTML(campaignLabel(offered.campaignId)) + ' ' + formatRate(offered.discountRate) + '%</b><small>할인율 차이 10%p 미만 쿠폰만 가능</small></span>'
+      + (trade.offered_by === state.user.id ? '<em>내 교환 제안</em>' : candidate ? '<button type="button" data-accept-trade="' + trade.id + '" data-coupon-id="' + candidate.id + '">내 ' + formatRate(candidate.discountRate) + '% 쿠폰과 교환</button>' : '<em>교환 가능한 내 쿠폰 없음</em>') + '</article>';
   }).filter(Boolean);
   return '<details class="coupon-market"><summary>쿠폰 교환소 (' + rows.length + '건)</summary><div>' + (rows.join('') || '<p class="empty-copy">열린 교환 제안이 없습니다.</p>') + '</div></details>';
 }
@@ -535,7 +543,7 @@ $('#couponWallet').addEventListener('click', async event => {
   const coupon = (state.portfolio?.coupons || []).find(item => item.id === button.dataset.useCoupon);
   if (!coupon) return showToast('사용할 쿠폰을 현재 원장에서 확인하지 못했습니다.', 'error');
   state.redeemCoupon = coupon;
-  $('#couponRedeemSummary').textContent = campaignLabel(coupon.campaignId) + ' · ' + coupon.discountRate + '% 할인';
+  $('#couponRedeemSummary').textContent = campaignLabel(coupon.campaignId) + ' · ' + formatRate(coupon.discountRate) + '% 할인';
   $('#couponOrderAmount').value = 30000;
   $('#couponQr').innerHTML = '<span class="loader"></span>';
   openModal('couponRedeemModal');
@@ -644,7 +652,7 @@ function renderCampaignGrid() {
         : assessment.riskLevel === 'high' ? '집중 확인 필요' : '추가 확인 필요'
       : '자료 확인 필요';
     const area = getCommercialAreaByAddress(item.business?.address);
-    return '<article class="campaign-card">'
+    return '<article class="campaign-card" data-open-campaign="' + item.id + '" tabindex="0" role="button" aria-label="' + escapeHTML(item.business?.name || item.name) + ' 상세 소개 보기">'
       + '<div class="campaign-card-top" style="--card-tone:' + tones[index % tones.length] + '">'
       + '<span>' + (item.isDemo ? '가상 투자 검토 예시' : item.fundStatus === 'closed' ? '모집 완료 · 예약 가능' : '운영자 심사 완료 · 모집 중') + '</span><h3>' + escapeHTML(item.business?.name || item.name) + '</h3>'
       + '<p>' + escapeHTML(item.business?.address || '') + ' · ' + escapeHTML(item.business?.category || '') + '</p></div>'
@@ -655,7 +663,7 @@ function renderCampaignGrid() {
       + '<span>' + escapeHTML(risk) + '</span>'
       + '<span>쿠폰 최대 ' + item.maxDiscountRate + '%</span>'
       + (area ? '<span class="area-fact">유동인구 ' + Math.round(area.dailyFootTraffic / 100) / 100 + '만 · 상권매출 +' + area.localSalesGrowth + '%</span>' : '') + '</div>'
-      + '<button type="button" data-open-campaign="' + item.id + '">계획·위험·지급 조건 보기 →</button></div></article>';
+      + '<button type="button" class="card-action-link" data-open-campaign="' + item.id + '">가게 소개 · 메뉴 · 펀딩 계획 보기 →</button></div></article>';
   }).join('');
 }
 
@@ -719,6 +727,15 @@ $('#browseCampaigns').addEventListener('click', () => {
   $('#campaigns').scrollIntoView({ behavior: 'smooth' });
 });
 $('#openProcessGuide').addEventListener('click', () => openModal('processModal'));
+$$('[data-open-modal]').forEach(button => {
+  button.addEventListener('click', () => openModal(button.dataset.openModal));
+});
+$$('[data-switch-role]').forEach(button => {
+  button.addEventListener('click', e => {
+    e.preventDefault();
+    switchView(button.dataset.switchRole);
+  });
+});
 $('#openMyCommitments').addEventListener('click', () => {
   switchView('investor');
   setTimeout(() => $('#myCommitmentsSection').scrollIntoView({ behavior: 'smooth' }), 100);

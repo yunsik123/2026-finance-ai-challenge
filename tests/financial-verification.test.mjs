@@ -1,6 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { orchestrateFinancialVerification } from '../src/financial-verification.js';
+import { normalizeOcrBoxes, orchestrateFinancialVerification } from '../src/financial-verification.js';
+
+test('OCR 바운딩 박스는 0~1000 범위로 제한하고 비정상 값을 제거한다', () => {
+  const boxes = normalizeOcrBoxes([
+    { field: 'total', label: '합계', value: '12000', bbox: [-20, 900, 1200, 200], confidence: .92 },
+    { field: 'date', label: '거래일', value: '2026-08-30', bbox: [1200, 1200, 40, 40], confidence: .8 },
+    { field: 'date', bbox: [1, 2, 0, 4] }
+  ]);
+  assert.equal(boxes.length, 2);
+  assert.deepEqual(boxes[0].bbox, [0, 900, 1000, 100]);
+  assert.deepEqual(boxes[1].bbox, [999, 999, 1, 1]);
+});
 
 const claims = { sales6m: [10, 11, 12, 13, 14, 15], debtTotal: 100, monthlyDebtPayment: 10, taxCompliant: true };
 const documents = [

@@ -15,7 +15,7 @@ function invokeAi(body, mode = 'story-generator') {
   });
 }
 
-test('스토리 생성기는 상호와 업종 기반으로 사장님 한마디, 가게 소개, 시그니처 메뉴를 생성한다', () => {
+test('사실 전용 문구 도우미는 입력하지 않은 사장님 스토리·메뉴·가격을 만들지 않는다', () => {
   const story = generateFallbackStoreStory({
     name: '목화 로스터리',
     category: '카페',
@@ -23,14 +23,12 @@ test('스토리 생성기는 상호와 업종 기반으로 사장님 한마디, 
   });
 
   assert.ok(story.description.includes('목화 로스터리'));
-  assert.ok(story.ownerStory.length > 50);
-  assert.ok(story.highlights.length >= 3);
-  assert.ok(story.menuItems.length >= 3);
-  assert.ok(story.menuItems.some(m => m.isSignature === true));
-  assert.ok(story.menuItems.every(m => m.price > 0 && m.name));
+  assert.equal(story.ownerStory, '');
+  assert.equal(story.menuItems.length, 0);
+  assert.equal(story.requiresOwnerConfirmation, true);
 });
 
-test('AI 핸들러는 story-generator 모드 요청에 대해 유효한 스토리 구조를 반환한다', async () => {
+test('story-generator 호환 경로도 확인되지 않은 사실을 채우지 않는다', async () => {
   const { status, payload } = await invokeAi({
     name: '일구의 식탁',
     category: '양식',
@@ -39,8 +37,9 @@ test('AI 핸들러는 story-generator 모드 요청에 대해 유효한 스토�
 
   assert.equal(status, 200);
   assert.equal(payload.ok, true);
-  assert.ok(payload.story.ownerStory);
-  assert.ok(payload.story.menuItems.length >= 3);
+  assert.equal(payload.story.ownerStory, '');
+  assert.deepEqual(payload.story.menuItems, []);
+  assert.equal(payload.model, 'moa-fact-only-copy-v1');
 });
 
 test('모든 데모 캠페인은 사장님 스토리, 하이라이트 태그, 대표 메뉴판을 포함한다', () => {
