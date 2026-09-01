@@ -312,11 +312,8 @@ export type DeriveSource = {
   }
   /** 먹투에 실제로 쌓인 리뷰. 없으면 평판 지표를 미산정으로 둔다. */
   reviews?: Array<{ rating: number }>
-  /** 사장님별로 값이 흔들리지 않게 고정하는 시드. 보통 상호명. */
-  seed?: string
 }
 
-const seedOf = (value = '') => [...value].reduce((sum, character) => sum + character.charCodeAt(0), 0)
 const num = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? value : null)
 
 /**
@@ -327,11 +324,8 @@ const num = (value: unknown) => (typeof value === 'number' && Number.isFinite(va
  * 반대로 0으로 채우면 감점이 된다. 둘 다 하지 않는다.
  */
 export function deriveCreditInput(source: DeriveSource): CreditInput {
-  const { connectedSources = [], derivedMetrics = {}, restaurant = {}, commercialArea = {}, reviews = [], seed } = source
+  const { connectedSources = [], derivedMetrics = {}, restaurant = {}, commercialArea = {}, reviews = [] } = source
   const has = (key: string) => connectedSources.includes(key)
-  const s = seedOf(seed || restaurant.monthlySales?.toString() || '먹투')
-  /** 시드 기반 안정 난수. 같은 사장님이면 항상 같은 값이 나온다. */
-  const jitter = (salt: number, span: number) => ((s * 31 + salt * 17) % 1000) / 1000 * span
 
   const monthlySales = num(derivedMetrics.recent12MonthAverageSales) ?? num(restaurant.monthlySales)
   const cashflow = num(derivedMetrics.estimatedMonthlyOperatingCashflow)
@@ -341,34 +335,35 @@ export function deriveCreditInput(source: DeriveSource): CreditInput {
   const input: CreditInput = { industry: source.industry }
 
   // ── 신용·부채: 대출·상환 증빙이 있어야 산정 ──────────────────
-  if (has('debt')) {
-    input.delinquency_12m = Math.round(jitter(1, 2.4))
-    input.max_delinquency_days = input.delinquency_12m ? Math.round(4 + jitter(2, 52)) : 0
-    input.total_loan_balance = monthlySales ? Math.round(monthlySales * (.9 + jitter(3, 4.2))) : null
-    input.number_of_lenders = 1 + Math.round(jitter(4, 3))
-    input.debt_repayment_to_inflow = debtRatio
-  } else {
-    input.delinquency_12m = null; input.max_delinquency_days = null
-    input.total_loan_balance = null; input.number_of_lenders = null
-    input.debt_repayment_to_inflow = debtRatio // 사장님이 신고한 값이 있으면 그것만 쓴다.
-  }
+  // 부채 증빙을 연결해도 그 서류에서 읽어낸 값만 쓴다.
+  // 예전에는 연체·대출잔액·금융기관 수를 상호명 글자코드로 만든 난수로 채웠는데,
+  // 그건 자료가 아니라 지어낸 숫자다. 가중치 최대 47.5점이 거기서 나왔고,
+  // "90일 이상 연체면 무조건 D등급"이라는 정책 오버라이드까지 그 난수를 보고 발동했다.
+  // 읽어내지 못한 값은 null(미산정)로 둔다. 모델이 가중치에서 빼고 재정규화하며,
+  // coverage가 떨어져 "무엇을 모르는지"가 화면에 그대로 드러난다.
+  input.delinquency_12m = num(derivedMetrics.delinquencyCount12m)
+  input.max_delinquency_days = num(derivedMetrics.maxDelinquencyDays)
+  input.total_loan_balance = num(derivedMetrics.totalLoanBalance)
+  input.number_of_lenders = num(derivedMetrics.numberOfLenders)
+  input.debt_repayment_to_inflow = debtRatio // 사장님이 신고한 값이 있으면 그것만 쓴다.
 
   // ── 매출·거래: POS 원자료 기준 ───────────────────────────────
   if (has('pos')) {
     input.card_sales_avg_12m = monthlySales
     input.sales_growth_12m = salesGrowth
-    input.sales_growth_3m = salesGrowth === null ? null : Number((salesGrowth + jitter(5, 9) - 4.5).toFixed(1))
+    input.sales_growth_3m = num(derivedMetrics.recent3MonthSalesGrowth)
     input.sales_volatility_12m = num(derivedMetrics.salesVolatility)
-    input.transaction_count_growth = salesGrowth === null ? null : Number((salesGrowth * .82 + jitter(6, 6) - 3).toFixed(1))
+    input.transaction_count_growth = num(derivedMetrics.transactionCountGrowth)
     input.average_ticket = num(derivedMetrics.averageTicket)
-    input.refund_cancel_ratio = Number((1.4 + jitter(7, 4.6)).toFixed(1))
+    input.refund_cancel_ratio = num(derivedMetrics.refundCancelRatio)
   }
   input.relative_sales_growth = num(derivedMetrics.relativeSalesGrowth)
 
   // ── 현금흐름: 사업용 계좌가 있어야 잔액을 말할 수 있다 ───────
   if (has('account') && monthlySales) {
-    input.avg_cash_balance = Math.round(monthlySales * (.32 + jitter(8, .95)))
-    input.min_cash_balance = Math.round(monthlySales * (.06 + jitter(9, .3)))
+    // 잔액은 계좌 원자료에서 나와야 한다. 매출에 계수를 곱해 만든 값은 잔액이 아니다.
+    input.avg_cash_balance = num(derivedMetrics.averageCashBalance)
+    input.min_cash_balance = num(derivedMetrics.minimumCashBalance)
     input.net_cashflow_ratio = cashflow && monthlySales ? Number((cashflow / monthlySales * 100).toFixed(1)) : null
   }
 
@@ -391,7 +386,7 @@ export function deriveCreditInput(source: DeriveSource): CreditInput {
   const repeatRate = num(derivedMetrics.repeatRate) ?? num(restaurant.repeatRate)
   if (has('customer') || has('delivery')) {
     input.repeat_customer_rate = repeatRate
-    input.customer_growth = salesGrowth === null ? null : Number((salesGrowth * .74 + jitter(10, 8) - 4).toFixed(1))
+    input.customer_growth = num(derivedMetrics.customerGrowth)
   } else {
     // 먹투 자체 재방문 지표가 있으면 그것만 쓰고, 고객 증가율은 미산정으로 둔다.
     input.repeat_customer_rate = repeatRate

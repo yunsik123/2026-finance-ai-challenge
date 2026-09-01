@@ -340,8 +340,10 @@ function publicUser(user: User | SessionUser) {
 }
 
 function audit(actorId: string | undefined, action: string, resourceType: string, resourceId: string, summary: string) {
+  // 감사기록은 오래된 것부터 지우지 않는다. 투자·쿠폰 교환 분쟁이 생겼을 때
+  // 무슨 일이 있었는지 말해줄 수 있는 유일한 근거이고, 그게 사라지면 되돌릴 방법이 없다.
+  // (알림은 근거가 아니므로 링버퍼를 유지한다.)
   db.auditEvents.push({ id: id('audit'), actorId, action, resourceType, resourceId, summary: summary.slice(0, 300), createdAt: now() })
-  if (db.auditEvents.length > 1000) db.auditEvents.splice(0, db.auditEvents.length - 1000)
 }
 
 /* ── 쿠폰 교환장 공용 로직 ─────────────────────────────────────── */
@@ -491,6 +493,27 @@ const partnerSourceCatalog = {
   debt: { provider: '금융기관 대출정보 중계(시연)', scope: '대출잔액·금리·만기·월 상환액', recordCount: 3 },
 } as const
 type PartnerSourceId = keyof typeof partnerSourceCatalog
+/** 요청자 식별용. 프록시 뒤에서도 원 IP를 본다. */
+function callerIp(req: { headers: Record<string, unknown>; socket?: { remoteAddress?: string } }) {
+  const forwarded = String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'anonymous')
+  return forwarded.split(',')[0].trim() || 'anonymous'
+}
+
+/** 남은 여유가 있는지만 본다(기록하지 않는다). 실패한 시도만 세고 싶을 때 쓴다. */
+function rateLimitPeek(key: string, limit: number, windowMs: number) {
+  const at = Date.now()
+  const hits = (rateBuckets.get(key) || []).filter((time) => time > at - windowMs)
+  rateBuckets.set(key, hits)
+  return hits.length < limit
+}
+
+/** 실패 한 번을 기록한다. */
+function rateLimitHit(key: string) {
+  const hits = rateBuckets.get(key) || []
+  hits.push(Date.now())
+  rateBuckets.set(key, hits)
+}
+
 /** 아주 가벼운 슬라이딩 윈도 제한. 여러 사람이 붙었을 때 한 계정이 교환장을 도배하는 걸 막는다. */
 function rateLimit(key: string, limit: number, windowMs: number) {
   const at = Date.now()
@@ -520,15 +543,29 @@ function accrue(position: Position) {
   position.updatedAt = now()
 }
 
-function issueCoupon(position: Position, force = false) {
+/**
+ * 쿠폰 장부의 단일 출처는 db.coupons다.
+ * 펀드에 누적 발급·사용액을 따로 더해두면 실제 쿠폰 레코드와 조금씩 어긋나서
+ * 사장님 화면의 "발급 − 사용"과 "아직 사용되지 않은 부담"이 서로 맞지 않게 된다.
+ * 그래서 집계는 저장하지 않고 쿠폰 레코드에서 매번 다시 만든다.
+ */
+function syncCouponLedger(fundId?: string) {
+  for (const fund of db.funds) {
+    if (fundId && fund.id !== fundId) continue
+    const issued = db.coupons.filter((coupon) => coupon.fundId === fund.id)
+    fund.totalCouponIssued = issued.reduce((sum, coupon) => sum + coupon.maxDiscountWon, 0)
+    fund.totalCouponUsed = issued.filter((coupon) => coupon.status === 'used').reduce((sum, coupon) => sum + coupon.maxDiscountWon, 0)
+  }
+}
+
+function issueCoupon(position: Position) {
   accrue(position)
   const fund = db.funds.find((item) => item.id === position.fundId)
   const restaurant = fund && db.restaurants.find((item) => item.id === fund.restaurantId)
   if (!fund || !restaurant) return undefined
-  if (position.couponProgress < fund.minIssueDiscount) {
-    if (force) position.couponProgress = 0
-    return undefined
-  }
+  // 발급 기준에 못 미치면 아무 일도 일어나지 않는다. 예전에는 여기서 진행률을 0으로
+  // 지웠는데, 그러면 쿠폰도 못 받고 그동안 쌓인 혜택만 사라졌다.
+  if (position.couponProgress < fund.minIssueDiscount) return undefined
   const discount = Math.min(fund.maxDiscount, Math.floor(position.couponProgress * 10) / 10)
   const coupon: Coupon = {
     id: id('coupon'), userId: position.userId, restaurantId: restaurant.id, fundId: fund.id,
@@ -537,7 +574,7 @@ function issueCoupon(position: Position, force = false) {
     createdAt: now(), expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 90).toISOString(),
   }
   db.coupons.push(coupon)
-  fund.totalCouponIssued += coupon.maxDiscountWon
+  syncCouponLedger(fund.id)
   position.couponProgress = 0
   position.updatedAt = now()
   return coupon
@@ -562,6 +599,7 @@ function refreshOrderTotals(fundId: string) {
 }
 
 function matchOrders(fundId: string) {
+  const fund = db.funds.find((item) => item.id === fundId)
   const buys = db.orders
     .filter((o) => o.fundId === fundId && o.type === 'buy' && o.remaining > 0)
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
@@ -590,8 +628,14 @@ function matchOrders(fundId: string) {
       sellIndex += 1
       continue
     }
+    const buyerWasNew = buyerPosition.amount === 0
     buyerPosition.amount += matched
     sellerPosition.amount -= matched
+    // 투자자 수는 들어올 때만 늘고 나갈 때는 줄지 않아서 시간이 갈수록 부풀었다.
+    if (fund) {
+      if (buyerWasNew) fund.investorCount += 1
+      if (sellerPosition.amount <= 0) fund.investorCount = Math.max(0, fund.investorCount - 1)
+    }
     const seller = db.users.find((u) => u.id === sell.userId)
     if (seller) seller.cash += matched
     buy.remaining -= matched
@@ -610,6 +654,9 @@ function auth(requiredRole?: Role) {
   return async (req: AuthedRequest, res: Response, next: NextFunction) => {
     const user = await userFromAuthorization(req.headers.authorization)
     if (!user) return res.status(401).json({ error: '로그인이 필요해요.' })
+    // 정지는 로그인 시점이 아니라 요청마다 확인해야 한다. 토큰 유효기간이 14일이라
+    // 로그인 때만 보면 관리자가 정지시킨 계정이 2주 동안 계속 거래할 수 있다.
+    if (user.accountStatus === 'suspended') return res.status(403).json({ error: '이용이 일시 정지된 계정이에요. 운영팀에 문의해주세요.' })
     if (requiredRole && user.role !== requiredRole) return res.status(403).json({ error: '이 계정에서는 사용할 수 없는 기능이에요.' })
     req.user = user
     next()
@@ -652,6 +699,7 @@ function publicState(viewerId?: string) {
 }
 
 await loadDatabase()
+syncCouponLedger()
 for (const fund of db.funds) {
   matchOrders(fund.id)
   refreshOrderTotals(fund.id)
@@ -1134,6 +1182,7 @@ app.get('/api/knowledge-graph', async (req: AuthedRequest, res) => {
 })
 
 app.post('/api/auth/signup', async (req, res) => {
+  if (!rateLimit(`signup:${callerIp(req)}`, 20, 60_000)) return res.status(429).json({ error: '가입 시도가 너무 많아요. 잠시 후 다시 시도해주세요.' })
   const { email, password, name, role } = req.body as { email?: string; password?: string; name?: string; role?: Role }
   if (!email || !/^\S+@\S+\.\S+$/.test(email)) return res.status(400).json({ error: '올바른 이메일을 입력해주세요.' })
   if (!password || password.length < 8) return res.status(400).json({ error: '비밀번호는 8자 이상이어야 해요.' })
@@ -1175,7 +1224,14 @@ app.post('/api/auth/demo', (req, res) => {
 })
 
 app.post('/api/auth/login', async (req, res) => {
+  // 비밀번호 검증이 scrypt라 시도 한 번마다 서버 CPU를 크게 쓴다. 제한이 없으면
+  // 대입 공격이자 그 자체로 자원 고갈 경로가 된다. 다만 세는 건 '실패한 시도'뿐이다.
+  // 성공까지 세면 한 사무실에서 여러 명이 정상적으로 로그인하는 것도 막힌다.
   const { email, password, role } = req.body as { email?: string; password?: string; role?: Role }
+  const ipKey = `login:ip:${callerIp(req)}`
+  const accountKey = `login:account:${String(email || '').toLowerCase()}`
+  const tooManyFailures = !rateLimitPeek(ipKey, 30, 60_000) || !rateLimitPeek(accountKey, 8, 60_000)
+  if (tooManyFailures) return res.status(429).json({ error: '로그인 시도가 너무 많아요. 1분 뒤에 다시 시도해주세요.' })
   if (role && role !== 'owner' && role !== 'investor') return res.status(400).json({ error: '로그인 유형을 다시 선택해주세요.' })
   const user = db.users.find((u) => u.email.toLowerCase() === String(email).toLowerCase())
   if (user?.accountStatus === 'suspended') return res.status(403).json({ error: '이용이 일시 정지된 계정이에요.' })
@@ -1191,6 +1247,8 @@ app.post('/api/auth/login', async (req, res) => {
       return res.json({ token: session.access_token, user: session.user, provider: 'supabase' })
     } catch { /* return the common authentication error below */ }
   }
+  rateLimitHit(ipKey)
+  rateLimitHit(accountKey)
   res.status(401).json({ error: '이메일 또는 비밀번호를 확인해주세요.' })
 })
 
@@ -1430,19 +1488,24 @@ app.post('/api/funds/:fundId/withdraw', auth('investor'), async (req: AuthedRequ
   if (fund.status === 'trading' && db.orders.some((order) => order.userId === user.id && order.fundId === fund.id && order.type === 'buy' && order.remaining > 0)) return res.status(400).json({ error: '이 펀드의 투자 예약을 먼저 취소하거나 체결해주세요.' })
   const alreadySelling = db.orders.filter((o) => o.userId === user.id && o.fundId === fund.id && o.type === 'sell' && o.remaining > 0).reduce((sum, o) => sum + o.remaining, 0)
   if (position.amount - alreadySelling < amount) return res.status(400).json({ error: '주문 가능한 투자금보다 큰 금액이에요.' })
-  const coupon = issueCoupon(position, true)
   if (fund.status === 'funding') {
+    // 모금 중 회수는 그 자리에서 확정되므로 지금까지 쌓인 혜택도 함께 정산한다.
+    const coupon = issueCoupon(position)
     position.amount -= amount
     fund.raised = Math.max(0, fund.raised - amount)
     user.cash += amount
+    if (position.amount <= 0) fund.investorCount = Math.max(0, fund.investorCount - 1)
     await saveDatabase(); changed()
     return res.json({ message: `${amount.toLocaleString()}원을 바로 회수했어요.`, matched: amount, queued: 0, coupon })
   }
   const order: Order = { id: id('order'), userId: user.id, fundId: fund.id, type: 'sell', originalAmount: amount, remaining: amount, status: 'open', createdAt: now() }
   db.orders.push(order)
   const matches = matchOrders(fund.id)
-  await saveDatabase(); changed()
   const matched = amount - order.remaining
+  // 예약 거래에서는 사는 사람이 나타나야 회수가 성립한다. 체결 전에 쿠폰을 내주면
+  // 아직 돌려받지도 못한 투자금에 혜택이 먼저 나가고, 주문을 취소해도 쿠폰은 남는다.
+  const coupon = matched > 0 ? issueCoupon(position) : undefined
+  await saveDatabase(); changed()
   res.json({ message: matched === amount ? '신청한 금액을 모두 회수했어요.' : matched > 0 ? `${matched.toLocaleString()}원이 회수되고 나머지는 대기 중이에요.` : '사는 사람이 나타나면 1,000원부터 순서대로 회수돼요.', matched, queued: order.remaining, coupon, matches })
 })
 
@@ -1933,7 +1996,7 @@ app.post('/api/owner/coupons/verify', auth('owner'), async (req: AuthedRequest, 
     coupon.redeemCode = undefined
     coupon.redeemRequestedAt = undefined
     const fund = coupon.fundId ? db.funds.find((item) => item.id === coupon.fundId) : undefined
-    if (fund) fund.totalCouponUsed += coupon.maxDiscountWon
+    if (fund) syncCouponLedger(fund.id)
     audit(me.id, 'coupon.redeemed', 'coupon', coupon.id, `${coupon.title} 사용 확인 (최대 ${coupon.maxDiscountWon}원)`)
     pushNotification(coupon.userId, 'coupon_used', '쿠폰이 사용 처리됐어요',
       `${restaurant.name}에서 ${coupon.discount}% 쿠폰이 확인됐어요. 맛있게 드세요!`, '/my')
@@ -2081,6 +2144,12 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
   // AI OCR 판독 결과를 실제 심사에 연결한다.
   // 지금까지 OCR 결과는 저장만 되고 판단에 쓰이지 않았다.
   const myAnalyses = db.ocrAnalyses.filter((item) => item.userId === req.user!.id).slice(-12)
+  // 판독한 부채 증빙의 금액을 신용지표(total_loan_balance)로 그대로 흘려보낸다.
+  // 여기가 "AI가 서류를 읽어 등급을 낸다"가 실제로 성립하는 유일한 연결점이다.
+  const debtDocumentTotal = myAnalyses
+    .filter((item) => item.sourceId === 'debt' && item.status === 'ai_extracted')
+    .map((item) => Number((item.result as Record<string, unknown>).total))
+    .find((value) => Number.isFinite(value) && value > 0) ?? null
   const financialVerification = orchestrateFinancialVerification({
     claims: {
       businessNumber: data.businessNumber,
@@ -2156,6 +2225,7 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
     districtSalesGrowth,
     relativeSalesGrowth: relativeGrowth,
     salesReconciliationRate: reconciliationRate,
+    totalLoanBalance: debtDocumentTotal,
   }
   // 35개 지표 · 6개 업종 신용등급. 5요소 상권 위험평가와 함께 낸다.
   // 자료가 없는 지표는 감점 대신 미산정으로 남고 coverage로 드러난다.
@@ -2166,7 +2236,6 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
     industry,
     connectedSources,
     derivedMetrics,
-    seed: restaurantName,
     restaurant: matchedRestaurant,
     commercialArea: located && {
       competitorDensity: located.area.marketDynamics.competitorDensity,
@@ -2218,6 +2287,7 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
   const verificationWord: Record<string, string> = {
     ready_for_admin: '운영자 확인 준비 완료', mismatch: '값이 서로 맞지 않음',
     needs_documents: '자료 부족', low_confidence: '판독 신뢰도 낮음',
+    needs_review: '운영자 확인 필요',
   }
   audit(req.user!.id, 'application.financial_orchestrated', 'application', application.id,
     `자료 대조 ${verificationWord[financialVerification.recommendedStatus] || financialVerification.recommendedStatus} · 문서 ${financialVerification.documentCount}건 · 불일치 ${financialVerification.mismatches.length}건`)
@@ -2268,7 +2338,7 @@ app.post('/api/owner/funds/:fundId/dividend', auth('owner'), async (req: AuthedR
   for (const position of investors) {
     db.coupons.push({ id: id('coupon'), userId: position.userId, restaurantId: restaurant.id, fundId: fund.id, title: `${restaurant.name} 깜짝 배당 쿠폰`, discount, maxDiscountWon: Math.floor(restaurant.maxMenuPrice * discount / 100), type: 'dividend', status: 'available', createdAt: now(), expiresAt: new Date(Date.now() + 60 * 86400000).toISOString() })
   }
-  fund.totalCouponIssued += investors.length * Math.floor(restaurant.maxMenuPrice * discount / 100)
+  syncCouponLedger(fund.id)
   audit(req.user!.id, 'coupon.dividend_issued', 'fund', fund.id, `${investors.length}명에게 ${discount}% 쿠폰 발행`)
   await saveDatabase(); changed()
   res.json({ message: `${investors.length}명의 투자자에게 ${discount}% 배당 쿠폰을 보냈어요.` })
@@ -2306,7 +2376,10 @@ app.post('/api/ai/ocr', auth('owner'), async (req: AuthedRequest, res) => {
           messages: [
             { role: 'system', content: '당신은 한국 소상공인 사업 증빙 OCR 보조자입니다. 이미지에서 보이는 값만 구조화하고 승인 여부를 결정하지 않습니다.' },
             { role: 'user', content: [
-              { type: 'text', text: `문서를 판독해 JSON만 반환하세요. 등록된 자금 사용계획: ${plan}. 스키마: {"documentType":"영수증|세금계산서|매출전표|계약서|사업자등록|영업신고|납세증명|부채증명|기타","merchant":"","businessNumber":"","date":"","periodStart":"","periodEnd":"","total":0,"planMatch":"적합|검토 필요|부적합","confidence":0,"warnings":[],"rawText":"","boundingBoxes":[{"field":"merchant|businessNumber|date|total","label":"","value":"","bbox":[0,0,0,0],"confidence":0}]}. bbox는 0~1000 기준 [x,y,width,height]이며 읽히지 않는 값은 추측하지 마세요.` },
+              { type: 'text', text: `문서를 판독해 JSON만 반환하세요. 등록된 자금 사용계획: ${plan}.
+스키마의 <> 안은 채워야 할 설명이며, 그 문구를 값으로 그대로 쓰면 안 됩니다.
+{"documentType":"<영수증·세금계산서·매출전표·계약서·사업자등록·영업신고·납세증명·부채증명·기타 중 하나>","merchant":"<상호. 없으면 빈 문자열>","businessNumber":"<사업자등록번호. 없으면 빈 문자열>","date":"<문서 기준일 YYYY-MM-DD. 없으면 빈 문자열>","periodStart":"<과세기간 시작일. 없으면 빈 문자열>","periodEnd":"<과세기간 종료일. 없으면 빈 문자열>","total":<대표 금액을 숫자로. 금액이 없으면 null>,"planMatch":"<이 문서가 위 자금 사용계획과 맞는지: 적합·검토 필요·부적합 중 하나. 사용계획과 무관한 서류면 '검토 필요'>","confidence":<0.0~1.0 사이 실수. 이번 판독을 얼마나 확신하는지. 예시값이 아니라 실제 확신도를 넣고 절대 0으로 두지 마세요>,"warnings":["<판독하며 걸린 점. 없으면 빈 배열>"],"rawText":"<읽은 원문>","boundingBoxes":[{"field":"<merchant 또는 businessNumber 또는 date 또는 total 중 정확히 하나만>","label":"<화면에 보여줄 이름>","value":"<그 자리에서 읽은 값>","bbox":[<x>,<y>,<width>,<height>],"confidence":<0.0~1.0>}]}
+bbox는 0~1000 기준 [x,y,width,height]이며 이미지 전체를 가리키는 [0,0,1000,1000]은 쓰지 마세요. 읽히지 않는 값은 추측하지 마세요.` },
               { type: 'image_url', image_url: { url: `data:${match[1]};base64,${encoded}` } },
             ] },
           ],
@@ -2318,9 +2391,14 @@ app.post('/api/ai/ocr', auth('owner'), async (req: AuthedRequest, res) => {
       const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }>; model?: string }
       const parsed = jsonObject(payload.choices?.[0]?.message?.content || '')
       if (!Object.keys(parsed).length) throw new Error('AI OCR empty result')
+      // 모델이 확신도를 안 주거나 0으로 주면 판정을 보류(0.5)하되 파이프라인은 계속 흐르게 한다.
+      // 0을 그대로 흘리면 뒤의 6단계 교차검증이 영영 통과하지 못한다.
+      const reportedConfidence = Number(parsed.confidence)
       result = {
         ...parsed,
-        confidence: Math.max(0, Math.min(1, Number(parsed.confidence || 0))),
+        confidence: Number.isFinite(reportedConfidence) && reportedConfidence > 0
+          ? Math.min(1, reportedConfidence > 1 ? reportedConfidence / 100 : reportedConfidence)
+          : .5,
         warnings: Array.isArray(parsed.warnings) ? parsed.warnings.slice(0, 12).map(String) : [],
         boundingBoxes: normalizeOcrBoxes(parsed.boundingBoxes),
       }
@@ -2592,7 +2670,7 @@ app.post('/api/ai/management-credit-diagnosis', auth('owner'), async (req: Authe
   const located = restaurant ? findCommercialArea(restaurant) : undefined
   const industry = toIndustry(restaurant?.category)
   const credit = (application?.data?.creditAssessment as CreditAssessment | undefined) || assessCredit(deriveCreditInput({
-    industry, connectedSources, derivedMetrics, seed: restaurant?.name || application?.restaurantName,
+    industry, connectedSources, derivedMetrics,
     restaurant,
     commercialArea: located && {
       competitorDensity: located.area.marketDynamics.competitorDensity,

@@ -92,7 +92,7 @@ export interface FinancialOrchestration {
   documentCount: number
   averageConfidence: number
   readyForAdminReview: boolean
-  recommendedStatus: 'ready_for_admin' | 'mismatch' | 'needs_documents' | 'low_confidence'
+  recommendedStatus: 'ready_for_admin' | 'mismatch' | 'needs_documents' | 'low_confidence' | 'needs_review'
 }
 
 /**
@@ -200,6 +200,7 @@ export function orchestrateFinancialVerification(input: {
   }
 
   // ⑤ 납세
+  const warningsFromPlan: string[] = []
   const taxDocument = documents.find((item) => item.category === 'tax')
   if (!input.connectedSources.includes('tax')) {
     steps[4].status = 'not_compared'
@@ -208,8 +209,26 @@ export function orchestrateFinancialVerification(input: {
     steps[4].status = 'review'
     steps[4].detail = '납세 자료가 제출됐지만 판독되지 않았습니다.'
   } else {
-    steps[4].status = taxDocument.planMatch === '부적합' ? 'failed' : taxDocument.planMatch === '적합' ? 'passed' : 'review'
-    steps[4].detail = `납세 자료 판독 결과: ${taxDocument.planMatch || '판정 없음'} (신뢰도 ${Math.round(taxDocument.confidence * 100)}%)`
+    // planMatch는 "이 문서가 신고한 자금 사용계획과 맞는가"이지 납세 성실도가 아니다.
+    // 예전에는 이 값을 그대로 납세 판정으로 읽어서, 사업자등록증에 찍힌 '적합'이
+    // 납세 단계를 자동으로 통과시켰다. 납세는 신고값과 문서값으로만 판정한다.
+    const claimedCompliant = input.claims.taxCompliant
+    const taxAmount = taxDocument.total
+    if (claimedCompliant === false) {
+      steps[4].status = 'failed'
+      steps[4].detail = '사장님이 납세 의무 이행을 "아니오"로 신고했습니다. 완납 후 다시 제출해야 합니다.'
+    } else if (taxAmount === null) {
+      steps[4].status = 'review'
+      steps[4].detail = `납세 자료(${taxDocument.filename})에서 금액을 읽지 못했습니다. 운영자가 원본을 확인해야 합니다.`
+    } else if (claimedCompliant !== true) {
+      steps[4].status = 'review'
+      steps[4].detail = `납세 자료는 판독했지만(신고액 ${taxAmount.toLocaleString()}원) 납세 의무 이행 신고가 비어 있습니다.`
+    } else {
+      steps[4].status = 'passed'
+      steps[4].detail = `납세 자료에서 신고액 ${taxAmount.toLocaleString()}원을 확인했고, 사장님 신고와 어긋나지 않습니다.`
+    }
+    // 자금계획 적합성은 별도 경고로만 남긴다. 판정 근거로는 쓰지 않는다.
+    if (taxDocument.planMatch === '부적합') warningsFromPlan.push(`${taxDocument.filename}이 신고한 자금 사용계획과 맞지 않는다고 판독됐습니다.`)
   }
 
   // ⑥ 중복·모순
@@ -232,6 +251,7 @@ export function orchestrateFinancialVerification(input: {
     ...comparisons.filter((item) => item.status === 'review').map((item) => `${item.label} 차이가 허용범위를 넘어 운영자 확인이 필요합니다.`),
     ...documents.filter((item) => item.aiRead && item.confidence < .75).map((item) => `${item.filename} 판독 신뢰도가 ${Math.round(item.confidence * 100)}%로 낮습니다.`),
     ...missingDocuments.map((item) => `${item}가 아직 제출되지 않았습니다.`),
+    ...warningsFromPlan,
   ]
 
   const readyForAdminReview = missingDocuments.length === 0
@@ -245,8 +265,11 @@ export function orchestrateFinancialVerification(input: {
     documentCount: documents.length,
     averageConfidence,
     readyForAdminReview,
+    // 신뢰도가 실제로 낮을 때만 'low_confidence'라고 부른다. 판독은 잘 됐는데
+    // 어떤 단계가 아직 확인 중일 뿐인 경우까지 신뢰도 탓으로 돌리면 사유가 틀린다.
     recommendedStatus: readyForAdminReview ? 'ready_for_admin'
       : mismatches.length ? 'mismatch'
-        : missingDocuments.length ? 'needs_documents' : 'low_confidence',
+        : missingDocuments.length ? 'needs_documents'
+          : averageConfidence < .75 ? 'low_confidence' : 'needs_review',
   }
 }

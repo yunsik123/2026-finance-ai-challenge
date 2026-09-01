@@ -269,7 +269,11 @@ export function ownerSituation(input: {
     else if (application.status === 'manual_review') currentStage = reviewStages[4]
     else currentStage = reviewStages[3]
   }
-  if (fund && fund.status !== 'closed') currentStage = reviewStages[5]
+  // 펀드가 열려 있다고 해서 심사가 끝난 건 아니다. 예전에는 신청 여부와 무관하게
+  // 6단계로 덮어써서 "아직 신청 전인데 6단계 중 6단계"라는 자기모순이 나왔다.
+  const fundIsPublic = Boolean(fund && fund.status !== 'closed')
+  const approved = application?.status === 'approved' || application?.status === 'conditional'
+  if (fundIsPublic && approved) currentStage = reviewStages[5]
   else if (!application && connected.length) currentStage = reviewStages[1]
 
   const statusLabel = !application ? '아직 심사 신청 전'

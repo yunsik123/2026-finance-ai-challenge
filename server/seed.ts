@@ -1,4 +1,4 @@
-import type { Article, Database, EtfFund, Fund, Restaurant, Review } from './types.ts'
+import type { Article, Coupon, Database, EtfFund, Fund, Restaurant, Review } from './types.ts'
 
 const now = new Date()
 const day = (offset: number) => new Date(now.getTime() + offset * 86400000).toISOString()
@@ -144,8 +144,11 @@ export const funds: Fund[] = fundData.map((f, index) => {
     goal: f.goal, raised: f.raised, maxDiscount: f.maxDiscount, minIssueDiscount: 10, dailyRatePer100k: 0.5,
     salesBonus: Math.min(35, Math.round(restaurant.salesGrowth * 0.8)), earlyBonus: 50, startedAt: day(status === 'funding' ? -13 - index : -90 - index),
     endsAt: day(status === 'funding' ? 18 - index : -45), purpose: f.purpose, investorCount: Math.round(f.raised / 82000),
-    totalCouponIssued: status === 'trading' ? Math.round(f.raised * 0.078) : Math.round(f.raised * 0.016),
-    totalCouponUsed: status === 'trading' ? Math.round(f.raised * 0.046) : Math.round(f.raised * 0.006),
+    // 누적 발급·사용액은 계수로 만들지 않는다. 서버가 기동할 때 db.coupons에서 다시 계산한다.
+    // (예전에는 raised × 0.078 같은 집계값과 실제 쿠폰 레코드가 따로 놀아서
+    //  사장님 화면의 "발급 − 사용"이 "미사용 부담"과 20배까지 어긋났다.)
+    totalCouponIssued: 0,
+    totalCouponUsed: 0,
     openBuyAmount: 0, openSellAmount: 0,
     riskLevel: restaurant.stabilityScore >= 88 ? '낮음' : restaurant.stabilityScore >= 73 ? '보통' : '주의'
   }
@@ -181,6 +184,30 @@ export const etfs: EtfFund[] = [
   { id: 'e-localbakery', name: '동네빵 행복지수', emoji: '🥖', region: '전국', category: '베이커리', restaurantIds: ['r-oven', 'r-mokhwa'], minimum: 10000, maxDiscount: 30, growth: 21.2, members: 1260, description: '우리 밀과 지역 로스터리를 함께 응원하는 펀드' },
   { id: 'e-nighttable', name: '밤의 식탁', emoji: '🌙', region: '전국', category: '저녁', restaurantIds: ['r-bada', 'r-nokturn', 'r-podo'], minimum: 10000, maxDiscount: 32, growth: 12.4, members: 617, description: '저녁 시간을 빛내는 로컬 다이닝 3곳에 나눠 응원해요' }
 ]
+
+/**
+ * 지난 회차에 이미 사용된 쿠폰.
+ * 누적 발급·사용액을 db.coupons에서 파생시키기로 한 이상, "얼마나 쓰였는가"도
+ * 집계값이 아니라 실제 레코드로 남아 있어야 사장님 화면과 AI 답변이 같은 숫자를 말한다.
+ */
+const historyHolders = ['u-market-a', 'u-market-b', 'u-market-c', 'u-market-d', 'u-market-e', 'u-market-f', 'u-market-g', 'u-market-h']
+const usedCouponHistory: Coupon[] = funds.flatMap((fund, fundIndex) => {
+  const restaurant = restaurants.find((item) => item.id === fund.restaurantId)!
+  const count = fund.status === 'trading' ? 6 : 3
+  return Array.from({ length: count }, (_, seat) => {
+    const discount = 12 + ((fundIndex * 5 + seat * 7) % Math.max(1, fund.maxDiscount - 11))
+    return {
+      id: `c-used-${fund.id}-${seat}`,
+      userId: historyHolders[(fundIndex + seat) % historyHolders.length],
+      restaurantId: restaurant.id, fundId: fund.id,
+      title: `${restaurant.name} ${discount}% 응원 쿠폰`,
+      discount, maxDiscountWon: Math.floor(restaurant.maxMenuPrice * discount / 100),
+      type: 'fund' as const, status: 'used' as const,
+      createdAt: day(-70 - seat * 4), expiresAt: day(-8 - seat * 2),
+      usedAt: day(-30 - seat * 4), usedAtRestaurantId: restaurant.id,
+    }
+  })
+})
 
 export function createSeed(ownerHash: string, investorHash: string): Database {
   return {
@@ -243,6 +270,7 @@ export function createSeed(ownerHash: string, investorHash: string): Database {
       { id: 'o-seed-podo-buy-2', userId: 'u-market-d', fundId: 'f-podo', type: 'buy', originalAmount: 50000, remaining: 50000, status: 'open', createdAt: day(-0.6) },
     ],
     coupons: [
+      ...usedCouponHistory,
       { id: 'c-1', userId: 'u-investor', restaurantId: 'r-podo', fundId: 'f-podo', title: '포도상점 응원 쿠폰', discount: 25, maxDiscountWon: 12250, type: 'fund', status: 'available', expiresAt: day(90), createdAt: day(-10) },
       { id: 'c-2', userId: 'u-investor', restaurantId: 'r-huaxiang', fundId: 'f-huaxiang', title: '화향면관 첫 투자자 쿠폰', discount: 30, maxDiscountWon: 8400, type: 'fund', status: 'available', expiresAt: day(75), createdAt: day(-7) },
       { id: 'c-market-1', userId: 'u-owner', restaurantId: 'r-bada', fundId: 'f-bada', title: '바다의 식탁 20% 쿠폰', discount: 20, maxDiscountWon: 11600, type: 'dividend', status: 'listed', expiresAt: day(60), createdAt: day(-4) },

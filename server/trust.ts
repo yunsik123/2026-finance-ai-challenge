@@ -388,6 +388,9 @@ export function answerGraphProcessQuestion(question: string, subgraph: ReturnTyp
   return [title, ...steps.map((step) => `${step.properties.order}. ${step.label}: ${step.properties.instruction}`), ...where].join('\n')
 }
 
+/** 판독 상자가 가리킬 수 있는 필드. 여기 없는 이름은 모델이 지어낸 것으로 본다. */
+const OCR_BOX_FIELDS = ['merchant', 'businessNumber', 'date', 'total'] as const
+
 export function normalizeOcrBoxes(value: unknown) {
   if (!Array.isArray(value)) return []
   return value.slice(0, 24).flatMap((entry) => {
@@ -398,9 +401,15 @@ export function normalizeOcrBoxes(value: unknown) {
     if (width <= 0 || height <= 0) return []
     const safeX = clamp(x, 0, 999)
     const safeY = clamp(y, 0, 999)
+    // 모델이 스키마의 선택지 문자열("merchant|businessNumber|date|total")을 값으로
+    // 그대로 넣어오는 일이 있었다. 허용값 밖이면 좌표를 믿을 수 없으므로 버린다.
+    const field = String(item.field || '').trim()
+    if (!OCR_BOX_FIELDS.includes(field as (typeof OCR_BOX_FIELDS)[number])) return []
+    // 이미지 전체를 가리키는 상자는 "여기 어딘가"라는 뜻이라 근거로 쓸 수 없다.
+    if (safeX === 0 && safeY === 0 && width >= 1000 && height >= 1000) return []
     return [{
-      field: String(item.field || 'unknown').slice(0, 80),
-      label: String(item.label || item.field || '필드').slice(0, 120),
+      field,
+      label: String(item.label || field).slice(0, 120),
       value: String(item.value ?? '').slice(0, 300),
       bbox: [safeX, safeY, clamp(width, 1, 1000 - safeX), clamp(height, 1, 1000 - safeY)],
       confidence: clamp(Number(item.confidence || 0), 0, 1),
