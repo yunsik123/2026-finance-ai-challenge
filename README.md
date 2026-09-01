@@ -53,6 +53,18 @@ npm run dev
 
 Supabase가 설정되지 않은 로컬 환경과 `@meoktu.demo` 데모 계정은 기존 로컬 인증으로 계속 동작합니다. `GET /api/health`의 `authProvider` 값으로 현재 인증 모드를 확인할 수 있습니다.
 
+`SUPABASE_AUTH_DISABLED=1`을 주면 Supabase 키가 있어도 로컬 데모 인증만 사용합니다. 통합 테스트는 항상 이 모드로 서버를 띄우므로, 테스트를 돌려도 실제 Supabase 프로젝트에 계정이 생기지 않습니다.
+
+## 통합 테스트
+
+```bash
+npm run test:integration
+```
+
+`tests/run.ts`가 `SUPABASE_AUTH_DISABLED=1`로 서버를 직접 띄우고 4개 스위트를 실행한 뒤 서버를 정리합니다. 8787에 이미 서버가 떠 있으면 그 서버를 재사용하되, Supabase Auth 모드라면 실제 프로젝트를 오염시키지 않도록 실행을 중단합니다.
+
+`npm run build`와 `npm run check`는 `tsc -b --force`를 사용합니다. 증분 캐시(`.tsbuildinfo`)가 남아 있으면 실제 구문 오류를 건너뛰고 통과할 수 있어, 배포에서만 빌드가 깨지는 사고를 막기 위한 조치입니다.
+
 ## GraphRAG AI 상담
 
 모든 페이지 오른쪽 아래의 **AI와 상담하기** 버튼은 질문을 역할별 지식그래프에서 검색합니다. 관련 노드와 1-hop 관계를 추출한 뒤 생성형 AI 컨텍스트에 넣고, 화면에는 참고한 그래프 노드를 함께 표시합니다. AI 키가 없거나 외부 호출이 실패해도 절차 질문은 로컬 그래프 검색 결과로 답합니다.

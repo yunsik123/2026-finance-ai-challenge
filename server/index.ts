@@ -29,7 +29,8 @@ const secret = process.env.APP_SECRET || 'meoktu-local-development-secret-change
 const supabaseUrl = String(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim().replace(/\/$/, '')
 const supabasePublishableKey = String(process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '').trim()
 const supabaseServiceKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim()
-const supabaseAuthConfigured = Boolean(supabaseUrl && supabasePublishableKey)
+const supabaseAuthDisabled = /^(1|true|yes)$/i.test(String(process.env.SUPABASE_AUTH_DISABLED || '').trim())
+const supabaseAuthConfigured = Boolean(supabaseUrl && supabasePublishableKey) && !supabaseAuthDisabled
 const aiApiUrl = String(process.env.OPENAI_BASE_URL ? `${String(process.env.OPENAI_BASE_URL).replace(/\/$/, '')}/chat/completions` : (process.env.AI_API_URL || 'https://api.openai.com/v1/chat/completions')).trim()
 const aiApiKey = String(process.env.OPENAI_API_KEY || process.env.AI_API_KEY || '').trim()
 

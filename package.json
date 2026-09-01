@@ -7,10 +7,10 @@
     "dev": "concurrently -k -n SERVER,WEB -c green,cyan \"npm:dev:server\" \"npm:dev:web\"",
     "dev:server": "tsx watch server/index.ts",
     "dev:web": "vite --host 0.0.0.0",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b --force && vite build",
     "start": "tsx server/index.ts",
-    "check": "tsc -b --pretty false",
-    "test:integration": "tsx tests/smoke.ts && tsx tests/enhancements.ts && tsx tests/integration-new.ts && tsx tests/coupon-cancel.ts"
+    "check": "tsc -b --force --pretty false",
+    "test:integration": "tsx tests/run.ts"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
