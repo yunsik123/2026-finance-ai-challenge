@@ -9,7 +9,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 // 개발 서버가 이미 8787을 쓰고 있으면 MEOKTU_TEST_PORT 로 다른 포트에 띄워 검증할 수 있다.
 const port = Number(process.env.MEOKTU_TEST_PORT || 8787)
 const base = process.env.MEOKTU_TEST_BASE || `http://localhost:${port}`
-const suites = ['smoke.ts', 'enhancements.ts', 'integration-new.ts', 'coupon-cancel.ts', 'coupon-exchange.ts', 'merged-modules.ts', 'demo-and-data.ts', 'admin-operations.ts']
+const suites = ['smoke.ts', 'enhancements.ts', 'integration-new.ts', 'coupon-cancel.ts', 'coupon-exchange.ts', 'merged-modules.ts', 'demo-and-data.ts', 'admin-operations.ts', 'ai-and-ui-audit.ts']
 
 const healthy = async () => {
   try {

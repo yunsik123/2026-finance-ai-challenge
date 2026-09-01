@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { ArrowRight, Bot, Check, ExternalLink, Scale, Sparkles, X } from 'lucide-react'
 import { api } from './lib/api.ts'
-import type { PublicState, Restaurant } from './types.ts'
+import type { PublicState, Restaurant, Role } from './types.ts'
 
 const shortDate = (value: string) => new Date(value).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })
 const progress = (restaurant: Restaurant) => Math.min(100, Math.round(restaurant.fund.raised / restaurant.fund.goal * 100))
@@ -16,8 +16,8 @@ function fitSummary(restaurant: Restaurant) {
   return traits.slice(0, 2)
 }
 
-export default function InsightPage({ state, onSelect, notify }: { state: PublicState; onSelect: (restaurant: Restaurant) => void; notify: (message: string) => void }) {
-  const [messages, setMessages] = useState<Array<{ role: 'user' | 'ai'; text: string }>>([{ role: 'ai', text: '안녕하세요! 먹투 AI 상담원이에요. 궁금한 식당의 메뉴와 분위기, 투자·쿠폰 이용 방법을 편하게 물어보세요. 😊' }])
+export default function InsightPage({ state, role, onSelect, notify }: { state: PublicState; role: Role; onSelect: (restaurant: Restaurant) => void; notify: (message: string) => void }) {
+  const [messages, setMessages] = useState<Array<{ role: 'user' | 'ai'; text: string }>>([{ role: 'ai', text: role === 'owner' ? '안녕하세요, 사장님! 심사 현황과 펀딩 운영, 제출 자료를 편하게 물어보세요. 😊' : '안녕하세요! 식당 정보와 내 투자·쿠폰·예약 거래를 편하게 물어보세요. 😊' }])
   const [question, setQuestion] = useState('')
   const [asking, setAsking] = useState(false)
   const [online, setOnline] = useState(true)
@@ -39,7 +39,7 @@ export default function InsightPage({ state, onSelect, notify }: { state: Public
     if (!value || asking) return
     setMessages((current) => [...current, { role: 'user', text: value }])
     setQuestion(''); setAsking(true)
-    try { const result = await api<{ answer: string; mode: string }>('/api/ai/chat', { method: 'POST', body: JSON.stringify({ question: value }) }); setOnline(result.mode?.includes('generative') || result.mode === 'generative-ai'); setMessages((current) => [...current, { role: 'ai', text: result.answer }]) }
+    try { const result = await api<{ answer: string; mode: string }>('/api/ai/chat', { method: 'POST', body: JSON.stringify({ question: value, role, currentPath: '/insight' }) }); setOnline(result.mode?.includes('generative') || result.mode === 'generative-ai' || result.mode?.includes('local')); setMessages((current) => [...current, { role: 'ai', text: result.answer }]) }
     catch (error) { setOnline(false); notify((error as Error).message) }
     finally { setAsking(false) }
   }
@@ -55,7 +55,7 @@ export default function InsightPage({ state, onSelect, notify }: { state: Public
         </>}
       </section><div className="ai-picks"><div className="subheading"><div><span>AI 오늘의 발견</span><h2>성장성과 단골이 함께 좋은 곳</h2></div><Sparkles /></div>{[...state.restaurants].sort((a,b) => b.opportunityScore - a.opportunityScore).slice(0,3).map((restaurant, index) => <button className="pick-row" key={restaurant.id} onClick={() => onSelect(restaurant)}><span className="pick-rank">0{index+1}</span><span className="food-mini" style={{ background: `${restaurant.color}35` }}>{restaurant.emoji}</span><div><b>{restaurant.name}</b><small>{restaurant.neighborhood} · 성장 {restaurant.salesGrowth}% · 평점 {restaurant.rating}</small></div><span className="score-ring">{restaurant.opportunityScore}</span></button>)}</div>
       <div className="articles enhanced-articles"><div className="subheading"><div><span>이번 주 읽을거리</span><h2>AI가 정리한 상권 이야기</h2></div></div>{state.articles.map((item) => <button className="article-card article-button" key={item.id} onClick={() => setArticleId(item.id)}><span>{item.icon}</span><div><small>{item.eyebrow} · {shortDate(item.publishedAt)}</small><h3>{item.title}</h3><p>{item.summary}</p><div className="tag-row">{item.tags.map((tag) => <span key={tag}>{tag}</span>)}</div><b className="read-more">자세히 읽기 <ArrowRight /></b></div></button>)}</div>
-    </section><aside className="chat-panel"><div className="chat-head"><span className="bot-avatar"><Bot /></span><div><b>먹투 AI 상담원</b><small><i /> {online ? '상담 가능' : '기본 안내 모드'}</small></div></div><div className="chat-messages">{messages.map((message, index) => <div className={`chat-bubble ${message.role}`} key={index}>{message.text}</div>)}{asking && <div className="chat-bubble ai typing">···</div>}</div><div className="suggestions">{['펀드 등록은 어디서 해?','쿠폰 교환은 어디서 하나요?','최초 투자자 혜택 설명해줘','소복소복 리뷰와 강점 알려줘'].map((item) => <button key={item} onClick={() => ask(item)}>{item}</button>)}</div><form className="chat-input" onSubmit={(event) => { event.preventDefault(); ask() }}><input value={question} onChange={(event) => setQuestion(event.target.value)} placeholder="궁금한 것을 물어보세요" /><button><ArrowRight /></button></form><p className="ai-disclaimer">AI 답변은 참고용이며 투자 권유가 아닙니다.</p></aside></div>
+    </section><aside className="chat-panel"><div className="chat-head"><span className="bot-avatar"><Bot /></span><div><b>먹투 AI · {role === 'owner' ? '사장님 상담' : '투자자 상담'}</b><small><i /> {online ? '상담 가능' : '기본 안내 모드'}</small></div></div><div className="chat-messages">{messages.map((message, index) => <div className={`chat-bubble ${message.role}`} key={index}>{message.text}</div>)}{asking && <div className="chat-bubble ai typing">···</div>}</div><div className="suggestions">{(role === 'owner' ? ['내 심사는 지금 몇 단계야?','내 가게 모금과 쿠폰 부담 현황 알려줘','추가 펀딩은 어디서 시작해?','쿠폰 사용 확인은 어떻게 해?'] : ['내 쿠폰과 예약 주문 현황 알려줘','쿠폰 교환은 어디서 하나요?','투자금은 어떻게 회수해?','소복소복 리뷰와 강점 알려줘']).map((item) => <button key={item} onClick={() => ask(item)}>{item}</button>)}</div><form className="chat-input" onSubmit={(event) => { event.preventDefault(); ask() }}><input value={question} onChange={(event) => setQuestion(event.target.value)} placeholder={role === 'owner' ? '심사·펀딩·가게 운영을 물어보세요' : '투자·쿠폰·식당 정보를 물어보세요'} /><button><ArrowRight /></button></form><p className="ai-disclaimer">AI 답변은 참고용이며 투자 권유가 아닙니다.</p></aside></div>
     {article && <div className="modal-backdrop article-backdrop" onMouseDown={() => setArticleId(null)}><article className="article-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setArticleId(null)}><X /></button><span className="article-modal-icon">{article.icon}</span><small>{article.eyebrow} · {shortDate(article.publishedAt)}</small><h2>{article.title}</h2><div className="article-lead">{article.summary}</div><div className="article-content">{article.content.split('\n\n').map((paragraph) => <p key={paragraph}>{paragraph}</p>)}</div>{article.dataNote && <div className="article-data-note"><b>데이터 구분</b><p>{article.dataNote}</p></div>}{article.sourceUrl && <a href={article.sourceUrl} target="_blank" rel="noreferrer" className="article-source">{article.sourceName || '원문 자료'} <ExternalLink /></a>}<div className="tag-row">{article.tags.map((tag) => <span key={tag}>{tag}</span>)}</div></article></div>}
   </div>
 }

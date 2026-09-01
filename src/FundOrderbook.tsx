@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { ArrowDownToLine, ArrowUpFromLine, Clock3, Info, RotateCcw, TrendingUp } from 'lucide-react'
+import { ArrowDownToLine, ArrowUpFromLine, Banknote, Clock3, Info, ListOrdered, RotateCcw, ShieldCheck, Store, TrendingUp } from 'lucide-react'
 import { api } from './lib/api.ts'
 import type { MeState, PublicState, Restaurant } from './types.ts'
 
@@ -67,8 +67,17 @@ export default function FundOrderbook({ state, me, requireLogin, onSelect, refre
 
   if (loading) return <div className="orderbook-loading">예약 대기열을 불러오는 중...</div>
 
+  const totalBuy = books.reduce((sum, book) => sum + book.buyTotal, 0)
+  const totalSell = books.reduce((sum, book) => sum + book.sellTotal, 0)
+  const myOpenOrders = books.reduce((sum, book) => sum + [...book.buyQueue, ...book.sellQueue].filter((entry) => entry.mine).length, 0)
+
   return <section className="orderbook-section">
-    <div className="orderbook-rule"><Info /><p>{rule}</p></div>
+    <div className="orderbook-overview">
+      <div><span><ListOrdered /> FIFO RESERVATION</span><h2>가격 경쟁 없이<br />먼저 선 순서만 지켜요.</h2><p>{rule}</p></div>
+      <div className="orderbook-summary"><article><Store /><span>거래 가능 펀드</span><b>{books.length}곳</b></article><article className="buy"><ArrowDownToLine /><span>전체 투자 대기</span><b>{won(totalBuy)}</b></article><article className="sell"><ArrowUpFromLine /><span>전체 회수 대기</span><b>{won(totalSell)}</b></article><article><ShieldCheck /><span>내 대기 주문</span><b>{myOpenOrders}건</b></article></div>
+    </div>
+    <div className="orderbook-guide"><div><b>1</b><span><strong>식당 선택</strong><small>모금이 끝난 펀드를 고릅니다.</small></span></div><i /><div><b>2</b><span><strong>1,000원 단위 예약</strong><small>투자 또는 회수 금액을 예약합니다.</small></span></div><i /><div><b>3</b><span><strong>순서대로 자동 체결</strong><small>반대 주문이 오면 앞순서부터 교대합니다.</small></span></div></div>
+    <div className="orderbook-rule"><Info /><p>대기 금액은 수익률이나 시세가 아닙니다. 투자금 1,000원의 가치는 항상 1,000원으로 고정됩니다.</p></div>
     {!books.length && <div className="empty"><span>⏳</span><b>지금은 모금이 끝난 펀드가 없어요</b><p>모금 중인 펀드는 식당 발견에서 바로 투자하고 언제든 회수할 수 있어요.</p></div>}
     <div className="orderbook-grid">
       {books.map((book) => <article className="orderbook-card" key={book.fundId}>
@@ -78,7 +87,7 @@ export default function FundOrderbook({ state, me, requireLogin, onSelect, refre
             <b>{book.restaurantName}</b>
             <small>{book.neighborhood} · {book.category}</small>
           </div>
-          <span className="orderbook-raised"><TrendingUp /> {compactWon(book.raised)} 모집완료</span>
+          <div className="orderbook-head-badges"><span className="orderbook-raised"><TrendingUp /> {compactWon(book.raised)} 모집완료</span><span>최대 쿠폰 {book.maxDiscount}%</span></div>
         </div>
 
         <div className="orderbook-queues">
@@ -87,7 +96,7 @@ export default function FundOrderbook({ state, me, requireLogin, onSelect, refre
             {book.buyQueue.length ? book.buyQueue.slice(0, 5).map((entry) => <div className={`queue-row ${entry.mine ? 'mine' : ''}`} key={`${entry.rank}-${entry.waitingSince}`}>
               <span className="queue-rank">{entry.rank}</span>
               <b>{won(entry.amount)}</b>
-              <small><Clock3 /> {sinceLabel(entry.waitingSince)}</small>
+              <small><Clock3 /> {sinceLabel(entry.waitingSince)}{entry.amountAhead > 0 ? ` · 내 앞 ${won(entry.amountAhead)}` : ' · 맨 앞 순서'}</small>
               {entry.mine && entry.orderId && <button disabled={busy === entry.orderId} onClick={() => cancel(entry.orderId!)}><RotateCcw /> 취소</button>}
             </div>) : <p className="queue-empty">사려는 사람이 아직 없어요.</p>}
           </div>
@@ -97,7 +106,7 @@ export default function FundOrderbook({ state, me, requireLogin, onSelect, refre
             {book.sellQueue.length ? book.sellQueue.slice(0, 5).map((entry) => <div className={`queue-row ${entry.mine ? 'mine' : ''}`} key={`${entry.rank}-${entry.waitingSince}`}>
               <span className="queue-rank">{entry.rank}</span>
               <b>{won(entry.amount)}</b>
-              <small><Clock3 /> {sinceLabel(entry.waitingSince)}</small>
+              <small><Clock3 /> {sinceLabel(entry.waitingSince)}{entry.amountAhead > 0 ? ` · 내 앞 ${won(entry.amountAhead)}` : ' · 맨 앞 순서'}</small>
               {entry.mine && entry.orderId && <button disabled={busy === entry.orderId} onClick={() => cancel(entry.orderId!)}><RotateCcw /> 취소</button>}
             </div>) : <p className="queue-empty">나오려는 사람이 아직 없어요.</p>}
           </div>
@@ -105,7 +114,7 @@ export default function FundOrderbook({ state, me, requireLogin, onSelect, refre
 
         {/* styles.css 의 전역 footer 규칙(회색 배경 · 큰 패딩)이 걸리므로 div 로 둔다. */}
         <div className="orderbook-foot">
-          {book.myPosition > 0 && <span className="orderbook-mine">내 투자금 {won(book.myPosition)}</span>}
+          {book.myPosition > 0 ? <span className="orderbook-mine"><Banknote /> 내 투자금 <b>{won(book.myPosition)}</b></span> : <span className="orderbook-mine muted">현재 보유 투자금 없음</span>}
           <button className="button small" onClick={() => open(book)}>예약 걸기 · 상세 보기</button>
         </div>
       </article>)}

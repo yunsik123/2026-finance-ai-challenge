@@ -9,9 +9,9 @@ import { fileURLToPath } from 'node:url'
 import { createServer } from 'node:http'
 import { Server } from 'socket.io'
 import { articles as seedArticles, createSeed, funds as seedFunds, restaurants as seedRestaurants, reviews as seedReviews } from './seed.ts'
-import type { Application, Coupon, CouponListing, CouponOffer, CouponTrade, DataConnection, Database, Fund, Notification, Order, Position, Review, Role, SupportRequest, User } from './types.ts'
+import type { Application, Coupon, CouponListing, CouponOffer, CouponTrade, DataConnection, Database, Fund, FundStatus, Notification, Order, Position, Review, Role, SupportRequest, User } from './types.ts'
 import { answerGraphProcessQuestion, assessRestaurant, buildKnowledgeGraph, normalizeOcrBoxes, retrieveKnowledgeSubgraph } from './trust.ts'
-import { answerNavigationQuestion, isNavigationQuestion, matchUiTasks, navigationBrief } from './sitemap.ts'
+import { answerNavigationQuestion, isNavigationQuestion, matchUiTasks, navigationBrief, pageForRoute } from './sitemap.ts'
 import {
   assessCredit, combineAssessments, creditModelVersion, creditReferences, deriveCreditInput,
   featureSpecs, industries, industryProfiles, toIndustry, type CreditAssessment,
@@ -2362,6 +2362,178 @@ function localAiAnswer(question: string) {
   return '식당 이름이나 “회수는 어떻게 해?”, “단골이 많은 곳 추천해줘”, “쿠폰은 언제 받아?”처럼 물어보세요. 먹투의 가상 식당 데이터와 이용 규칙을 바탕으로 설명해드릴게요.'
 }
 
+type ConsultationAccount = {
+  role: Role
+  cash: number
+  invested: number
+  positions: number
+  readyCoupons: number
+  coupons: Record<string, number>
+  openOrders: number
+  buyWaiting: number
+  sellWaiting: number
+  openListings: number
+  offersReceived: number
+  offersSent: number
+  unreadNotifications: number
+  favorites: number
+}
+
+/**
+ * 로그인 사용자의 현재 원장에서 상담에 필요한 집계값만 뽑는다.
+ * 쿠폰 코드·상대방·문서 원문처럼 상담에 불필요한 개인정보는 포함하지 않는다.
+ */
+function consultationAccount(user?: SessionUser): ConsultationAccount | undefined {
+  if (!user || user.role === 'admin') return undefined
+  if (user.sessionMode === 'demo') {
+    const state = demoMeState(user)
+    const openOrders = (state.orders as Order[]).filter((item) => ['open', 'partial'].includes(item.status))
+    const coupons = state.coupons as Array<Coupon & { status: Coupon['status'] }>
+    return {
+      role: user.role,
+      cash: Number(state.user.cash || 0),
+      invested: (state.positions as Position[]).reduce((sum, item) => sum + item.amount, 0),
+      positions: state.positions.length,
+      readyCoupons: (state.positions as Position[]).filter((item) => item.couponProgress >= 10).length,
+      coupons: Object.fromEntries(['available', 'listed', 'offered', 'redeeming', 'used', 'expired'].map((status) => [status, coupons.filter((item) => item.status === status).length])),
+      openOrders: openOrders.length,
+      buyWaiting: openOrders.filter((item) => item.type === 'buy').reduce((sum, item) => sum + item.remaining, 0),
+      sellWaiting: openOrders.filter((item) => item.type === 'sell').reduce((sum, item) => sum + item.remaining, 0),
+      openListings: state.exchange.openListings,
+      offersReceived: state.exchange.offersReceived,
+      offersSent: state.exchange.offersSent,
+      unreadNotifications: state.unreadNotifications,
+      favorites: state.favoriteRestaurantIds.length,
+    }
+  }
+  const positions = db.positions.filter((item) => item.userId === user.id && item.amount > 0)
+  const coupons = db.coupons.filter((item) => item.userId === user.id)
+  const openOrders = db.orders.filter((item) => item.userId === user.id && item.remaining > 0 && ['open', 'partial'].includes(item.status))
+  return {
+    role: user.role,
+    cash: user.cash,
+    invested: positions.reduce((sum, item) => sum + item.amount, 0),
+    positions: positions.length,
+    readyCoupons: positions.filter((item) => item.couponProgress >= 10).length,
+    coupons: Object.fromEntries(['available', 'listed', 'offered', 'redeeming', 'used', 'expired'].map((status) => [status, coupons.filter((item) => item.status === status).length])),
+    openOrders: openOrders.length,
+    buyWaiting: openOrders.filter((item) => item.type === 'buy').reduce((sum, item) => sum + item.remaining, 0),
+    sellWaiting: openOrders.filter((item) => item.type === 'sell').reduce((sum, item) => sum + item.remaining, 0),
+    openListings: db.couponListings.filter((item) => item.userId === user.id && item.status === 'open').length,
+    offersReceived: db.couponOffers.filter((offer) => offer.status === 'pending' && db.couponListings.some((listing) => listing.id === offer.listingId && listing.userId === user.id)).length,
+    offersSent: db.couponOffers.filter((offer) => offer.offerUserId === user.id && offer.status === 'pending').length,
+    unreadNotifications: db.notifications.filter((item) => item.userId === user.id && !item.read).length,
+    favorites: db.favorites.filter((item) => item.userId === user.id).length,
+  }
+}
+
+function isAccountStatusQuestion(question: string) {
+  const text = question.replace(/\s/g, '')
+  return /(내|나의|보유|잔액|현재).*(쿠폰|머니|잔액|투자금|투자내역|예약|주문|대기|교환제안|알림|찜)|몇(장|건)|쿠폰.*현황|예약.*현황/.test(text)
+}
+
+function answerAccountStatusQuestion(question: string, account?: ConsultationAccount) {
+  if (!isAccountStatusQuestion(question)) return ''
+  if (!account) return '내 투자·쿠폰·예약 거래 현황은 로그인한 뒤 확인할 수 있어요. 오른쪽 위 “로그인”에서 가입한 유형을 고르고 로그인해주세요.'
+  const text = question.replace(/\s/g, '')
+  const money = (value: number) => `${Math.round(value).toLocaleString('ko-KR')}원`
+  const parts: string[] = []
+  if (/(머니|잔액|투자금|투자내역)/.test(text)) parts.push(`사용 가능한 먹투머니는 ${money(account.cash)}이고, ${account.positions}개 식당에 총 ${money(account.invested)}을 투자 중이에요.`)
+  if (/(쿠폰|몇장)/.test(text)) parts.push(`쿠폰은 사용 가능 ${account.coupons.available || 0}장, 교환 중 ${(account.coupons.listed || 0) + (account.coupons.offered || 0)}장, 매장 확인 대기 ${account.coupons.redeeming || 0}장이에요. 추가로 발급 가능한 투자 혜택은 ${account.readyCoupons}장입니다.`)
+  if (/(예약|주문|대기|회수)/.test(text)) parts.push(`예약 주문은 ${account.openOrders}건이며 투자 대기 ${money(account.buyWaiting)}, 회수 대기 ${money(account.sellWaiting)}입니다.`)
+  if (/(교환|제안)/.test(text)) parts.push(`교환장 등록 ${account.openListings}건, 받은 제안 ${account.offersReceived}건, 보낸 제안 ${account.offersSent}건이 처리 중이에요.`)
+  if (/알림/.test(text)) parts.push(`읽지 않은 알림은 ${account.unreadNotifications}건이에요.`)
+  if (/(찜|관심)/.test(text)) parts.push(`관심 식당은 ${account.favorites}곳이에요.`)
+  if (!parts.length) parts.push(`현재 ${account.positions}개 식당에 투자 중이고 사용 가능한 쿠폰은 ${account.coupons.available || 0}장, 대기 주문은 ${account.openOrders}건이에요.`)
+  parts.push('자세한 내역은 상단 “마이페이지”에서 확인할 수 있어요.')
+  return parts.join(' ')
+}
+
+type OwnerLedger = {
+  restaurantName: string
+  fundStatus?: FundStatus
+  round: number
+  goal: number
+  raised: number
+  investorCount: number
+  couponIssuedWon: number
+  couponUsedWon: number
+  outstandingCouponWon: number
+  redeemingCoupons: number
+  usedCoupons: number
+  salesDisclosure: boolean
+  applicationStatus?: string
+  unreadNotifications: number
+  openSupport: number
+}
+
+/**
+ * 사장님 상담의 원장은 개인 지갑이 아니라 "내 가게"다.
+ * 투자자용 집계(먹투머니·내 투자금)를 그대로 읽어주면 사장님에게는 아무 의미가 없어서,
+ * 모금·투자자·쿠폰 부담처럼 실제로 결정을 바꾸는 값만 따로 모은다.
+ */
+function ownerLedgerFor(user?: SessionUser): OwnerLedger | undefined {
+  if (!user || user.role !== 'owner') return undefined
+  const restaurant = user.sessionMode === 'demo'
+    ? db.restaurants[0]
+    : db.restaurants.find((item) => item.ownerId === user.id)
+  if (!restaurant) return undefined
+  const fund = db.funds.find((item) => item.restaurantId === restaurant.id)
+  const coupons = db.coupons.filter((item) => item.restaurantId === restaurant.id)
+  const application = [...db.applications].reverse().find((item) => item.userId === user.id)
+  return {
+    restaurantName: restaurant.name,
+    fundStatus: fund?.status,
+    round: fund?.round || 0,
+    goal: fund?.goal || 0,
+    raised: fund?.raised || 0,
+    investorCount: fund?.investorCount || 0,
+    couponIssuedWon: fund?.totalCouponIssued || 0,
+    couponUsedWon: fund?.totalCouponUsed || 0,
+    // 아직 쓰이지 않은 쿠폰의 최대 할인액이 다음 달에 실제로 나갈 수 있는 부담이다.
+    outstandingCouponWon: coupons.filter((item) => ['available', 'listed', 'offered', 'redeeming'].includes(item.status)).reduce((sum, item) => sum + item.maxDiscountWon, 0),
+    redeemingCoupons: coupons.filter((item) => item.status === 'redeeming').length,
+    usedCoupons: coupons.filter((item) => item.status === 'used').length,
+    salesDisclosure: Boolean(restaurant.salesDisclosure),
+    applicationStatus: application?.status,
+    unreadNotifications: db.notifications.filter((item) => item.userId === user.id && !item.read).length,
+    openSupport: (db.supportRequests || []).filter((item) => item.userId === user.id && !['answered', 'closed'].includes(item.status)).length,
+  }
+}
+
+const fundStatusLabel: Record<FundStatus, string> = { funding: '모금 중', trading: '예약 거래 중', closed: '종료' }
+const applicationStatusLabel: Record<string, string> = {
+  approved: '승인', conditional: '조건부 승인', manual_review: '수동 검토 중', rejected: '보완 필요',
+}
+
+/**
+ * 사장님은 "투자자 몇 명이야?"처럼 주어 없이 가게 수치를 묻는다.
+ * 투자자용 판별식은 "내/보유"를 요구해서 이런 질문을 놓치므로 사장님용을 따로 둔다.
+ */
+function isOwnerLedgerQuestion(question: string) {
+  const text = question.replace(/\s/g, '')
+  return isAccountStatusQuestion(question)
+    || /(모금|모집|투자자|쿠폰|매출|부담|배당|정산).*(몇|얼마|현황|상태|됐)/.test(text)
+    || /몇(명|곳)/.test(text)
+}
+
+function answerOwnerLedgerQuestion(question: string, ledger?: OwnerLedger) {
+  if (!isOwnerLedgerQuestion(question)) return ''
+  if (!ledger) return '아직 등록된 가게가 없어요. 상단 “사장님 센터”에서 펀딩 신청을 먼저 진행하면 운영 현황을 안내해드릴 수 있어요.'
+  const text = question.replace(/\s/g, '')
+  const money = (value: number) => `${Math.round(value).toLocaleString('ko-KR')}원`
+  const parts: string[] = []
+  if (/(쿠폰|몇장)/.test(text)) parts.push(`${ledger.restaurantName}에서 발급된 쿠폰의 최대 할인액은 ${money(ledger.couponIssuedWon)}이고 실제 사용된 금액은 ${money(ledger.couponUsedWon)}이에요. 아직 사용되지 않은 쿠폰 부담은 ${money(ledger.outstandingCouponWon)}, 지금 매장 확인을 기다리는 쿠폰은 ${ledger.redeemingCoupons}장입니다.`)
+  if (/(모금|펀드|펀딩|투자금|투자자|목표)/.test(text)) parts.push(`${ledger.round}회차 펀드는 ${ledger.fundStatus ? fundStatusLabel[ledger.fundStatus] : '준비 중'} 상태이고, 목표 ${money(ledger.goal)} 중 ${money(ledger.raised)}이 모였어요. 함께하는 투자자는 ${ledger.investorCount}명입니다.`)
+  if (/(심사|승인|신청)/.test(text)) parts.push(ledger.applicationStatus ? `최근 심사 결과는 “${applicationStatusLabel[ledger.applicationStatus] || ledger.applicationStatus}”예요.` : '아직 제출한 심사 신청이 없어요.')
+  if (/(매출|공개)/.test(text)) parts.push(`월매출은 현재 투자자에게 ${ledger.salesDisclosure ? '공개' : '비공개'} 상태예요.`)
+  if (/알림/.test(text)) parts.push(`읽지 않은 알림은 ${ledger.unreadNotifications}건이에요.`)
+  if (/(문의|신고)/.test(text)) parts.push(`처리 중인 내 문의는 ${ledger.openSupport}건이에요.`)
+  if (!parts.length) parts.push(`${ledger.restaurantName}의 ${ledger.round}회차 펀드는 목표 ${money(ledger.goal)} 중 ${money(ledger.raised)}이 모였고 투자자는 ${ledger.investorCount}명이에요. 아직 사용되지 않은 쿠폰 부담은 ${money(ledger.outstandingCouponWon)}입니다.`)
+  parts.push('자세한 운영 현황은 상단 “사장님 센터”의 운영 대시보드에서 확인할 수 있어요.')
+  return parts.join(' ')
+}
+
 /**
  * 신용평가 모델 자체를 공개한다. 검증 데이터룸에서 "이 등급이 어떻게 나오는가"를
  * 보여주기 위한 것이고, 특정 사업체 값은 담지 않는다.
@@ -2470,27 +2642,27 @@ app.post('/api/ai/management-credit-diagnosis', auth('owner'), async (req: Authe
 app.post('/api/ai/chat', async (req: AuthedRequest, res) => {
   const question = String(req.body.question || '').slice(0, 800)
   if (!question.trim()) return res.status(400).json({ error: '궁금한 내용을 입력해주세요.' })
+  const asker = await userFromAuthorization(req.headers.authorization).catch(() => undefined)
   // 로그인 없이도 상담은 열어두되, 외부 AI 호출 비용이 무제한으로 새지 않도록 IP 단위로 제한한다.
-  const caller = (await userFromAuthorization(req.headers.authorization).catch(() => undefined))?.id
+  const caller = asker?.id
     || String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'anonymous').split(',')[0].trim()
   if (!rateLimit(`ai:${caller}`, 20, 60_000)) return res.status(429).json({ error: 'AI 상담 요청이 너무 많아요. 잠시 후 다시 시도해주세요.' })
   const normalizedQuestion = question.replace(/\s/g, '').toLocaleLowerCase('ko')
   // 화면 안내 질문은 묻는 내용에 맞는 역할 그래프를 써야 한다.
   // 투자자로 로그인한 사람이 "펀드 등록은 어디서 해?"라고 물으면 사장님 절차를 봐야 답이 된다.
-  const askedRole: Role = req.body.role === 'owner' ? 'owner' : 'investor'
+  const askedRole: Role = asker?.role === 'owner' ? 'owner' : req.body.role === 'owner' ? 'owner' : 'investor'
   const ownerIntent = /(펀딩|펀드)(등록|신청|개설|모집)|사장님|소상공인|자료업로드|서류제출|심사접수|매출공개|영업신고|사업자등록/.test(normalizedQuestion)
   const role: Role = ownerIntent ? 'owner' : askedRole
   const requestedRestaurant = typeof req.body.restaurantId === 'string' ? db.restaurants.find((item) => item.id === req.body.restaurantId) : undefined
   const mentionedRestaurant = db.restaurants.find((item) => normalizedQuestion.includes(item.name.replace(/\s/g, '').toLocaleLowerCase('ko')))
-  const asker = await userFromAuthorization(req.headers.authorization).catch(() => undefined)
   // 사장님이 "내 심사 어떻게 돼가?"처럼 가게 이름을 빼고 물어도 자기 가게 기준으로 답해야 한다.
   const ownRestaurant = asker?.role === 'owner' ? db.restaurants.find((item) => item.ownerId === asker.id) : undefined
   const graphRestaurant = mentionedRestaurant || requestedRestaurant || ownRestaurant
   const graphFund = graphRestaurant ? db.funds.find((item) => item.restaurantId === graphRestaurant.id) : undefined
   const askerPosition = asker && graphFund ? db.positions.find((item) => item.userId === asker.id && item.fundId === graphFund.id && item.amount > 0) : undefined
-  const application = graphRestaurant
-    ? [...db.applications].reverse().find((item) => item.restaurantName === graphRestaurant.name || (asker?.role === 'owner' && item.userId === asker.id))
-    : asker?.role === 'owner' ? [...db.applications].reverse().find((item) => item.userId === asker.id) : undefined
+  // 심사·신용·제출자료는 해당 사장님 본인 상담에만 붙인다. 투자자나 다른 가게 질문에는 절대 섞지 않는다.
+  const ownsGraphRestaurant = Boolean(asker?.role === 'owner' && (!graphRestaurant || graphRestaurant.ownerId === asker.id))
+  const application = ownsGraphRestaurant ? [...db.applications].reverse().find((item) => item.userId === asker!.id) : undefined
   const financialRun = application?.data?.financialVerification as Record<string, any> | undefined
   const knowledgeGraph = buildKnowledgeGraph(role, graphRestaurant, graphFund, {
     assessment: graphRestaurant ? assessRestaurant(graphRestaurant, graphFund) : undefined,
@@ -2501,11 +2673,38 @@ app.post('/api/ai/chat', async (req: AuthedRequest, res) => {
       mismatchCount: (financialRun.mismatches || []).length, missingCount: (financialRun.missingDocuments || []).length,
     },
   })
+  // 투자자는 개인 지갑 원장을, 사장님은 내 가게 운영 원장을 본다. 서로 섞이면 답이 무의미해진다.
+  const ownerRole = asker?.role === 'owner'
+  const account = ownerRole ? undefined : consultationAccount(asker)
+  const ownerLedger = ownerLedgerFor(asker)
+  const accountQuestion = ownerRole ? isOwnerLedgerQuestion(question) : isAccountStatusQuestion(question)
+  if (accountQuestion && (account || ownerLedger)) {
+    knowledgeGraph.nodes.push({
+      id: 'viewer:account', type: 'AccountSummary', label: ownerRole ? '내 가게 운영 현황' : '내 투자자 계정 현황',
+      source: 'MEOKTU_ACCOUNT_LEDGER', properties: ownerLedger ? {
+        role: 'owner', restaurantName: ownerLedger.restaurantName, fundRound: ownerLedger.round,
+        fundStatus: ownerLedger.fundStatus || 'none', goal: ownerLedger.goal, raised: ownerLedger.raised,
+        investorCount: ownerLedger.investorCount, couponIssuedWon: ownerLedger.couponIssuedWon,
+        couponUsedWon: ownerLedger.couponUsedWon, outstandingCouponWon: ownerLedger.outstandingCouponWon,
+        redeemingCoupons: ownerLedger.redeemingCoupons, usedCoupons: ownerLedger.usedCoupons,
+        salesDisclosure: ownerLedger.salesDisclosure, applicationStatus: ownerLedger.applicationStatus || 'none',
+        unreadNotifications: ownerLedger.unreadNotifications, openSupport: ownerLedger.openSupport,
+      } : {
+        role: account!.role, cash: account!.cash, invested: account!.invested, positions: account!.positions,
+        readyCoupons: account!.readyCoupons, availableCoupons: account!.coupons.available || 0,
+        listedCoupons: account!.coupons.listed || 0, offeredCoupons: account!.coupons.offered || 0,
+        redeemingCoupons: account!.coupons.redeeming || 0, openOrders: account!.openOrders,
+        buyWaiting: account!.buyWaiting, sellWaiting: account!.sellWaiting, openListings: account!.openListings,
+        offersReceived: account!.offersReceived, offersSent: account!.offersSent,
+        unreadNotifications: account!.unreadNotifications, favorites: account!.favorites,
+      },
+    })
+  }
   // 사장님 개인 상황과 공적 지원제도를 같은 그래프에 올린다.
   // 이게 있어야 "지금 내 심사 어디까지 됐어?", "뭐가 부족해?", "정책자금 받을 수 있어?"에
   // 절차 설명이 아니라 실제 현재값으로 답할 수 있다.
-  const ownerConnections = asker ? db.dataConnections.filter((item) => item.userId === asker.id) : []
-  const situation = (asker?.role === 'owner' || application)
+  const ownerConnections = asker?.role === 'owner' ? db.dataConnections.filter((item) => item.userId === asker.id) : []
+  const situation = ownsGraphRestaurant
     ? ownerSituation({ application, connections: ownerConnections, restaurant: graphRestaurant, fund: graphFund })
     : undefined
   if (situation) {
@@ -2535,6 +2734,11 @@ app.post('/api/ai/chat', async (req: AuthedRequest, res) => {
   if (matchedPrograms.length) knowledgeGraph.nodes.push(...supportProgramNodes(matchedPrograms))
 
   const retrievedGraph = retrieveKnowledgeSubgraph(knowledgeGraph, question)
+  if (accountQuestion && (account || ownerLedger) && !retrievedGraph.nodes.some((node) => node.id === 'viewer:account')) {
+    const accountNode = knowledgeGraph.nodes.find((node) => node.id === 'viewer:account')
+    if (accountNode) retrievedGraph.nodes.push(accountNode)
+    retrievedGraph.sources.unshift({ id: 'viewer:account', label: ownerRole ? '내 가게 운영 현황' : '내 투자자 계정 현황', type: 'AccountSummary' })
+  }
   // 검색에서 밀려나도 사장님 현황·지원제도는 근거에 남긴다. 이게 질문의 핵심일 때가 많다.
   if (situation && isOwnerStatusQuestion(question) && !retrievedGraph.nodes.some((node) => node.id === 'owner:situation')) {
     retrievedGraph.nodes.push(...ownerSituationGraph(situation).nodes as typeof retrievedGraph.nodes)
@@ -2545,16 +2749,36 @@ app.post('/api/ai/chat', async (req: AuthedRequest, res) => {
     }
   }
   // 화면 지도는 별도로 뽑는다. 절차 노드에 밀려서 빠지면 "어디로 가야 해요" 질문이 다시 망가진다.
-  const navigation = navigationBrief(question)
+  const currentPage = pageForRoute(req.body.currentPath)
+  const navigation = { ...navigationBrief(question), currentScreen: currentPage ? { name: currentPage.name, route: currentPage.route, purpose: currentPage.purpose, actions: currentPage.actions } : undefined }
   const navigationAnswer = answerNavigationQuestion(question)
   const wantsNavigation = isNavigationQuestion(question) || matchUiTasks(question, 1).length > 0
   const graphAnswer = answerGraphProcessQuestion(question, retrievedGraph)
   const fallback = localAiAnswer(question)
+  const accountAnswer = ownerRole ? answerOwnerLedgerQuestion(question, ownerLedger) : answerAccountStatusQuestion(question, account)
   const statusAnswer = situation && isOwnerStatusQuestion(question) ? answerOwnerStatusQuestion(situation) : ''
   const supportAnswer = isSupportQuestion(question) ? answerSupportQuestion(question) : ''
+  const currentPageAnswer = currentPage && /(이\s*화면|여기서|현재\s*화면)/.test(question)
+    ? `지금 보고 있는 “${currentPage.name}”은 ${currentPage.purpose}입니다. 여기에서 ${currentPage.actions.slice(0, 4).join(', ')}을 할 수 있어요.` : ''
   // 우선순위: 내 현황 > 화면 위치 > 지원제도 > 절차 > 일반 답변.
   // "내 심사 어디까지 됐어?"에 절차 단계를 읊어주면 답이 안 된다.
-  const localAnswer = statusAnswer || ((wantsNavigation && navigationAnswer) ? navigationAnswer : (supportAnswer || graphAnswer || fallback))
+  // 사장님 질문은 "내 가게 ~"라는 이유만으로 전부 심사 안내에 걸린다.
+  // 모금·쿠폰·투자자 같은 운영 수치를 물었으면 심사 단계가 아니라 운영 원장으로 답해야 한다.
+  const ownerAsk = question.replace(/\s/g, '')
+  const reviewIntent = /(심사|신청|승인|보완|자료|서류|등급|접수|단계)/.test(ownerAsk)
+  const opsIntent = /(모금|모집|쿠폰|투자자|매출|부담|목표|배당|정산|알림|문의)/.test(ownerAsk)
+  const ledgerAnswer = ownerRole
+    ? (!reviewIntent && opsIntent ? (accountAnswer || statusAnswer) : (statusAnswer || accountAnswer))
+    : (accountAnswer || statusAnswer)
+  const localAnswer = ledgerAnswer || currentPageAnswer || ((wantsNavigation && navigationAnswer) ? navigationAnswer : (supportAnswer || graphAnswer || fallback))
+  // 개인 원장 값은 외부 생성형 서비스로 보내지 않고 서버 원장에서 집계한 답을 그대로 돌려준다.
+  if (ledgerAnswer) return res.json({
+    answer: localAnswer,
+    mode: ownerRole ? 'owner-ledger-local' : 'account-ledger-local',
+    provider: 'meoktu-private-ledger',
+    sources: retrievedGraph.sources,
+    retrieval: { strategy: 'private-ledger-summary', graphVersion: retrievedGraph.graphVersion },
+  })
   const apiUrl = aiApiUrl
   const apiKey = aiApiKey
   if (!apiUrl || !apiKey) return res.json({
@@ -2610,7 +2834,7 @@ app.post('/api/ai/chat', async (req: AuthedRequest, res) => {
         messages: [
           {
             role: 'system',
-            content: `너는 먹투 웹사이트의 친절하고 신중한 한국어 생성형 AI 상담원이다. 실제로 웹사이트를 함께 보며 안내하는 직원처럼 말한다.
+            content: `너는 먹투 웹사이트의 친절하고 신중한 한국어 생성형 AI 상담원이다. 실제로 웹사이트를 함께 보며 안내하는 직원처럼 말한다. 현재 상담 역할은 ${role === 'owner' ? '사장님' : '투자자'}이고, 역할에 없는 비공개 정보를 추측하거나 공개하면 안 된다.
 
 [화면 안내 규칙 — 가장 중요]
 - "어디로 가야 해요", "어디서 하나요", "어떻게 신청해요" 같은 질문은 **화면 위치 질문**이다. 반드시 아래 '화면 지도'의 menuPath와 steps를 그대로 활용해 "상단 메뉴의 OO을 클릭하세요"처럼 눌러야 할 메뉴와 버튼 이름으로 답한다.

@@ -35,7 +35,7 @@ export default function MarketPage(props: {
         <div className="page-heading compact">
           <span className="eyebrow coral"><CandlestickChart /> 펀드 예약 거래</span>
           <h1>모금이 끝난 자리를<br />1,000원씩 이어받아요.</h1>
-          <p>가격은 1,000원으로 고정이고, 먼저 예약한 순서대로 자리를 넘겨받습니다.</p>
+          <p>가격은 1,000원으로 고정입니다. 투자 대기와 회수 대기를 한눈에 보고, 먼저 예약한 순서대로 자리를 안전하게 이어받습니다.</p>
         </div>
         <FundOrderbook {...props} />
       </div>}

@@ -13,6 +13,7 @@ import './polish.css'
 import './discover-ai.css'
 import './design-unify.css'
 import './admin.css'
+import './ux-review.css'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

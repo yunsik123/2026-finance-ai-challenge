@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { ArrowLeftRight, Check, ChevronRight, Clock3, QrCode, Ticket, X } from 'lucide-react'
+import { ArrowLeftRight, BadgeCheck, Check, ChevronRight, Clock3, Gift, QrCode, Ticket, WalletCards, X } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
 import { api } from './lib/api.ts'
 import type { Coupon, ExchangeRules, MeState, PublicState } from './types.ts'
@@ -102,10 +102,16 @@ export default function CouponWallet({ me, state, refresh, notify }: {
   const [listing, setListing] = useState<Coupon | null>(null)
   const [codes, setCodes] = useState<Record<string, string>>({})
   const [showArchive, setShowArchive] = useState(false)
+  const [filter, setFilter] = useState<'all' | 'available' | 'exchange' | 'redeeming'>('all')
 
   const active = useMemo(() => me.coupons.filter((coupon) => !['used', 'expired'].includes(coupon.status)), [me.coupons])
   const archive = useMemo(() => me.coupons.filter((coupon) => ['used', 'expired'].includes(coupon.status)), [me.coupons])
+  const visible = useMemo(() => active.filter((coupon) => filter === 'all'
+    || (filter === 'exchange' ? ['listed', 'offered'].includes(coupon.status) : coupon.status === filter)), [active, filter])
   const totalValue = active.reduce((sum, coupon) => sum + coupon.maxDiscountWon, 0)
+  const availableCount = active.filter((coupon) => coupon.status === 'available').length
+  const exchangeCount = active.filter((coupon) => ['listed', 'offered'].includes(coupon.status)).length
+  const redeemingCount = active.filter((coupon) => coupon.status === 'redeeming').length
 
   const submitListing = async (body: Record<string, unknown>) => {
     if (!listing) return
@@ -131,9 +137,12 @@ export default function CouponWallet({ me, state, refresh, notify }: {
   }
 
   return <section className="my-section wallet-section">
-    <div className="subheading">
-      <div><span>내 지갑</span><h2>보유 쿠폰 {active.length}장 · 최대 {won(totalValue)}</h2></div>
-      <NavLink to="/market">교환장 가기 <ChevronRight /></NavLink>
+    <div className="coupon-wallet-hero">
+      <div className="coupon-wallet-title"><span><WalletCards /> MY COUPON WALLET</span><h2>내 혜택을 한곳에서<br />쓰고, 바꾸고, 관리해요.</h2><p>사용 가능한 쿠폰과 교환 중인 쿠폰을 상태별로 확인할 수 있습니다.</p><NavLink to="/market" className="button cream">쿠폰 교환장 가기 <ChevronRight /></NavLink></div>
+      <div className="coupon-wallet-summary">
+        <div className="wallet-total"><Gift /><span>보유 혜택</span><b>{active.length}장</b><strong>최대 {won(totalValue)}</strong></div>
+        <div className="wallet-mini-stats"><div><BadgeCheck /><span>바로 사용</span><b>{availableCount}장</b></div><div><ArrowLeftRight /><span>교환 진행</span><b>{exchangeCount}장</b></div><div><Clock3 /><span>확인 대기</span><b>{redeemingCount}장</b></div></div>
+      </div>
     </div>
 
     {(me.exchange.offersReceived > 0 || me.exchange.offersSent > 0) && <NavLink to="/market" className="wallet-banner">
@@ -146,20 +155,24 @@ export default function CouponWallet({ me, state, refresh, notify }: {
       <ChevronRight />
     </NavLink>}
 
-    <div className="my-coupons">{active.map((coupon) => {
+    <div className="coupon-wallet-toolbar"><div><span>쿠폰 상태</span><b>{visible.length}장의 쿠폰</b></div><div role="tablist" aria-label="쿠폰 상태 필터">
+      {([['all', `전체 ${active.length}`], ['available', `사용 가능 ${availableCount}`], ['exchange', `교환 중 ${exchangeCount}`], ['redeeming', `확인 대기 ${redeemingCount}`]] as const).map(([value, label]) => <button role="tab" aria-selected={filter === value} className={filter === value ? 'active' : ''} key={value} onClick={() => setFilter(value)}>{label}</button>)}
+    </div></div>
+
+    <div className="my-coupons coupon-wallet-grid">{visible.map((coupon) => {
       const code = codes[coupon.id] || coupon.redeemCode
       const expiring = (coupon.daysLeft ?? 99) < rules.minDaysLeft
       return <article className={`my-coupon ${coupon.status} ${expiring ? 'expiring' : ''}`} key={coupon.id}>
-        <span className="coupon-food">{coupon.restaurant?.emoji || '🎟️'}</span>
-        <div>
-          <small>{coupon.type === 'dividend' ? '깜짝 배당' : coupon.type === 'etf' ? 'ETF 펀드' : '투자 혜택'} · {statusLabel[coupon.status]}</small>
-          <h3>{coupon.title}</h3>
-          <b>{coupon.discount}% <span>최대 {won(coupon.maxDiscountWon)}</span></b>
-          <p>{shortDate(coupon.expiresAt)}까지 · {coupon.daysLeft}일 남음{coupon.acquiredFromUserId ? ' · 교환으로 받은 쿠폰' : ''}</p>
+        <div className="coupon-ticket-main">
+          <div className="coupon-card-top"><span className="coupon-food">{coupon.restaurant?.emoji || '🎟️'}</span><div><small>{coupon.type === 'dividend' ? '깜짝 배당' : coupon.type === 'etf' ? '테마 펀드' : '투자 혜택'}</small><h3>{coupon.restaurant?.name || coupon.title}</h3></div><em className={`coupon-status ${coupon.status}`}>{statusLabel[coupon.status]}</em></div>
+          <div className="coupon-benefit"><b>{coupon.discount}<span>%</span></b><div><small>최대 할인 금액</small><strong>{won(coupon.maxDiscountWon)}</strong></div></div>
+          <p className="coupon-title-detail">{coupon.title}</p>
+          <div className="coupon-meta"><span><Clock3 /> {shortDate(coupon.expiresAt)}까지</span><b>{coupon.daysLeft ?? 0}일 남음</b>{coupon.acquiredFromUserId && <em>교환으로 받음</em>}</div>
           {expiring && coupon.status === 'available' && <p className="coupon-warn"><Clock3 size={13} /> 만료 {rules.minDaysLeft}일 전이라 교환은 안 되지만 사용은 가능해요.</p>}
         </div>
         {coupon.status === 'redeeming' && code
           ? <div className="redeem-code"><QrCode /><b>{code}</b><small>사장님께 보여주세요<br />{rules.redeemHoldMinutes}분 내 미확인 시 반환</small></div>
+          : ['listed', 'offered'].includes(coupon.status) ? <div className="coupon-actions coupon-exchange-state"><ArrowLeftRight /><b>{coupon.status === 'listed' ? '교환 제안을 기다리는 중' : '보낸 교환 제안 처리 중'}</b><small>교환이 끝나거나 취소될 때까지 쿠폰이 안전하게 잠깁니다.</small><NavLink to="/market">교환 현황 보기 <ChevronRight /></NavLink></div>
           : <div className="coupon-actions">
               <button disabled={coupon.status !== 'available' || busyId === coupon.id} onClick={() => redeem(coupon)}>
                 <Check size={14} /> 사용하기
@@ -170,7 +183,7 @@ export default function CouponWallet({ me, state, refresh, notify }: {
             </div>}
       </article>
     })}
-      {!active.length && <div className="market-empty"><span>🎟️</span><b>아직 보유한 쿠폰이 없어요</b><p>투자한 식당에서 할인율이 10%를 넘으면 쿠폰을 발급할 수 있어요.</p></div>}
+      {!visible.length && <div className="market-empty"><span>🎟️</span><b>{active.length ? '이 상태의 쿠폰이 없어요' : '아직 보유한 쿠폰이 없어요'}</b><p>{active.length ? '다른 상태 필터를 눌러 쿠폰을 확인해보세요.' : '투자한 식당에서 할인율이 10%를 넘으면 쿠폰을 발급할 수 있어요.'}</p></div>}
     </div>
 
     {archive.length > 0 && <div className="coupon-archive">
