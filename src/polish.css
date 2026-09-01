@@ -175,3 +175,23 @@
   .sample-pack-head{grid-template-columns:40px 1fr}
   .sample-pack-head .button{grid-column:1/-1;justify-content:center}
 }
+
+/* ── 떠 있는 AI 버튼이 푸터 링크를 가리는 문제 ───────────────────
+   AI 상담 버튼은 화면 오른쪽 아래 고정이라 페이지 끝까지 내려가면
+   푸터의 마지막 링크 열(도움말) 위에 겹쳐 앉는다. 새로 넣은 “1:1 문의”가
+   바로 그 자리라서 눌리지 않았다. 푸터 아래쪽에 버튼 높이만큼 여유를 준다. */
+footer .footer-bottom{padding-bottom:76px}
+@media(max-width:780px){footer .footer-bottom{padding-bottom:130px}}
+
+/* ── MY 먹투 요약 줄 ─────────────────────────────────────────────
+   요약 항목이 4개일 때 만든 4열 고정 격자에 '관심 식당'이 다섯 번째로 붙으면서
+   혼자 다음 줄로 내려가 왼쪽 정렬이 깨졌다. 항목 수에 맞춰 늘어나게 바꾸고
+   줄바꿈이 생겼을 때 세로 구분선이 어색하지 않도록 여백을 준다. */
+.portfolio-summary{grid-template-columns:repeat(auto-fit,minmax(150px,1fr));row-gap:18px}
+.portfolio-summary>div{border-left:1px solid var(--line)}
+.portfolio-summary>div:first-child{border-left:0}
+@media(max-width:820px){
+  .portfolio-summary{grid-template-columns:repeat(2,1fr);gap:16px}
+  .portfolio-summary>div{padding:0 12px}
+  .portfolio-summary>div:nth-child(odd){border-left:0}
+}

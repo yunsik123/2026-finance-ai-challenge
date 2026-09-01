@@ -1,0 +1,97 @@
+/*
+ * 펀드 예약 거래장 · 1:1 문의 화면.
+ * styles.css 의 토큰과 카드 패턴(크림 배경 · 코랄 강조 · 26px 라운드)을 그대로 쓴다.
+ * 새 색이나 새 그림자를 만들지 않는다.
+ */
+
+/* ── 거래장 상단 모드 탭 ─────────────────────────────────────── */
+.market-mode-tabs{display:flex;gap:8px;max-width:1160px;margin:26px auto 0;padding:0 22px}
+.market-mode-tabs button{display:flex;align-items:center;gap:7px;padding:11px 18px;border:1px solid var(--line);border-radius:99px;background:var(--paper);color:var(--muted);font-size:13.5px;font-weight:700;transition:all .16s ease}
+.market-mode-tabs button svg{width:16px;height:16px}
+.market-mode-tabs button:hover{border-color:var(--coral);color:var(--coral-dark)}
+.market-mode-tabs button.active{background:var(--coral);border-color:var(--coral);color:#fff;box-shadow:0 8px 20px rgba(255,105,72,.24)}
+.market-shell .page-wrap{padding-top:18px}
+
+/* ── 예약 대기열 ─────────────────────────────────────────────── */
+.orderbook-loading{padding:60px 0;text-align:center;color:var(--muted);font-weight:700}
+.orderbook-rule{display:flex;gap:10px;align-items:flex-start;background:var(--mint);border-radius:18px;padding:14px 18px;margin-bottom:18px}
+.orderbook-rule svg{width:18px;height:18px;color:var(--green);flex:none;margin-top:2px}
+.orderbook-rule p{margin:0;font-size:13px;color:#14614a;line-height:1.6}
+
+.orderbook-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:18px}
+.orderbook-card{background:var(--paper);border:1px solid var(--line);border-radius:24px;padding:20px;display:grid;gap:16px;box-shadow:var(--shadow)}
+.orderbook-head{display:flex;align-items:center;gap:12px;cursor:pointer}
+.orderbook-emoji{display:grid;place-items:center;width:46px;height:46px;border-radius:16px;font-size:22px;flex:none}
+.orderbook-head>div{flex:1;min-width:0}
+.orderbook-head b{display:block;font-size:15px}
+.orderbook-head small{color:var(--muted);font-size:12px}
+.orderbook-raised{display:flex;align-items:center;gap:4px;font-size:11.5px;font-weight:700;color:var(--green);background:var(--mint);padding:5px 10px;border-radius:99px;white-space:nowrap}
+.orderbook-raised svg{width:13px;height:13px}
+
+.orderbook-queues{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.queue{background:var(--cream);border-radius:16px;padding:12px 13px;display:grid;gap:8px;align-content:start}
+.queue-head{display:flex;align-items:center;gap:5px;font-size:12px}
+.queue-head svg{width:14px;height:14px}
+.queue-head b{flex:1;white-space:nowrap}
+.queue-head span{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;font-size:11.5px}
+.queue.buy .queue-head svg,.queue.buy .queue-head span{color:var(--green)}
+.queue.sell .queue-head svg,.queue.sell .queue-head span{color:var(--coral-dark)}
+.queue-row{display:grid;grid-template-columns:20px 1fr;gap:4px 7px;align-items:center;padding:7px 9px;background:var(--paper);border-radius:11px;font-size:12px}
+.queue-row.mine{outline:2px solid var(--coral);outline-offset:-2px}
+.queue-rank{display:grid;place-items:center;width:20px;height:20px;border-radius:7px;background:var(--line);font-size:10.5px;font-weight:700;color:var(--muted)}
+.queue-row b{font-variant-numeric:tabular-nums}
+.queue-row small{grid-column:1/-1;display:flex;align-items:center;gap:4px;color:var(--muted);font-size:11px}
+.queue-row small svg{width:11px;height:11px}
+.queue-row button{grid-column:1/-1;display:flex;align-items:center;justify-content:center;gap:4px;padding:5px;border:1px solid var(--line);border-radius:9px;background:var(--cream);font-size:11px;font-weight:700;color:var(--coral-dark)}
+.queue-row button svg{width:11px;height:11px}
+.queue-empty{margin:0;font-size:11.5px;color:var(--muted);padding:8px 2px;line-height:1.5}
+
+.orderbook-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.orderbook-mine{font-size:12px;font-weight:700;color:var(--muted)}
+.orderbook-foot .button{margin-left:auto}
+.orderbook-note{margin:22px 0 0;font-size:12.5px;color:var(--muted);line-height:1.7;text-align:center}
+
+/* ── 1:1 문의 ────────────────────────────────────────────────── */
+.support-layout{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);gap:22px;align-items:start}
+.support-form{background:var(--paper);border:1px solid var(--line);border-radius:26px;padding:24px;display:grid;gap:15px;box-shadow:var(--shadow)}
+.support-types{display:flex;flex-wrap:wrap;gap:7px}
+.support-types button{padding:8px 15px;border:1px solid var(--line);border-radius:99px;background:var(--cream);font-size:12.5px;font-weight:700;color:var(--muted)}
+.support-types button.active{background:var(--navy);border-color:var(--navy);color:#fff}
+.support-demo-note{margin:0;font-size:12px;color:var(--coral-dark);background:#fff2ee;border-radius:12px;padding:10px 13px;line-height:1.6}
+.support-privacy{margin:0;font-size:11.5px;color:var(--muted);line-height:1.6}
+
+.support-history{background:var(--paper);border:1px solid var(--line);border-radius:26px;padding:22px;display:grid;gap:12px;align-content:start;box-shadow:var(--shadow)}
+.support-history h2{display:flex;align-items:center;gap:7px;font-family:'Jua',sans-serif;font-size:17px;margin:0}
+.support-history h2 svg{width:17px;height:17px;color:var(--coral)}
+.support-empty{margin:0;font-size:13px;color:var(--muted);line-height:1.7}
+.support-item{border:1px solid var(--line);border-radius:16px;overflow:hidden}
+.support-item>button{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;padding:13px 15px;background:var(--paper);text-align:left}
+.support-item b{display:block;font-size:13.5px;margin-bottom:3px}
+.support-item small{display:flex;align-items:center;gap:4px;font-size:11.5px;color:var(--muted)}
+.support-item small svg{width:11px;height:11px}
+.support-status{display:flex;align-items:center;gap:3px;padding:4px 10px;border-radius:99px;font-size:11px;font-weight:700;background:var(--cream);color:var(--muted);white-space:nowrap}
+.support-status svg{width:12px;height:12px}
+.support-status.answered{background:var(--mint);color:var(--green)}
+.support-status.received{background:#fff5e0;color:#a5700d}
+.support-detail{padding:0 15px 15px;display:grid;gap:10px;border-top:1px solid var(--line);padding-top:13px}
+.support-detail p{margin:0;font-size:12.5px;line-height:1.7;white-space:pre-wrap}
+.support-answer{background:var(--mint);border-radius:13px;padding:12px 14px;display:grid;gap:5px}
+.support-answer b{font-size:12.5px;color:var(--green)}
+.support-answer small{color:var(--muted);font-size:11px}
+.support-waiting{color:var(--muted)}
+
+/* ── 심사 결과: "왜 바로 탈락시키지 않았나요?" ───────────────── */
+.result-why{background:var(--mint);border-radius:20px;padding:18px 20px;display:grid;gap:6px;margin-top:14px}
+.result-why b{font-size:14px;color:var(--green)}
+.result-why p{margin:0;font-size:13px;line-height:1.75;color:#1b5344}
+
+@media (max-width:900px){
+  .support-layout{grid-template-columns:1fr}
+}
+@media (max-width:640px){
+  .market-mode-tabs{padding:0 16px;overflow-x:auto;scrollbar-width:none}
+  .market-mode-tabs::-webkit-scrollbar{display:none}
+  .market-mode-tabs button{white-space:nowrap}
+  .orderbook-queues{grid-template-columns:1fr}
+  .support-form,.support-history{padding:18px;border-radius:20px}
+}

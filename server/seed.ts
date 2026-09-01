@@ -240,6 +240,7 @@ export function createSeed(ownerHash: string, investorHash: string): Database {
     favorites: [],
     auditEvents: [],
     ocrAnalyses: [],
+    supportRequests: [],
     dataConnections: [],
     articles,
     etfs,

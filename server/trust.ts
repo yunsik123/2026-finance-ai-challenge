@@ -103,7 +103,7 @@ const investorSteps = [
 const ownerSteps = [
   ['사업체·대표자 등록', '사업자번호, 대표자, 영업신고, 주소를 등록합니다.'],
   ['데이터 출처 선택', '사업자·영업신고·임대차는 직접 업로드하고, POS·계좌·카드·세무·부채는 제휴기관 연결 또는 대체 업로드 중 출처를 명확히 선택합니다.'],
-  ['AI OCR 교차검증', '문서 식별값·기간·금액·누락을 구조화해 비교합니다.'],
+  ['제출자료 자동 확인', '제출한 문서의 상호·사업자번호·기간·금액이 서로 맞는지 자동으로 대조합니다.'],
   ['운영자 원본 확인', 'AI 결과는 보조자료이며 사람이 원본을 확인합니다.'],
   ['모집안 작성', '자금 용도, 위험 대응, 공개항목과 지급 단계를 작성합니다.'],
   ['모집 심사·공개', '공식 검증과 운영자 심사 뒤 투자자에게 공개합니다.'],
@@ -308,10 +308,10 @@ export function answerGraphProcessQuestion(question: string, subgraph: ReturnTyp
   // 절차 단계는 '심사 기준'이지 화면 메뉴가 아니다. 화면 이름을 함께 밝혀 혼동을 막는다.
   const screen = subgraph.nodes.find((node) => node.type === 'SitePage')
   const title = subgraph.role === 'owner'
-    ? '사장님 펀딩 심사는 아래 단계로 진행돼요. (화면에 그대로 있는 메뉴 이름이 아니라 심사 절차의 이름이에요.)'
-    : '투자자 참여 절차는 아래 순서로 진행돼요. (화면 메뉴 이름이 아니라 확인 절차의 이름이에요.)'
+    ? '사장님 펀딩 심사는 아래 단계로 진행돼요. (화면 메뉴 이름이 아니라 심사가 진행되는 순서예요.)'
+    : '투자자 참여 절차는 아래 순서로 진행돼요. (화면 메뉴 이름이 아니라 확인하는 순서예요.)'
   const where = screen ? [``, `화면에서는 ${screen.properties.menuPath}에서 진행합니다.`] : []
-  return [title, ...steps.map((step) => `${step.properties.order}. ${step.label}: ${step.properties.instruction}`), ...where, '', '이 답변은 먹투 역할별 지식그래프에서 질문과 연결된 노드·관계를 검색해 만들었습니다.'].join('\n')
+  return [title, ...steps.map((step) => `${step.properties.order}. ${step.label}: ${step.properties.instruction}`), ...where].join('\n')
 }
 
 export function normalizeOcrBoxes(value: unknown) {

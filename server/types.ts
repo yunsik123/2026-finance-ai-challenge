@@ -229,6 +229,25 @@ export interface WalletTransaction {
   createdAt: string
 }
 
+/**
+ * 1:1 고객지원 문의.
+ * 승재 프로젝트의 disputes 테이블(/api/support/requests)을 먹투 데이터 모델로 옮겼다.
+ */
+export interface SupportRequest {
+  id: string
+  userId: string
+  userName: string
+  type: 'investment' | 'coupon' | 'exchange' | 'review' | 'owner' | 'account' | 'other'
+  subject: string
+  description: string
+  restaurantId?: string
+  priority: 'normal' | 'high'
+  status: 'received' | 'in_review' | 'answered' | 'closed'
+  answer?: string
+  createdAt: string
+  answeredAt?: string
+}
+
 export interface Favorite {
   userId: string
   restaurantId: string
@@ -307,4 +326,5 @@ export interface Database {
   dataConnections: DataConnection[]
   articles: Article[]
   etfs: EtfFund[]
+  supportRequests?: SupportRequest[]
 }

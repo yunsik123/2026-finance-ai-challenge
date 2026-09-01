@@ -1,6 +1,6 @@
 // 쿠폰 교환장 통합 테스트.
 // 여러 사람이 동시에 붙는 상황을 가정하고, 조건 검증 · 에스크로 · 동시성 · 사용 확인까지 본다.
-const base = 'http://localhost:8787'
+const base = process.env.MEOKTU_TEST_BASE || `http://localhost:${process.env.MEOKTU_TEST_PORT || 8787}`
 
 async function request(path: string, options: RequestInit = {}, token?: string) {
   const response = await fetch(base + path, {

@@ -1,6 +1,6 @@
 // 소상공인 프로젝트에서 이식한 모듈 통합 테스트.
 // 상권분석 · 위험모형 연동 · 동적 지식그래프 · 사업자 진위확인 · 재무 교차검증.
-const base = 'http://localhost:8787'
+const base = process.env.MEOKTU_TEST_BASE || `http://localhost:${process.env.MEOKTU_TEST_PORT || 8787}`
 
 async function request(path: string, options: RequestInit = {}, token?: string) {
   const response = await fetch(base + path, {

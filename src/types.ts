@@ -178,5 +178,41 @@ export interface ApplicationResult {
     sourceProvenance?: { ownerUploaded?: string[]; partnerConnected?: string[]; identityVerified?: boolean }
     businessVerification?: BusinessVerification
     financialVerification?: FinancialOrchestration
+    creditAssessment?: CreditAssessment
+    combinedAssessment?: CombinedAssessment
   }
+}
+
+/** 35개 지표 · 6개 업종 신용평가 결과 (server/credit.ts). */
+export interface CreditAssessment {
+  modelVersion: string
+  industry: string
+  industryNote: string
+  score: number
+  grade: 'A+' | 'A' | 'B+' | 'B' | 'C' | 'D'
+  /** 측정된 지표의 가중치 합. 100이면 35개 전부 산정됨. */
+  coverage: number
+  measuredCount: number
+  totalCount: number
+  confidence: number
+  groups: Array<{ group: string; weight: number; score: number | null; measuredCount: number; totalCount: number }>
+  features: Array<{ key: string; label: string; group: string; weight: number; unit: string; value: number | null; score: number | null; measured: boolean; note?: string }>
+  contributions: Array<{ key: string; label: string; group: string; score: number; weight: number; contribution: number }>
+  topDrivers: Array<{ key: string; label: string; score: number; weight: number; contribution: number }>
+  topDrags: Array<{ key: string; label: string; score: number; weight: number; contribution: number }>
+  missing: string[]
+  overrides: string[]
+  methodology: { type: string; weightSum: number; gradeBands: string; calibratedProbability: boolean; missingHandling: string; disclaimer: string }
+  references: Array<{ id: string; title: string; authors: string; use: string; excluded?: string; url: string }>
+}
+
+export interface CombinedAssessment {
+  blendedScore: number
+  creditGrade: string
+  riskGrade: string
+  confidence: number
+  weights: Record<string, number>
+  agreement: number
+  agreementNote: string
+  needsHumanReview: boolean
 }

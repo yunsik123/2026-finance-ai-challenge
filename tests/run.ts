@@ -6,7 +6,9 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const base = 'http://localhost:8787'
+// 개발 서버가 이미 8787을 쓰고 있으면 MEOKTU_TEST_PORT 로 다른 포트에 띄워 검증할 수 있다.
+const port = Number(process.env.MEOKTU_TEST_PORT || 8787)
+const base = process.env.MEOKTU_TEST_BASE || `http://localhost:${port}`
 const suites = ['smoke.ts', 'enhancements.ts', 'integration-new.ts', 'coupon-cancel.ts', 'coupon-exchange.ts', 'merged-modules.ts', 'demo-and-data.ts']
 
 const healthy = async () => {
@@ -37,7 +39,7 @@ if (existing) {
   server = spawn('npx', ['tsx', 'server/index.ts'], {
     cwd: root,
     stdio: 'ignore',
-    env: { ...process.env, SUPABASE_AUTH_DISABLED: '1' },
+    env: { ...process.env, SUPABASE_AUTH_DISABLED: '1', PORT: String(port) },
   })
   const deadline = Date.now() + 60_000
   while (Date.now() < deadline) {
@@ -52,7 +54,7 @@ if (existing) {
 }
 
 try {
-  for (const suite of suites) await run(suite, { ...process.env, SUPABASE_AUTH_DISABLED: '1' })
+  for (const suite of suites) await run(suite, { ...process.env, SUPABASE_AUTH_DISABLED: '1', MEOKTU_TEST_BASE: base })
 } finally {
   server?.kill()
 }

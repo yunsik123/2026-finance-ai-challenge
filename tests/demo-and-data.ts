@@ -1,5 +1,5 @@
-// 체험 세션 격리 · 직접 업로드/제휴 연결 출처 · 역할별 GraphRAG 통합 테스트.
-const base = 'http://localhost:8787'
+// 체험 샌드박스(실제 동작 + 공유 원장 무변경) · 직접 업로드/제휴 연결 출처 · 역할별 지식그래프 통합 테스트.
+const base = process.env.MEOKTU_TEST_BASE || `http://localhost:${process.env.MEOKTU_TEST_PORT || 8787}`
 
 async function request(path: string, options: RequestInit = {}, token?: string) {
   const response = await fetch(base + path, {
@@ -17,12 +17,37 @@ async function ok(path: string, options: RequestInit = {}, token?: string) {
 }
 function assert(value: unknown, message: string): asserts value { if (!value) throw new Error(message) }
 
-/* 1. 원클릭 데모는 계정 원장과 분리되고 변경 기능이 차단된다. */
+/* 1. 체험 세션은 실제로 동작하되 공유 원장을 건드리지 않는다. */
 const demoInvestor = await ok('/api/auth/demo', { method: 'POST', body: JSON.stringify({ role: 'investor' }) })
 const demoInvestorMe = await ok('/api/me', {}, demoInvestor.token)
 assert(demoInvestorMe.user.sessionMode === 'demo', '투자자 체험 토큰은 demo 세션이어야 합니다.')
-const blockedTopup = await request('/api/wallet/topup', { method: 'POST', body: JSON.stringify({ amount: 1000 }) }, demoInvestor.token)
-assert(blockedTopup.status === 403 && (blockedTopup.body as any).error.includes('체험 모드'), '체험 세션의 충전·원장 변경을 막아야 합니다.')
+assert(demoInvestorMe.user.cash > 0, '체험 투자자는 바로 눌러볼 수 있는 시작 잔액을 가져야 합니다.')
+
+const ledgerCashBefore = (await ok('/api/public')).stats.funded
+const demoTopup = await ok('/api/wallet/topup', { method: 'POST', body: JSON.stringify({ amount: 50000 }) }, demoInvestor.token)
+assert(demoTopup.ephemeral === true, '체험 충전 결과는 비영구임을 표시해야 합니다.')
+assert(demoTopup.balance === demoInvestorMe.user.cash + 50000, '체험 충전이 체험 잔액에 반영되어야 합니다.')
+
+const demoTarget = (await ok('/api/public')).restaurants.find((item: any) => item.fund.status === 'funding')
+const demoInvest = await ok(`/api/funds/${demoTarget.fund.id}/invest`, { method: 'POST', body: JSON.stringify({ amount: 20000 }) }, demoInvestor.token)
+assert(demoInvest.ephemeral === true, '체험 투자 결과는 비영구임을 표시해야 합니다.')
+const demoAfterInvest = await ok('/api/me', {}, demoInvestor.token)
+assert(demoAfterInvest.positions.some((item: any) => item.fundId === demoTarget.fund.id && item.amount === 20000), '체험 투자금이 체험 포트폴리오에 남아야 합니다.')
+
+const demoCoupon = await ok(`/api/positions/${demoAfterInvest.positions[0].id}/coupon`, { method: 'POST' }, demoInvestor.token)
+assert(demoCoupon.coupon?.discount > 0, '체험 투자자는 쿠폰을 발급받아 볼 수 있어야 합니다.')
+await ok(`/api/restaurants/${demoTarget.id}/visit/verify`, { method: 'POST' }, demoInvestor.token)
+const demoReview = await ok(`/api/restaurants/${demoTarget.id}/reviews`, { method: 'POST', body: JSON.stringify({ rating: 5, content: '체험으로 남겨보는 리뷰입니다.' }) }, demoInvestor.token)
+assert(demoReview.ephemeral === true, '체험 리뷰도 비영구여야 합니다.')
+const demoPublic = await ok('/api/public', {}, demoInvestor.token)
+assert(demoPublic.restaurants.find((item: any) => item.id === demoTarget.id).reviews.some((item: any) => item.id === demoReview.review.id), '체험 리뷰는 본인 화면에서는 보여야 합니다.')
+const sharedPublic = await ok('/api/public')
+assert(!sharedPublic.restaurants.find((item: any) => item.id === demoTarget.id).reviews.some((item: any) => item.id === demoReview.review.id), '체험 리뷰가 공유 원장에 남으면 안 됩니다.')
+assert(sharedPublic.stats.funded === ledgerCashBefore, '체험 투자가 공유 원장의 누적 펀딩을 바꾸면 안 됩니다.')
+
+const otherDemo = await ok('/api/auth/demo', { method: 'POST', body: JSON.stringify({ role: 'investor' }) })
+const otherDemoMe = await ok('/api/me', {}, otherDemo.token)
+assert(otherDemoMe.positions.length === 0 && otherDemoMe.coupons.length === 0, '체험 세션끼리도 서로의 기록이 보이면 안 됩니다.')
 
 const ownerAccount = await ok('/api/auth/login', { method: 'POST', body: JSON.stringify({ email: 'owner@meoktu.demo', password: 'demo1234!' }) })
 const beforeOcrCount = (await ok('/api/owner', {}, ownerAccount.token)).ocrAnalyses.length
@@ -31,8 +56,11 @@ const image = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAw
 const demoOcr = await ok('/api/ai/ocr', { method: 'POST', body: JSON.stringify({ image, filename: 'mvp-sample.png', sourceId: 'business', plan: '체험' }) }, demoOwner.token)
 assert(demoOcr.ephemeral === true, '체험 OCR은 비영구 결과임을 표시해야 합니다.')
 assert((await ok('/api/owner', {}, ownerAccount.token)).ocrAnalyses.length === beforeOcrCount, '체험 OCR 결과를 실제 계정 원장에 저장하면 안 됩니다.')
-const blockedApplication = await request('/api/applications', { method: 'POST', body: '{}' }, demoOwner.token)
-assert(blockedApplication.status === 403, '체험 세션의 심사 접수를 막아야 합니다.')
+const demoConnection = await ok('/api/data-connections/pos', { method: 'POST', body: JSON.stringify({}) }, demoOwner.token)
+assert(demoConnection.ephemeral === true && demoConnection.connection.sourceId === 'pos', '체험 사장님은 기관 연결을 눌러볼 수 있어야 합니다.')
+assert((await ok('/api/owner', {}, ownerAccount.token)).dataConnections.every((item: any) => item.id !== demoConnection.connection.id), '체험 기관 연결이 실제 계정 원장에 남으면 안 됩니다.')
+const invalidDemoApplication = await request('/api/applications', { method: 'POST', body: '{}' }, demoOwner.token)
+assert(invalidDemoApplication.status === 400, '체험 심사도 실제와 같은 입력 검증을 거쳐야 합니다.')
 
 /* 2. 실제 로그인 계정은 원장을 변경하고 제휴 연결을 서버에 저장한다. */
 const investorAccount = await ok('/api/auth/login', { method: 'POST', body: JSON.stringify({ email: 'investor@meoktu.demo', password: 'demo1234!' }) })
@@ -83,4 +111,4 @@ assert(ownerAi.answer.includes('사장님') || ownerAi.answer.includes('업로�
 const investorAi = await ok('/api/ai/chat', { method: 'POST', body: JSON.stringify({ role: 'investor', restaurantId: 'r-mokhwa', question: '투자금 회수 절차를 알려줘' }) }, investorAccount.token)
 assert(investorAi.sources?.length && investorAi.answer.includes('투자자'), '투자자 역할 그래프에서 회수 절차를 답해야 합니다.')
 
-console.log('PASS: 체험 세션 격리 | 실제 계정 원장 | 직접 업로드/제휴 출처 | 샘플 다운로드 | 투자자·소상공인 GraphRAG')
+console.log('PASS: 체험 샌드박스(충전·투자·쿠폰·리뷰·기관연결) | 공유 원장 무변경 | 세션 간 격리 | 직접 업로드/제휴 출처 | 샘플 다운로드 | 역할별 지식그래프')

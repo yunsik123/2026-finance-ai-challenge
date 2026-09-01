@@ -1,4 +1,4 @@
-const base = 'http://localhost:8787'
+const base = process.env.MEOKTU_TEST_BASE || `http://localhost:${process.env.MEOKTU_TEST_PORT || 8787}`
 
 async function request(path: string, options: RequestInit = {}, token?: string) {
   const response = await fetch(base + path, {

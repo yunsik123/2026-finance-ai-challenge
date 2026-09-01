@@ -15,11 +15,11 @@
   meoktu-staff-sample.csv             월별 직원 수·급여 총액
   meoktu-monthly-summary-sample.csv   월별 매출·배달비중·고정비 요약(대조용)
 
-[문서 형태 자료 · AI OCR 판독 체험용]
-  meoktu-business-sample.png          사업자등록 증빙
-  meoktu-license-sample.png           영업신고 증빙
-  meoktu-tax-sample.png               부가가치세 과세표준 증빙
-  meoktu-lease-sample.png             임대차 조건
+[문서 형태 자료 · AI 문서 판독 체험용 · PNG와 PDF 모두 제공]
+  meoktu-business-sample.png / .pdf   사업자등록 증빙
+  meoktu-license-sample.png  / .pdf   영업신고 증빙
+  meoktu-tax-sample.png      / .pdf   부가가치세 과세표준 증빙
+  meoktu-lease-sample.png    / .pdf   임대차 조건
 
 [한 번에 받기]
   meoktu-sample-pack.zip              위 파일 전체 묶음
@@ -27,13 +27,15 @@
 사용법
   1. 사장님 센터 > 2단계 'B. 소상공인 직접 업로드'에서 파일을 내려받습니다.
   2. 같은 카드의 '파일 선택'으로 그대로 올리면 형식 검사와 열·행 수 확인이 됩니다.
-  3. PNG 문서는 'AI 문서 판독'으로 OCR 교차검증까지 체험할 수 있습니다.
+  3. PNG 문서는 'AI 문서 판독'으로 자동 대조까지 체험할 수 있습니다.
+     (PDF는 형식 검사만 하고 이미지 판독은 PNG에서만 동작합니다.)
   4. 신청서 1단계에는 위 상호·대표자·사업자등록번호를 그대로 입력하면
      문서에서 읽은 값과 신고값이 일치해 교차검증이 통과합니다.
 
 재생성
-  node scripts/make-sample-data.mjs                        (CSV)
-  scripts/sample-docs/*.html 을 크롬 헤드리스로 렌더        (PNG)
+  node scripts/make-sample-data.mjs    CSV 표 자료 8종
+  node scripts/make-sample-docs.mjs    문서 4종의 PNG·PDF와 묶음 zip
+                                       (크롬이 필요하며 CHROME_PATH 로 경로 지정 가능)
 
 모든 값은 가상이며 실제 금융기관·세무·영업 증빙으로 사용할 수 없습니다.
 문서 이미지에는 '실제 제출 불가' 표시가 들어가 있습니다.

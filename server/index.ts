@@ -9,9 +9,18 @@ import { fileURLToPath } from 'node:url'
 import { createServer } from 'node:http'
 import { Server } from 'socket.io'
 import { articles as seedArticles, createSeed, funds as seedFunds, restaurants as seedRestaurants, reviews as seedReviews } from './seed.ts'
-import type { Application, Coupon, CouponListing, CouponOffer, CouponTrade, DataConnection, Database, Fund, Notification, Order, Position, Review, Role, User } from './types.ts'
+import type { Application, Coupon, CouponListing, CouponOffer, CouponTrade, DataConnection, Database, Fund, Notification, Order, Position, Review, Role, SupportRequest, User } from './types.ts'
 import { answerGraphProcessQuestion, assessRestaurant, buildKnowledgeGraph, normalizeOcrBoxes, retrieveKnowledgeSubgraph } from './trust.ts'
 import { answerNavigationQuestion, isNavigationQuestion, matchUiTasks, navigationBrief } from './sitemap.ts'
+import {
+  assessCredit, combineAssessments, creditModelVersion, creditReferences, deriveCreditInput,
+  featureSpecs, industries, industryProfiles, toIndustry, type CreditAssessment,
+} from './credit.ts'
+import { DEMO_NOTICE, demoId, demoNotification, sandboxFor, type DemoSandbox } from './demo.ts'
+import {
+  answerOwnerStatusQuestion, answerSupportQuestion, isOwnerStatusQuestion, isSupportQuestion,
+  knowledgeAsOf, matchSupportPrograms, ownerSituation, ownerSituationGraph, supportProgramNodes,
+} from './knowledge.ts'
 import { COMMERCIAL_NOTE, COMMERCIAL_SOURCE, commercialInsight, findCommercialArea } from './commercial.ts'
 import { orchestrateFinancialVerification, verifyBusiness } from './verification.ts'
 import { checkSwap, couponUsable, daysLeft, EXCHANGE_RULES, normalizePreferences, sweepExpired } from './exchange.ts'
@@ -27,7 +36,11 @@ for (const filename of ['.env.local', '.env.development.local', '.env']) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
   }
 }
-const dataDir = process.env.VERCEL ? path.join('/tmp', 'meoktu') : path.join(root, 'data')
+// MEOKTU_DATA_DIR 을 주면 개발 서버의 원장을 건드리지 않고 별도 원장으로 띄울 수 있다.
+// (통합 테스트가 실제 data/db.json 의 쿠폰 매물을 소진시키는 문제를 막는다.)
+const dataDir = process.env.MEOKTU_DATA_DIR
+  ? path.resolve(root, process.env.MEOKTU_DATA_DIR)
+  : process.env.VERCEL ? path.join('/tmp', 'meoktu') : path.join(root, 'data')
 const dbPath = path.join(dataDir, 'db.json')
 const port = Number(process.env.PORT || 8787)
 const secret = process.env.APP_SECRET || 'meoktu-local-development-secret-change-me'
@@ -93,7 +106,9 @@ function tokenFor(user: User) {
 }
 
 function demoTokenFor(role: Role) {
-  const payload = Buffer.from(JSON.stringify({ sub: `demo-${role}`, role, mode: 'demo', exp: Date.now() + 1000 * 60 * 60 * 4 })).toString('base64url')
+  // 체험 세션마다 다른 id를 준다. 그래야 각자의 체험 원장이 섞이지 않는다.
+  const sub = `demo-${role}-${crypto.randomBytes(6).toString('hex')}`
+  const payload = Buffer.from(JSON.stringify({ sub, role, mode: 'demo', exp: Date.now() + 1000 * 60 * 60 * 4 })).toString('base64url')
   const signature = crypto.createHmac('sha256', secret).update(payload).digest('base64url')
   return `${payload}.${signature}`
 }
@@ -205,6 +220,7 @@ function migrateDatabase(current: Database, template: Database) {
   current.favorites ??= []
   current.auditEvents ??= []
   current.ocrAnalyses ??= []
+  current.supportRequests ??= []
 
   for (const user of template.users) if (!current.users.some((item) => item.id === user.id)) current.users.push(user)
   current.restaurants = seedRestaurants.map((restaurant) => {
@@ -243,6 +259,7 @@ function normalizeDatabase() {
   db.favorites ??= []
   db.auditEvents ??= []
   db.ocrAnalyses ??= []
+  db.supportRequests ??= []
 }
 
 async function loadDatabase() {
@@ -679,16 +696,373 @@ app.use('/api', async (req, res, next) => {
   }
 })
 
-// 원클릭 체험 세션은 원장 변경을 절대 허용하지 않는다. 공개 조회와 AI/OCR 체험만 가능하다.
-app.use('/api', async (req, res, next) => {
+/* ── 체험 모드 ─────────────────────────────────────────────────
+ * 체험 세션의 쓰기는 공유 원장(db.json) 대신 메모리 샌드박스로 보낸다.
+ * 규칙은 그대로다: 다른 사람이 보는 데이터는 절대 바뀌지 않는다.
+ * 달라진 건 체험자가 "막혔습니다" 대신 실제 결과를 본다는 점이다.
+ */
+
+/** 체험 기관 연결에 쓰는 가상 제휴사. 실제 기관 API를 부르지 않는다. */
+const DEMO_PARTNER_PROVIDERS: Record<string, { title: string; provider: string; scope: string; records: number }> = {
+  pos: { title: 'POS 매출', provider: 'POS 제휴 중계(체험)', scope: '최근 12개월 주문·결제·취소 집계', records: 18420 },
+  account: { title: '사업용 계좌', provider: '금융 마이데이터 중계(체험)', scope: '최근 12개월 입출금과 잔액', records: 3260 },
+  card: { title: '카드·VAN 정산', provider: '카드 정산 제휴(체험)', scope: '승인·취소·수수료·실입금', records: 9840 },
+  delivery: { title: '배달 플랫폼', provider: '배달 플랫폼 제휴(체험)', scope: '주문·수수료·재주문 집계', records: 5120 },
+  tax: { title: '세무 신고자료', provider: '세무자료 전송 어댑터(체험)', scope: '최근 2개 과세기간 신고매출', records: 8 },
+  debt: { title: '대출·상환정보', provider: '금융기관 대출정보 중계(체험)', scope: '잔액·금리·만기·월 상환액', records: 24 },
+}
+
+const demoRestaurantOf = (restaurantId?: string) => db.restaurants.find((item) => item.id === restaurantId)
+
+/** 체험 원장 기준의 투자 잔액. 없으면 만든다. */
+function demoPosition(sandbox: DemoSandbox, fundId: string) {
+  let position = sandbox.positions.find((item) => item.fundId === fundId)
+  if (!position) {
+    position = { id: demoId('position'), userId: sandbox.id, fundId, amount: 0, early: true, couponProgress: 0, updatedAt: now() }
+    sandbox.positions.push(position)
+  }
+  return position
+}
+
+/**
+ * 체험 세션의 쓰기 요청을 샌드박스에서 처리한다.
+ * false를 돌려주면 "실제 라우터에 넘겨라"는 뜻이다.
+ */
+async function handleDemoMutation(req: AuthedRequest, res: Response, user: SessionUser): Promise<boolean | void> {
+  const sandbox = sandboxFor(user.id, user.role)
+  const pathname = req.originalUrl.split('?')[0]
+  const body = (req.body || {}) as Record<string, any>
+  const method = req.method
+  const done = (payload: Record<string, unknown>) => { res.json({ ...payload, ephemeral: true, demoNotice: DEMO_NOTICE }) }
+  const match = (pattern: RegExp) => pattern.exec(pathname)
+
+  /* 지갑 충전 */
+  if (method === 'POST' && pathname === '/api/wallet/topup') {
+    const amount = round1000(body.amount)
+    if (amount < 1000 || amount > 5_000_000) { res.status(400).json({ error: '체험 충전은 1,000원부터 500만원까지 가능해요.' }); return }
+    sandbox.cash += amount
+    sandbox.walletTransactions.unshift({ id: demoId('wallet'), userId: sandbox.id, type: 'demo_topup', amount, createdAt: now() })
+    return done({ message: `${amount.toLocaleString()} 먹투머니를 체험용으로 충전했어요.`, balance: sandbox.cash })
+  }
+
+  /* 관심 식당 */
+  const favorite = match(/^\/api\/favorites\/([^/]+)$/)
+  if (favorite && (method === 'PUT' || method === 'DELETE')) {
+    const restaurant = demoRestaurantOf(favorite[1])
+    if (!restaurant) { res.status(404).json({ error: '식당을 찾을 수 없어요.' }); return }
+    if (method === 'PUT') {
+      if (!sandbox.favorites.includes(restaurant.id)) sandbox.favorites.push(restaurant.id)
+    } else {
+      sandbox.favorites = sandbox.favorites.filter((item) => item !== restaurant.id)
+    }
+    return done({
+      message: method === 'PUT' ? `${restaurant.name}을 관심 식당에 저장했어요.` : '관심 식당에서 해제했어요.',
+      favoriteRestaurantIds: sandbox.favorites,
+    })
+  }
+
+  /* 투자 / 회수 */
+  const fundAction = match(/^\/api\/funds\/([^/]+)\/(invest|withdraw)$/)
+  if (fundAction && method === 'POST') {
+    const fund = db.funds.find((item) => item.id === fundAction[1])
+    if (!fund) { res.status(404).json({ error: '펀드를 찾을 수 없어요.' }); return }
+    const restaurant = demoRestaurantOf(fund.restaurantId)
+    const amount = round1000(body.amount)
+    if (amount < 1000) { res.status(400).json({ error: '1,000원 단위로 입력해주세요.' }); return }
+    const position = demoPosition(sandbox, fund.id)
+    if (fundAction[2] === 'invest') {
+      const limit = Math.floor(fund.goal * .01 / 1000) * 1000
+      if (amount > sandbox.cash) { res.status(400).json({ error: '체험 잔액이 부족해요. MY 먹투에서 먹투머니를 충전해보세요.' }); return }
+      if (position.amount + amount > limit) { res.status(400).json({ error: `한 식당 투자 한도는 목표액의 1%(${limit.toLocaleString()}원)예요.` }); return }
+      sandbox.cash -= amount
+      position.amount += amount
+      position.updatedAt = now()
+      sandbox.fundDeltas[fund.id] = (sandbox.fundDeltas[fund.id] || 0) + amount
+      demoNotification(sandbox, 'invest', '체험 투자 완료', `${restaurant?.name || '식당'}에 ${amount.toLocaleString()}원을 체험 투자했어요.`, '/my')
+      return done({ message: `${restaurant?.name || '식당'}에 ${amount.toLocaleString()}원을 체험 투자했어요.`, matched: amount, queued: 0, matches: [], balance: sandbox.cash })
+    }
+    if (amount > position.amount) { res.status(400).json({ error: '회수할 금액이 보유 투자금보다 많아요.' }); return }
+    position.amount -= amount
+    position.updatedAt = now()
+    sandbox.cash += amount
+    sandbox.fundDeltas[fund.id] = (sandbox.fundDeltas[fund.id] || 0) - amount
+    return done({ message: `${amount.toLocaleString()}원을 체험 회수했어요.`, matched: amount, queued: 0, matches: [], balance: sandbox.cash })
+  }
+
+  /* 쿠폰 발급 */
+  const couponIssue = match(/^\/api\/positions\/([^/]+)\/coupon$/)
+  if (couponIssue && method === 'POST') {
+    const position = sandbox.positions.find((item) => item.id === couponIssue[1])
+    if (!position) { res.status(404).json({ error: '투자 내역을 찾을 수 없어요.' }); return }
+    const fund = db.funds.find((item) => item.id === position.fundId)
+    const restaurant = fund && demoRestaurantOf(fund.restaurantId)
+    if (!fund || !restaurant) { res.status(404).json({ error: '식당 정보를 찾을 수 없어요.' }); return }
+    // 체험자는 며칠을 기다릴 수 없으니 투자금 비례로 즉시 할인율을 만든다.
+    const ratio = position.amount / Math.max(1, fund.goal * .01)
+    const discount = Math.max(fund.minIssueDiscount, Math.min(fund.maxDiscount, Math.round(ratio * fund.maxDiscount)))
+    const coupon: Coupon = {
+      id: demoId('coupon'), userId: sandbox.id, restaurantId: restaurant.id, fundId: fund.id,
+      title: `${restaurant.name} ${discount}% 응원 쿠폰`, discount,
+      maxDiscountWon: Math.floor(restaurant.maxMenuPrice * discount / 100), type: 'fund', status: 'available',
+      createdAt: now(), expiresAt: new Date(Date.now() + 86400000 * 90).toISOString(),
+    }
+    sandbox.coupons.unshift(coupon)
+    position.couponProgress = 0
+    demoNotification(sandbox, 'coupon', '체험 쿠폰 발급', `${coupon.title}을 받았어요.`, '/my')
+    return done({ message: `${discount}% 쿠폰을 체험 발급했어요.`, coupon })
+  }
+
+  /* 방문 인증 */
+  const visit = match(/^\/api\/restaurants\/([^/]+)\/visit\/verify$/)
+  if (visit && method === 'POST') {
+    const restaurant = demoRestaurantOf(visit[1])
+    if (!restaurant) { res.status(404).json({ error: '식당을 찾을 수 없어요.' }); return }
+    let verification = sandbox.visits.find((item) => item.restaurantId === restaurant.id && !item.usedForReview)
+    if (!verification) {
+      verification = { id: demoId('visit'), restaurantId: restaurant.id, userId: sandbox.id, verifiedAt: now(), usedForReview: false }
+      sandbox.visits.push(verification)
+    }
+    return done({ message: `${restaurant.name} 방문을 체험 인증했어요. 이제 리뷰를 써볼 수 있어요.`, verification })
+  }
+
+  /* 리뷰 작성 — 이 세션에서만 보인다 */
+  const review = match(/^\/api\/restaurants\/([^/]+)\/reviews$/)
+  if (review && method === 'POST') {
+    const restaurant = demoRestaurantOf(review[1])
+    if (!restaurant) { res.status(404).json({ error: '식당을 찾을 수 없어요.' }); return }
+    const rating = Math.round(Number(body.rating))
+    const content = String(body.content || '').trim().slice(0, 500)
+    if (rating < 1 || rating > 5) { res.status(400).json({ error: '평점은 1점부터 5점까지 선택해주세요.' }); return }
+    if (content.length < 10) { res.status(400).json({ error: '리뷰를 10자 이상 작성해주세요.' }); return }
+    const verification = sandbox.visits.find((item) => item.restaurantId === restaurant.id && !item.usedForReview)
+    if (!verification) { res.status(400).json({ error: '방문 인증 후 리뷰를 작성할 수 있어요.' }); return }
+    verification.usedForReview = true
+    const created: Review = {
+      id: demoId('review'), restaurantId: restaurant.id, userId: sandbox.id, userName: user.name,
+      rating, content, visitVerified: true, createdAt: now(),
+    }
+    sandbox.reviews.unshift(created)
+    return done({ message: '체험 리뷰를 남겼어요. 이 리뷰는 체험 창에서만 보이고 저장되지 않아요.', review: created })
+  }
+
+  /* 쿠폰 교환장 등록 */
+  const listCoupon = match(/^\/api\/coupons\/([^/]+)\/list$/)
+  if (listCoupon && method === 'POST') {
+    const coupon = sandbox.coupons.find((item) => item.id === listCoupon[1])
+    if (!coupon) { res.status(404).json({ error: '체험 지갑에서 쿠폰을 찾을 수 없어요.' }); return }
+    if (coupon.status !== 'available') { res.status(400).json({ error: '이미 교환장에 올렸거나 사용한 쿠폰이에요.' }); return }
+    coupon.status = 'listed'
+    const listing: CouponListing = {
+      id: demoId('listing'), userId: sandbox.id, couponId: coupon.id,
+      wantedCategories: Array.isArray(body.wantedCategories) ? body.wantedCategories.map(String).slice(0, 5) : [],
+      wantedRegions: Array.isArray(body.wantedRegions) ? body.wantedRegions.map(String).slice(0, 5) : [],
+      minDiscount: Number(body.minDiscount) || 0, autoAccept: body.autoAccept === true,
+      note: String(body.note || '').slice(0, 200), status: 'open',
+      createdAt: now(), expiresAt: new Date(Date.now() + 86400000 * 14).toISOString(),
+    }
+    sandbox.listings.unshift(listing)
+    return done({ message: '쿠폰을 체험 교환장에 올렸어요.', listing })
+  }
+
+  /* 교환장 등록 취소 */
+  const cancelListing = match(/^\/api\/listings\/([^/]+)$/)
+  if (cancelListing && method === 'DELETE') {
+    const listing = sandbox.listings.find((item) => item.id === cancelListing[1])
+    if (!listing) { res.status(404).json({ error: '체험 매물을 찾을 수 없어요.' }); return }
+    listing.status = 'cancelled'
+    const coupon = sandbox.coupons.find((item) => item.id === listing.couponId)
+    if (coupon) coupon.status = 'available'
+    return done({ message: '교환장 등록을 취소했어요. 쿠폰을 지갑으로 되돌렸어요.' })
+  }
+
+  /* 즉시 교환 — 공개 매물의 쿠폰을 체험 지갑으로 가져온다 (실제 매물은 그대로 남는다) */
+  const swap = match(/^\/api\/listings\/([^/]+)\/swap$/)
+  if (swap && method === 'POST') {
+    const listing = db.couponListings.find((item) => item.id === swap[1] && item.status === 'open')
+    const wanted = listing && db.coupons.find((item) => item.id === listing.couponId)
+    const mine = sandbox.coupons.find((item) => item.id === String(body.couponId) && item.status === 'available')
+    if (!listing || !wanted) { res.status(404).json({ error: '교환할 매물을 찾을 수 없어요.' }); return }
+    if (!mine) { res.status(400).json({ error: '내놓을 체험 쿠폰을 먼저 골라주세요. MY 먹투에서 투자한 식당의 쿠폰을 발급받을 수 있어요.' }); return }
+    const restaurant = demoRestaurantOf(wanted.restaurantId)
+    mine.status = 'used'
+    mine.usedAt = now()
+    const received: Coupon = {
+      ...wanted, id: demoId('coupon'), userId: sandbox.id, status: 'available',
+      acquiredFromUserId: listing.userId, acquiredAt: now(), createdAt: now(),
+    }
+    sandbox.coupons.unshift(received)
+    sandbox.trades.unshift({
+      id: demoId('trade'), listingId: listing.id, mode: 'instant',
+      listerUserId: listing.userId, listerCouponId: wanted.id, listerGaveDiscount: wanted.discount, listerGaveValueWon: wanted.maxDiscountWon,
+      takerUserId: sandbox.id, takerCouponId: mine.id, takerGaveDiscount: mine.discount, takerGaveValueWon: mine.maxDiscountWon,
+      createdAt: now(),
+    })
+    demoNotification(sandbox, 'exchange', '체험 교환 완료', `${restaurant?.name || '식당'} ${wanted.discount}% 쿠폰을 받았어요.`, '/my')
+    return done({ message: `${restaurant?.name || '식당'} ${wanted.discount}% 쿠폰으로 체험 교환했어요.`, coupon: received })
+  }
+
+  /* 쿠폰 사용 요청 */
+  const redeem = match(/^\/api\/coupons\/([^/]+)\/redeem$/)
+  if (redeem && method === 'POST') {
+    const coupon = sandbox.coupons.find((item) => item.id === redeem[1])
+    if (!coupon) { res.status(404).json({ error: '체험 지갑에서 쿠폰을 찾을 수 없어요.' }); return }
+    coupon.status = 'redeeming'
+    coupon.redeemCode = `DEMO-${Math.random().toString(36).slice(2, 8).toUpperCase()}`
+    coupon.redeemRequestedAt = now()
+    return done({ message: '사장님께 보여줄 사용 코드를 만들었어요.', coupon, code: coupon.redeemCode })
+  }
+
+  /* 사장님 쿠폰 확인 */
+  if (method === 'POST' && pathname === '/api/owner/coupons/verify') {
+    const code = String(body.code || '').trim().toUpperCase()
+    if (!code) { res.status(400).json({ error: '쿠폰 코드를 입력해주세요.' }); return }
+    if (!code.startsWith('DEMO-')) {
+      res.status(404).json({ error: '체험 모드에서는 체험으로 만든 DEMO- 코드만 확인할 수 있어요. 투자자 체험에서 쿠폰을 발급하고 사용 요청을 눌러보세요.' })
+      return
+    }
+    return done({
+      message: '체험 쿠폰을 확인 처리했어요. 실제 계정에서는 이 순간 투자자 지갑의 쿠폰이 사용 완료로 바뀝니다.',
+      coupon: { id: demoId('coupon'), code, status: 'used', usedAt: now(), title: '체험 쿠폰', discount: 15 },
+    })
+  }
+
+  /* 제휴기관 연결 / 해제 */
+  const connection = match(/^\/api\/data-connections\/([^/]+)$/)
+  if (connection && (method === 'POST' || method === 'DELETE')) {
+    const sourceId = connection[1]
+    const provider = DEMO_PARTNER_PROVIDERS[sourceId]
+    if (!provider) { res.status(400).json({ error: '연결할 수 있는 기관이 아니에요.' }); return }
+    if (method === 'DELETE') {
+      sandbox.connections = sandbox.connections.filter((item) => item.sourceId !== sourceId)
+      return done({ message: `${provider.title} 연결을 해제했어요.` })
+    }
+    if (sandbox.connections.some((item) => item.sourceId === sourceId)) {
+      res.status(409).json({ error: '이미 연결된 기관이에요.' })
+      return
+    }
+    const created: DataConnection = {
+      id: demoId('connection'), userId: sandbox.id, sourceId: sourceId as DataConnection['sourceId'],
+      provider: provider.provider, status: 'active', consentScope: provider.scope,
+      recordCount: provider.records, connectedAt: now(), lastSyncedAt: now(),
+    }
+    sandbox.connections.push(created)
+    demoNotification(sandbox, 'connection', '체험 기관 연결', `${provider.title} 자료를 체험 연결했어요.`, '/owner')
+    return done({ message: `${provider.title} 자료를 체험 연결했어요. ${provider.records.toLocaleString()}건을 불러온 것으로 처리했어요.`, connection: created })
+  }
+
+  /* 1:1 문의 접수 */
+  if (method === 'POST' && pathname === '/api/support/requests') {
+    const subject = String(body.subject || '').trim()
+    const description = String(body.description || '').trim()
+    if (subject.length < 3) { res.status(400).json({ error: '제목은 3자 이상 입력해주세요.' }); return }
+    if (description.length < 10) { res.status(400).json({ error: '내용은 10자 이상 입력해주세요.' }); return }
+    return done({
+      message: '체험 모드에서도 접수 화면을 그대로 확인했어요. 실제 계정에서는 이 문의가 운영자에게 전달됩니다.',
+      request: { id: demoId('support'), subject, description, status: 'received', createdAt: now() },
+    })
+  }
+
+  /* 알림 읽음 */
+  if (method === 'POST' && pathname === '/api/notifications/read') {
+    for (const item of sandbox.notifications) item.read = true
+    return done({ message: '알림을 모두 읽음 처리했어요.', unreadNotifications: 0 })
+  }
+
+  /* 매출 공개 토글 */
+  if (method === 'PATCH' && /^\/api\/owner\/restaurants\/[^/]+\/sales-disclosure$/.test(pathname)) {
+    sandbox.salesDisclosure = body.salesDisclosure === true
+    return done({ message: sandbox.salesDisclosure ? '월매출을 공개로 바꿨어요.' : '월매출을 비공개로 바꿨어요.', salesDisclosure: sandbox.salesDisclosure })
+  }
+
+  /* 심사 접수는 실제 채점 로직을 그대로 쓰기 위해 실제 라우터로 넘긴다.
+     (그 핸들러 안에서 체험 세션이면 원장 대신 샌드박스에 저장한다.) */
+  if (method === 'POST' && pathname === '/api/applications') return false
+
+  res.status(403).json({ error: '이 기능은 체험 모드에서 아직 준비되지 않았어요. 회원가입하면 바로 이용할 수 있어요.' })
+}
+
+app.use('/api', async (req: AuthedRequest, res, next) => {
   if (req.method === 'GET' || req.method === 'OPTIONS') return next()
   const viewer = await userFromAuthorization(req.headers.authorization).catch(() => undefined)
   if (viewer?.sessionMode !== 'demo') return next()
-  const allowed = ['/api/ai/chat', '/api/ai/ocr'].some((pathname) => req.originalUrl.split('?')[0] === pathname)
-    || req.originalUrl.startsWith('/api/auth/')
-  if (allowed) return next()
-  return res.status(403).json({ error: '체험 모드에서는 AI 상담과 샘플 문서 업로드·판독만 가능해요. 투자·충전·쿠폰 교환·심사 접수는 회원가입 후 이용해주세요.' })
+  const pathname = req.originalUrl.split('?')[0]
+  // AI 상담·문서 판독은 원래 경로를 그대로 쓴다. 둘 다 공유 원장에 쓰지 않는다.
+  if (pathname === '/api/ai/chat' || pathname === '/api/ai/ocr' || pathname.startsWith('/api/auth/')) return next()
+  req.user = viewer
+  try {
+    if (await handleDemoMutation(req, res, viewer) === false) return next()
+  } catch (error) {
+    next(error)
+  }
 })
+
+/** 체험 세션이 보는 /api/me. 공유 원장 대신 샌드박스를 읽는다. */
+function demoMeState(user: SessionUser) {
+  const sandbox = sandboxFor(user.id, user.role)
+  const positions = sandbox.positions.filter((item) => item.amount > 0).map((position) => {
+    const fund = db.funds.find((item) => item.id === position.fundId)
+    const restaurant = fund && db.restaurants.find((item) => item.id === fund.restaurantId)
+    return { ...position, fund, restaurant, availableAmount: position.amount }
+  })
+  const coupons = sandbox.coupons.map((coupon) => {
+    const restaurant = db.restaurants.find((item) => item.id === coupon.restaurantId)
+    return {
+      ...coupon, restaurant,
+      daysLeft: Math.max(0, Math.floor((new Date(coupon.expiresAt).getTime() - Date.now()) / 86400000)),
+      tradable: coupon.status === 'available',
+      blockers: coupon.status === 'available' ? [] : ['체험 지갑에서 이미 사용했거나 교환장에 올린 쿠폰이에요.'],
+    }
+  })
+  return {
+    user: { ...publicUser(user), cash: sandbox.cash },
+    positions,
+    orders: [],
+    coupons,
+    applications: sandbox.applications,
+    visitVerifications: sandbox.visits,
+    walletTransactions: sandbox.walletTransactions,
+    favoriteRestaurantIds: sandbox.favorites,
+    ocrAnalyses: [],
+    dataConnections: sandbox.connections.map(({ userId: _unused, ...item }) => item),
+    notifications: sandbox.notifications,
+    unreadNotifications: sandbox.notifications.filter((item) => !item.read).length,
+    exchange: {
+      openListings: sandbox.listings.filter((item) => item.status === 'open').length,
+      offersReceived: 0,
+      offersSent: 0,
+      trades: sandbox.trades.length,
+    },
+    rules: EXCHANGE_RULES,
+    demo: { notice: DEMO_NOTICE, startingCash: 300000 },
+  }
+}
+
+/** 공개 데이터 위에 이 체험 세션의 리뷰·투자분·매물만 얹는다. */
+function withDemoOverlay(state: ReturnType<typeof publicState>, user: SessionUser) {
+  const sandbox = sandboxFor(user.id, user.role)
+  const restaurants = state.restaurants.map((restaurant) => {
+    const myReviews = sandbox.reviews.filter((review) => review.restaurantId === restaurant.id)
+    const delta = restaurant.fund ? sandbox.fundDeltas[restaurant.fund.id] || 0 : 0
+    if (!myReviews.length && !delta) return restaurant
+    return {
+      ...restaurant,
+      reviews: [...myReviews, ...(restaurant.reviews || [])].slice(0, 10),
+      reviewCount: restaurant.reviewCount + myReviews.length,
+      fund: restaurant.fund && delta ? { ...restaurant.fund, raised: Math.max(0, restaurant.fund.raised + delta) } : restaurant.fund,
+    }
+  })
+  // 필드 모양은 listingView() 와 정확히 같아야 한다. 다르면 교환장 화면이 깨진다.
+  const myListings = sandbox.listings.filter((item) => item.status === 'open').map((listing) => {
+    const coupon = sandbox.coupons.find((item) => item.id === listing.couponId)
+    const restaurant = coupon && db.restaurants.find((item) => item.id === coupon.restaurantId)
+    return {
+      ...listing, coupon, restaurant, userName: user.name,
+      offerCount: 0, myOfferId: undefined, matchableCouponIds: [] as string[], mine: true,
+    }
+  })
+  return { ...state, restaurants, listings: [...myListings, ...state.listings], demo: { notice: DEMO_NOTICE } }
+}
+
 
 app.get('/api/health', (_req, res) => res.json({
   ok: true,
@@ -699,7 +1073,11 @@ app.get('/api/health', (_req, res) => res.json({
 }))
 app.get('/api/public', async (req: AuthedRequest, res) => {
   const viewer = await userFromAuthorization(req.headers.authorization).catch(() => undefined)
-  res.json(publicState(viewer?.id))
+  const state = publicState(viewer?.id)
+  // 체험 세션에는 자기가 쓴 리뷰와 체험 투자분을 얹어서 보여준다.
+  // 공유 원장은 그대로이므로 다른 사용자 화면은 바뀌지 않는다.
+  if (viewer?.sessionMode === 'demo') return res.json(withDemoOverlay(state, viewer))
+  res.json(state)
 })
 app.get('/api/trust/:restaurantId', (req, res) => {
   const restaurant = db.restaurants.find((item) => item.id === req.params.restaurantId)
@@ -801,6 +1179,8 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.get('/api/me', auth(), async (req: AuthedRequest, res) => {
   const user = req.user!
+  // 체험 세션은 공유 원장이 아니라 자기 샌드박스를 본다.
+  if (user.sessionMode === 'demo') return res.json(demoMeState(user))
   const positions = db.positions.filter((p) => p.userId === user.id && p.amount > 0).map((position) => {
     accrue(position)
     const fund = db.funds.find((f) => f.id === position.fundId)
@@ -1019,6 +1399,108 @@ app.get('/api/market/listings', async (req: AuthedRequest, res) => {
 })
 
 /** 내 교환 현황: 올린 매물, 받은 제안, 보낸 제안, 거래 이력. */
+/**
+ * 펀드 예약 주문장(호가창).
+ *
+ * 먹투의 모금이 끝난 펀드는 가격이 움직이지 않는다. 1,000원은 언제나 1,000원이고
+ * 대신 "누가 먼저 줄을 섰는가"만 남는다. 그래서 승재 프로젝트의 가격·시간 우선
+ * 호가창 대신 시간 우선 단일가 대기열로 옮겨 붙였다.
+ * 주문 자체는 예전부터 db.orders 에 쌓이고 matchOrders 가 FIFO로 체결해왔는데,
+ * 화면에서 볼 방법이 없어서 "예약 거래장"이 사라진 것처럼 보였다. 이 API가 그 창이다.
+ */
+app.get('/api/market/orderbook', async (req: AuthedRequest, res) => {
+  const viewer = await userFromAuthorization(req.headers.authorization).catch(() => undefined)
+  const wanted = typeof req.query.fundId === 'string' ? req.query.fundId : undefined
+  const funds = db.funds.filter((fund) => fund.status === 'trading' && (!wanted || fund.id === wanted))
+  const books = funds.map((fund) => {
+    const restaurant = db.restaurants.find((item) => item.id === fund.restaurantId)
+    const open = db.orders
+      .filter((order) => order.fundId === fund.id && order.remaining > 0 && ['open', 'partial'].includes(order.status))
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    // 대기열은 익명이다. 누가 얼마를 걸었는지가 아니라 내 앞에 얼마가 있는지만 알려준다.
+    const queue = (type: 'buy' | 'sell') => {
+      let ahead = 0
+      return open.filter((order) => order.type === type).map((order, index) => {
+        const entry = {
+          rank: index + 1,
+          amount: order.remaining,
+          amountAhead: ahead,
+          waitingSince: order.createdAt,
+          mine: Boolean(viewer && order.userId === viewer.id),
+          orderId: viewer && order.userId === viewer.id ? order.id : undefined,
+        }
+        ahead += order.remaining
+        return entry
+      })
+    }
+    const buyQueue = queue('buy')
+    const sellQueue = queue('sell')
+    return {
+      fundId: fund.id,
+      restaurantId: restaurant?.id,
+      restaurantName: restaurant?.name,
+      emoji: restaurant?.emoji,
+      neighborhood: restaurant?.neighborhood,
+      category: restaurant?.category,
+      color: restaurant?.color,
+      goal: fund.goal,
+      raised: fund.raised,
+      maxDiscount: fund.maxDiscount,
+      buyQueue,
+      sellQueue,
+      buyTotal: buyQueue.reduce((sum, item) => sum + item.amount, 0),
+      sellTotal: sellQueue.reduce((sum, item) => sum + item.amount, 0),
+      myPosition: viewer ? db.positions.find((item) => item.userId === viewer.id && item.fundId === fund.id)?.amount ?? 0 : 0,
+    }
+  })
+  res.json({
+    unit: 1000,
+    rule: '가격은 1,000원으로 고정이고 먼저 예약한 순서대로 체결됩니다. 반대 주문이 없으면 대기합니다.',
+    books: books.sort((a, b) => (b.buyTotal + b.sellTotal) - (a.buyTotal + a.sellTotal)),
+  })
+})
+
+/* ── 1:1 고객지원 ───────────────────────────────────────────────
+ * 승재 프로젝트의 문의 접수(disputes)를 먹투로 옮겼다.
+ * AI 상담원이 답할 수 없는 계정·거래 문제를 사람에게 넘기는 통로다.
+ */
+const SUPPORT_TYPES = ['investment', 'coupon', 'exchange', 'review', 'owner', 'account', 'other'] as const
+const SUPPORT_TYPE_LABELS: Record<string, string> = {
+  investment: '투자·회수', coupon: '쿠폰', exchange: '교환장', review: '리뷰',
+  owner: '사장님 심사', account: '계정·로그인', other: '기타',
+}
+
+app.get('/api/support/requests', auth(), (req: AuthedRequest, res) => {
+  const mine = (db.supportRequests || []).filter((item) => item.userId === req.user!.id)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  res.json({ requests: mine, types: SUPPORT_TYPES.map((type) => ({ id: type, label: SUPPORT_TYPE_LABELS[type] })) })
+})
+
+app.post('/api/support/requests', auth(), async (req: AuthedRequest, res) => {
+  const body = req.body as Record<string, unknown>
+  const type = String(body.type || 'other') as SupportRequest['type']
+  const subject = String(body.subject || '').trim()
+  const description = String(body.description || '').trim()
+  if (!SUPPORT_TYPES.includes(type as typeof SUPPORT_TYPES[number])) return res.status(400).json({ error: '문의 유형을 다시 선택해주세요.' })
+  if (subject.length < 3 || subject.length > 100) return res.status(400).json({ error: '제목은 3자 이상 100자 이하로 입력해주세요.' })
+  if (description.length < 10 || description.length > 2000) return res.status(400).json({ error: '내용은 10자 이상 2,000자 이하로 입력해주세요.' })
+  const restaurantId = typeof body.restaurantId === 'string' && db.restaurants.some((item) => item.id === body.restaurantId)
+    ? body.restaurantId : undefined
+  const request: SupportRequest = {
+    id: id('support'), userId: req.user!.id, userName: req.user!.name, type,
+    subject: subject.slice(0, 100), description: description.slice(0, 2000), restaurantId,
+    priority: type === 'investment' || type === 'account' ? 'high' : 'normal',
+    status: 'received', createdAt: now(),
+  }
+  db.supportRequests ??= []
+  db.supportRequests.push(request)
+  pushNotification(req.user!.id, 'support', '문의를 접수했어요',
+    `“${request.subject}” 문의가 접수됐어요. 영업일 기준 1~2일 안에 답변드릴게요.`, '/support')
+  audit(req.user!.id, 'support.created', 'support', request.id, `${SUPPORT_TYPE_LABELS[type]} 문의 접수 · ${request.subject}`)
+  await saveDatabase(); changed()
+  res.status(201).json({ message: '문의를 접수했어요. 답변은 알림으로 알려드릴게요.', request })
+})
+
 app.get('/api/market/mine', auth(), (req: AuthedRequest, res) => {
   sweepExchange()
   const me = req.user!
@@ -1573,6 +2055,37 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
     relativeSalesGrowth: relativeGrowth,
     salesReconciliationRate: reconciliationRate,
   }
+  // 35개 지표 · 6개 업종 신용등급. 5요소 상권 위험평가와 함께 낸다.
+  // 자료가 없는 지표는 감점 대신 미산정으로 남고 coverage로 드러난다.
+  const industry = toIndustry(String(data.industry || data.category || ''))
+  const matchedRestaurant = db.restaurants.find((item) => item.name === restaurantName)
+  const located = matchedRestaurant ? findCommercialArea(matchedRestaurant) : undefined
+  const creditAssessment = assessCredit(deriveCreditInput({
+    industry,
+    connectedSources,
+    derivedMetrics,
+    seed: restaurantName,
+    restaurant: matchedRestaurant,
+    commercialArea: located && {
+      competitorDensity: located.area.marketDynamics.competitorDensity,
+      closureRate: located.area.marketDynamics.closureRate,
+      areaSalesGrowth: located.area.spending.localSalesGrowth,
+      footTrafficGrowth: located.area.footTraffic.growthRate,
+    },
+    reviews: matchedRestaurant ? db.reviews.filter((review) => review.restaurantId === matchedRestaurant.id) : [],
+  }))
+  const riskAssessment = matchedRestaurant
+    ? assessRestaurant(matchedRestaurant, db.funds.find((item) => item.restaurantId === matchedRestaurant.id))
+    : undefined
+  const combined = riskAssessment ? combineAssessments(riskAssessment, creditAssessment) : undefined
+
+  strengths.push(`${industry} 업종 35개 지표 중 ${creditAssessment.measuredCount}개를 산정해 신용등급 ${creditAssessment.grade}(${creditAssessment.score}점)이 나왔어요.`)
+  if (creditAssessment.topDrivers.length) strengths.push(`가장 크게 기여한 지표는 ${creditAssessment.topDrivers.slice(0, 2).map((item) => item.label).join(', ')}예요.`)
+  for (const drag of creditAssessment.topDrags.slice(0, 2)) {
+    improvements.push(`${drag.label}이(가) ${industry} 업종 기준으로 하위권(${drag.score}점)이라 등급을 끌어내리고 있어요.`)
+  }
+  if (creditAssessment.missing.length >= 8) improvements.push(`아직 산정하지 못한 신용지표가 ${creditAssessment.missing.length}개예요. 대출·계좌·재방문 자료를 연결하면 등급 근거가 촘촘해져요.`)
+
   const explanation = status === 'approved'
     ? '핵심 원천데이터가 연결됐고 3중 검증의 일치도가 높아 펀딩 개설이 가능해요. 이 결과는 공식 SCB 등급이 아닌 먹투 MVP의 성장성 예비심사입니다.'
     : status === 'conditional'
@@ -1584,18 +2097,50 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
   const application: Application = {
     id: id('application'), userId: req.user!.id, restaurantName, submittedAt: now(), status,
     requestedLimit, approvedLimit: status === 'rejected' ? 0 : approvedLimit, score,
-    data: { ...data, uploadedDocuments, documentMetadata, connectedSources, sourceProvenance, dataConfidence, derivedMetrics, businessVerification, financialVerification }, strengths, checks, improvements, explanation,
+    data: { ...data, uploadedDocuments, documentMetadata, connectedSources, sourceProvenance, dataConfidence, derivedMetrics, businessVerification, financialVerification, creditAssessment, combinedAssessment: combined }, strengths, checks, improvements, explanation,
+  }
+  // 체험 세션은 같은 채점 로직을 쓰되 결과를 공유 원장이 아닌 체험 원장에 남긴다.
+  if (req.user!.sessionMode === 'demo') {
+    const sandbox = sandboxFor(req.user!.id, 'owner')
+    sandbox.applications.unshift(application)
+    demoNotification(sandbox, 'application', '체험 심사 완료', `${restaurantName} 예비심사 ${score}점 · 신용등급 ${creditAssessment.grade}`, '/owner')
+    return res.status(201).json({ message: '체험 심사가 끝났어요. 결과는 저장되지 않습니다.', application, ephemeral: true, demoNotice: DEMO_NOTICE })
   }
   db.applications.push(application)
-  audit(req.user!.id, 'application.analyzed', 'application', application.id, `${restaurantName} 예비심사 ${status} · ${score}점`)
+  // 감사 로그는 사장님 화면에 그대로 보인다. 내부 코드값 대신 사람이 읽는 말로 남긴다.
+  const statusWord = { approved: '펀딩 가능', conditional: '조건부 승인', manual_review: '운영자 확인 필요', rejected: '보완 필요' }[status]
+  audit(req.user!.id, 'application.analyzed', 'application', application.id, `${restaurantName} 예비심사 ${statusWord} · ${score}점`)
+  audit(req.user!.id, 'application.credit_graded', 'application', application.id,
+    `신용등급 ${creditAssessment.grade} (${creditAssessment.score}점) · ${creditAssessment.industry} 업종 · 지표 ${creditAssessment.measuredCount}/${creditAssessment.totalCount} 산정`)
   audit(req.user!.id, 'application.business_verified', 'application', application.id, `사업자 진위확인 ${businessVerification.verified ? '통과' : '보완 필요'}`)
+  const verificationWord: Record<string, string> = {
+    ready_for_admin: '운영자 확인 준비 완료', mismatch: '값이 서로 맞지 않음',
+    needs_documents: '자료 부족', low_confidence: '판독 신뢰도 낮음',
+  }
   audit(req.user!.id, 'application.financial_orchestrated', 'application', application.id,
-    `재무 교차검증 ${financialVerification.recommendedStatus} · 문서 ${financialVerification.documentCount}건 · 불일치 ${financialVerification.mismatches.length}건`)
+    `자료 대조 ${verificationWord[financialVerification.recommendedStatus] || financialVerification.recommendedStatus} · 문서 ${financialVerification.documentCount}건 · 불일치 ${financialVerification.mismatches.length}건`)
   await saveDatabase(); changed()
   res.status(201).json({ message: '원천데이터 기반 먹투 자동분석이 완료됐어요.', application })
 })
 
 app.get('/api/owner', auth('owner'), (req: AuthedRequest, res) => {
+  if (req.user!.sessionMode === 'demo') {
+    // 체험 사장님에게는 샘플 식당 하나를 빌려주고, 변경분은 샌드박스에만 남긴다.
+    const sandbox = sandboxFor(req.user!.id, 'owner')
+    const sample = db.restaurants[0]
+    const sampleFund = sample && db.funds.find((item) => item.restaurantId === sample.id)
+    return res.json({
+      restaurants: sample ? [{ ...sample, salesDisclosure: sandbox.salesDisclosure ?? sample.salesDisclosure }] : [],
+      funds: sampleFund ? [sampleFund] : [],
+      positions: [],
+      coupons: sandbox.coupons,
+      applications: sandbox.applications,
+      auditEvents: [],
+      ocrAnalyses: [],
+      dataConnections: sandbox.connections.map(({ userId: _unused, ...item }) => item),
+      demo: { notice: DEMO_NOTICE },
+    })
+  }
   const restaurants = db.restaurants.filter((r) => r.ownerId === req.user!.id)
   const fundIds = db.funds.filter((f) => restaurants.some((r) => r.id === f.restaurantId)).map((f) => f.id)
   const positions = db.positions.filter((p) => fundIds.includes(p.fundId))
@@ -1716,6 +2261,111 @@ function localAiAnswer(question: string) {
   return '식당 이름이나 “회수는 어떻게 해?”, “단골이 많은 곳 추천해줘”, “쿠폰은 언제 받아?”처럼 물어보세요. 먹투의 가상 식당 데이터와 이용 규칙을 바탕으로 설명해드릴게요.'
 }
 
+/**
+ * 신용평가 모델 자체를 공개한다. 검증 데이터룸에서 "이 등급이 어떻게 나오는가"를
+ * 보여주기 위한 것이고, 특정 사업체 값은 담지 않는다.
+ */
+app.get('/api/credit/model', (_req, res) => {
+  res.json({
+    modelVersion: creditModelVersion,
+    industries,
+    industryProfiles,
+    weightSum: Number(featureSpecs.reduce((sum, spec) => sum + spec.weight, 0).toFixed(1)),
+    groups: ['신용·부채', '매출·거래', '현금흐름', '운영·상권', '고객·평판'].map((group) => ({
+      group,
+      weight: Number(featureSpecs.filter((spec) => spec.group === group).reduce((sum, spec) => sum + spec.weight, 0).toFixed(1)),
+      features: featureSpecs.filter((spec) => spec.group === group).map((spec) => ({
+        key: spec.key, label: spec.label, weight: spec.weight, unit: spec.unit,
+        direction: spec.lowerIsBetter ? '낮을수록 좋음' : '높을수록 좋음',
+        note: spec.note,
+      })),
+    })),
+    gradeBands: [
+      { grade: 'A+', min: 85 }, { grade: 'A', min: 75 }, { grade: 'B+', min: 65 },
+      { grade: 'B', min: 55 }, { grade: 'C', min: 45 }, { grade: 'D', min: 0 },
+    ],
+    overrideRules: [
+      '최대 연체일수 90일 이상이면 점수와 무관하게 D',
+      '측정 가중치가 50% 미만이면 70점 상한 (상위 등급 보류)',
+    ],
+    missingHandling: '측정하지 못한 지표는 감점하지 않고 가중치에서 제외한 뒤 나머지로 재정규화',
+    references: creditReferences,
+    disclaimer: '참고용 예비평가입니다. 금융기관의 공식 신용등급이 아니며 부도확률을 계산하지 않습니다.',
+  })
+})
+
+/**
+ * 점주 AI 경영·신용 진단.
+ * 승재 프로젝트의 /api/ai/management-credit-diagnosis 를 먹투 데이터 모델로 옮겼다.
+ * 외부 AI가 연결돼 있으면 생성형 답변을, 아니면 같은 근거로 규칙 기반 리포트를 낸다.
+ */
+app.post('/api/ai/management-credit-diagnosis', auth('owner'), async (req: AuthedRequest, res) => {
+  const owned = db.restaurants.filter((item) => item.ownerId === req.user!.id)
+  const restaurant = (typeof req.body?.restaurantId === 'string' && owned.find((item) => item.id === req.body.restaurantId)) || owned[0]
+  const application = [...db.applications].reverse().find((item) => item.userId === req.user!.id)
+  if (!restaurant && !application) {
+    return res.status(409).json({ error: '진단할 자료가 아직 없어요. 사장님 센터에서 펀딩 신청을 먼저 진행해주세요.' })
+  }
+
+  const fund = restaurant ? db.funds.find((item) => item.restaurantId === restaurant.id) : undefined
+  const connections = db.dataConnections.filter((item) => item.userId === req.user!.id)
+  const derivedMetrics = (application?.data?.derivedMetrics as Record<string, unknown>) || {}
+  const connectedSources = Array.isArray(application?.data?.connectedSources)
+    ? (application!.data!.connectedSources as unknown[]).map(String)
+    : connections.filter((item) => item.status === 'active').map((item) => item.sourceId as string)
+
+  const located = restaurant ? findCommercialArea(restaurant) : undefined
+  const industry = toIndustry(restaurant?.category)
+  const credit = (application?.data?.creditAssessment as CreditAssessment | undefined) || assessCredit(deriveCreditInput({
+    industry, connectedSources, derivedMetrics, seed: restaurant?.name || application?.restaurantName,
+    restaurant,
+    commercialArea: located && {
+      competitorDensity: located.area.marketDynamics.competitorDensity,
+      closureRate: located.area.marketDynamics.closureRate,
+      areaSalesGrowth: located.area.spending.localSalesGrowth,
+      footTrafficGrowth: located.area.footTraffic.growthRate,
+    },
+    reviews: restaurant ? db.reviews.filter((review) => review.restaurantId === restaurant.id) : [],
+  }))
+  const risk = restaurant ? assessRestaurant(restaurant, fund) : undefined
+  const combined = risk ? combineAssessments(risk, credit) : undefined
+  const situation = ownerSituation({ application, connections, restaurant, fund })
+
+  const strengths = credit.topDrivers.slice(0, 4).map((item) => `${item.label}이(가) ${industry} 업종 기준 상위권(${item.score}점)이라 등급을 올리고 있어요.`)
+  const risks = credit.topDrags.slice(0, 4).map((item) => `${item.label}이(가) ${item.score}점으로 낮아 등급을 끌어내리고 있어요.`)
+  if (risk?.contextualAlerts?.length) risks.push(...risk.contextualAlerts.slice(0, 2))
+  const actions = [...situation.nextActions]
+  if (credit.missing.length) actions.push(`아직 산정하지 못한 지표 ${credit.missing.length}개(${credit.missing.slice(0, 3).join(', ')} 등)를 채우면 등급 근거가 촘촘해져요.`)
+
+  const report = {
+    headline: `${restaurant?.name || application?.restaurantName || '내 가게'}의 현재 신용등급은 ${credit.grade}(${credit.score}점)이고, 심사는 ${situation.currentStage.total}단계 중 ${situation.currentStage.order}단계예요.`,
+    industry,
+    industryNote: credit.industryNote,
+    grade: credit.grade,
+    score: credit.score,
+    coverage: credit.coverage,
+    measured: `${credit.measuredCount}/${credit.totalCount}개 지표 산정`,
+    groups: credit.groups,
+    strengths: strengths.length ? strengths : ['현재 산정된 지표에서 뚜렷한 강점 신호를 더 확인할 자료가 필요해요.'],
+    risks: risks.length ? risks : ['현재 산정된 지표에서 뚜렷한 고위험 신호는 확인되지 않았어요.'],
+    actions: actions.slice(0, 5),
+    overrides: credit.overrides,
+    notice: '참고용 예비평가입니다. 금융기관의 공식 신용등급이 아니며 대출 승인·거절의 근거가 아닙니다.',
+  }
+
+  res.json({
+    provider: aiApiUrl && aiApiKey ? 'meoktu-credit-engine+ai' : 'meoktu-credit-engine',
+    restaurantId: restaurant?.id ?? null,
+    modelVersion: credit.modelVersion,
+    report,
+    credit,
+    risk: risk && { score: risk.score, grade: risk.grade, riskLevel: risk.riskLevel, components: risk.components },
+    combined,
+    situation,
+    references: credit.references,
+  })
+})
+
 app.post('/api/ai/chat', async (req: AuthedRequest, res) => {
   const question = String(req.body.question || '').slice(0, 800)
   if (!question.trim()) return res.status(400).json({ error: '궁금한 내용을 입력해주세요.' })
@@ -1731,9 +2381,11 @@ app.post('/api/ai/chat', async (req: AuthedRequest, res) => {
   const role: Role = ownerIntent ? 'owner' : askedRole
   const requestedRestaurant = typeof req.body.restaurantId === 'string' ? db.restaurants.find((item) => item.id === req.body.restaurantId) : undefined
   const mentionedRestaurant = db.restaurants.find((item) => normalizedQuestion.includes(item.name.replace(/\s/g, '').toLocaleLowerCase('ko')))
-  const graphRestaurant = mentionedRestaurant || requestedRestaurant
-  const graphFund = graphRestaurant ? db.funds.find((item) => item.restaurantId === graphRestaurant.id) : undefined
   const asker = await userFromAuthorization(req.headers.authorization).catch(() => undefined)
+  // 사장님이 "내 심사 어떻게 돼가?"처럼 가게 이름을 빼고 물어도 자기 가게 기준으로 답해야 한다.
+  const ownRestaurant = asker?.role === 'owner' ? db.restaurants.find((item) => item.ownerId === asker.id) : undefined
+  const graphRestaurant = mentionedRestaurant || requestedRestaurant || ownRestaurant
+  const graphFund = graphRestaurant ? db.funds.find((item) => item.restaurantId === graphRestaurant.id) : undefined
   const askerPosition = asker && graphFund ? db.positions.find((item) => item.userId === asker.id && item.fundId === graphFund.id && item.amount > 0) : undefined
   const application = graphRestaurant
     ? [...db.applications].reverse().find((item) => item.restaurantName === graphRestaurant.name || (asker?.role === 'owner' && item.userId === asker.id))
@@ -1748,15 +2400,60 @@ app.post('/api/ai/chat', async (req: AuthedRequest, res) => {
       mismatchCount: (financialRun.mismatches || []).length, missingCount: (financialRun.missingDocuments || []).length,
     },
   })
+  // 사장님 개인 상황과 공적 지원제도를 같은 그래프에 올린다.
+  // 이게 있어야 "지금 내 심사 어디까지 됐어?", "뭐가 부족해?", "정책자금 받을 수 있어?"에
+  // 절차 설명이 아니라 실제 현재값으로 답할 수 있다.
+  const ownerConnections = asker ? db.dataConnections.filter((item) => item.userId === asker.id) : []
+  const situation = (asker?.role === 'owner' || application)
+    ? ownerSituation({ application, connections: ownerConnections, restaurant: graphRestaurant, fund: graphFund })
+    : undefined
+  if (situation) {
+    const situationGraph = ownerSituationGraph(situation, graphRestaurant ? `restaurant:${graphRestaurant.id}` : undefined)
+    knowledgeGraph.nodes.push(...situationGraph.nodes)
+    knowledgeGraph.edges.push(...situationGraph.edges)
+  }
+  // 35지표 신용등급도 그래프에 올린다. "내 등급 왜 이래요?"에 답하려면 필요하다.
+  const storedCredit = application?.data?.creditAssessment as CreditAssessment | undefined
+  if (storedCredit) {
+    knowledgeGraph.nodes.push({
+      id: 'credit:grade', type: 'CreditGrade', label: `신용등급 ${storedCredit.grade} (${storedCredit.score}점)`,
+      source: 'MEOKTU_CREDIT_35V',
+      properties: {
+        industry: storedCredit.industry, grade: storedCredit.grade, score: storedCredit.score,
+        measured: `${storedCredit.measuredCount}/${storedCredit.totalCount}`, coverage: storedCredit.coverage,
+        topDrivers: storedCredit.topDrivers.slice(0, 3).map((item) => `${item.label} ${item.score}점`).join(', '),
+        topDrags: storedCredit.topDrags.slice(0, 3).map((item) => `${item.label} ${item.score}점`).join(', '),
+        missingCount: storedCredit.missing.length,
+        calibratedProbability: false,
+      },
+    })
+    if (graphRestaurant) knowledgeGraph.edges.push({ from: `restaurant:${graphRestaurant.id}`, relation: 'GRADED_AS', to: 'credit:grade' })
+  }
+
+  const matchedPrograms = matchSupportPrograms(question, 3)
+  if (matchedPrograms.length) knowledgeGraph.nodes.push(...supportProgramNodes(matchedPrograms))
+
   const retrievedGraph = retrieveKnowledgeSubgraph(knowledgeGraph, question)
+  // 검색에서 밀려나도 사장님 현황·지원제도는 근거에 남긴다. 이게 질문의 핵심일 때가 많다.
+  if (situation && isOwnerStatusQuestion(question) && !retrievedGraph.nodes.some((node) => node.id === 'owner:situation')) {
+    retrievedGraph.nodes.push(...ownerSituationGraph(situation).nodes as typeof retrievedGraph.nodes)
+  }
+  for (const program of matchedPrograms) {
+    if (!retrievedGraph.nodes.some((node) => node.id === program.id)) {
+      retrievedGraph.nodes.push(...supportProgramNodes([program]) as typeof retrievedGraph.nodes)
+    }
+  }
   // 화면 지도는 별도로 뽑는다. 절차 노드에 밀려서 빠지면 "어디로 가야 해요" 질문이 다시 망가진다.
   const navigation = navigationBrief(question)
   const navigationAnswer = answerNavigationQuestion(question)
   const wantsNavigation = isNavigationQuestion(question) || matchUiTasks(question, 1).length > 0
   const graphAnswer = answerGraphProcessQuestion(question, retrievedGraph)
   const fallback = localAiAnswer(question)
-  // 화면 위치를 묻는 질문이면 절차 설명보다 클릭 경로를 먼저 준다.
-  const localAnswer = (wantsNavigation && navigationAnswer) ? navigationAnswer : (graphAnswer || fallback)
+  const statusAnswer = situation && isOwnerStatusQuestion(question) ? answerOwnerStatusQuestion(situation) : ''
+  const supportAnswer = isSupportQuestion(question) ? answerSupportQuestion(question) : ''
+  // 우선순위: 내 현황 > 화면 위치 > 지원제도 > 절차 > 일반 답변.
+  // "내 심사 어디까지 됐어?"에 절차 단계를 읊어주면 답이 안 된다.
+  const localAnswer = statusAnswer || ((wantsNavigation && navigationAnswer) ? navigationAnswer : (supportAnswer || graphAnswer || fallback))
   const apiUrl = aiApiUrl
   const apiKey = aiApiKey
   if (!apiUrl || !apiKey) return res.json({
@@ -1816,9 +2513,9 @@ app.post('/api/ai/chat', async (req: AuthedRequest, res) => {
 
 [화면 안내 규칙 — 가장 중요]
 - "어디로 가야 해요", "어디서 하나요", "어떻게 신청해요" 같은 질문은 **화면 위치 질문**이다. 반드시 아래 '화면 지도'의 menuPath와 steps를 그대로 활용해 "상단 메뉴의 OO을 클릭하세요"처럼 눌러야 할 메뉴와 버튼 이름으로 답한다.
-- GraphRAG의 GuideStep 노드(예: '사업체·대표자 등록', '데이터 출처 선택', 'AI OCR 교차검증')는 **심사 절차의 이름**이지 화면에 있는 메뉴나 버튼이 아니다. 이것을 "OO 단계로 가셔야 합니다"처럼 이동할 장소인 것처럼 안내하면 안 된다. 절차를 설명할 때는 "심사는 이런 순서로 진행돼요"라고 절차임을 밝힌다.
+- 심사 절차 정보의 단계 이름(예: '사업체·대표자 등록', '데이터 출처 선택', '제출자료 자동 확인')은 **심사가 진행되는 순서의 이름**이지 화면에 있는 메뉴나 버튼이 아니다. 이것을 "OO 단계로 가셔야 합니다"처럼 이동할 장소인 것처럼 안내하면 안 된다. 절차를 설명할 때는 "심사는 이런 순서로 진행돼요"라고 순서임을 밝힌다.
 - 화면 지도에 없는 메뉴, 버튼, 페이지 이름을 지어내지 않는다.
-- 먹투에는 고객센터, 상담 전화번호, 이메일 문의 창구가 없다. "고객센터에 문의하세요" 같은 안내를 하지 말고, 대신 이 AI 상담창이나 해당 화면을 안내한다.
+- 먹투에는 상담 전화번호나 이메일 창구가 없다. 대신 화면 안에 “1:1 문의” 접수 화면이 있으니, AI가 답할 수 없는 계정·거래 문제는 그 화면으로 안내한다.
 - 사장님(소상공인) 기능은 소상공인 계정 로그인이 필요하다는 점을 필요할 때 알려준다.
 
 [내용 규칙]
@@ -1828,14 +2525,36 @@ app.post('/api/ai/chat', async (req: AuthedRequest, res) => {
 - 식당 비교 시 성장률뿐 아니라 재방문율, 운영 이력, 상권 위험, 쿠폰의 실제 사용 가능성을 함께 설명한다.
 - 투자 권유, 수익 보장, 원금 보장으로 오해될 표현을 쓰지 않는다. "투자할 만한 가치가 높다", "지금이 기회다" 같은 판단은 하지 말고, 판단 재료(성장률·재방문율·운영 이력·상권 위험)를 보여주고 결정은 사용자에게 맡긴다.
 - 투자금은 예금이 아니며 모금 종료 뒤에는 반대 주문이 있어야 1,000원 단위로 회수된다는 점을 필요할 때 명확히 알린다.
-- 아래 GraphRAG 검색 결과를 우선 근거로 사용하되, 노드 텍스트를 그대로 복사하지 말고 사람이 이해할 문장으로 풀어서 설명한다.
+- 아래 참고자료를 우선 근거로 사용하되, 원문을 그대로 복사하지 말고 사람이 이해할 문장으로 풀어서 설명한다.
+
+[말투 규칙 — 내부 용어 금지]
+- 사용자는 소상공인과 일반 투자자다. 내부 시스템 용어를 답변에 절대 쓰지 않는다.
+- 금지어: GraphRAG, 지식그래프, 그래프 검색, 노드, 엣지, 임베딩, 벡터, RAG, 프롬프트, LLM, OpenAI, GPT, OCR, 파싱, 스키마, API, 데이터셋, 모델 버전.
+- "그래프에서 검색했습니다", "노드에 따르면", "OCR 검증 결과" 같은 표현 대신 "먹투에 등록된 정보로는", "제출하신 서류를 확인해 보니"처럼 사람이 쓰는 말로 바꾼다.
+- 답변 끝에 어떤 기술로 답을 만들었는지 설명하는 문장을 붙이지 않는다.
+
+[사장님 현황 규칙]
+- 아래 '사장님 현재 상황'이 있으면 그것이 이 사장님의 실제 지금 상태다. "심사 어떻게 돼가요", "뭐가 부족해요" 같은 질문에는 절차 설명이 아니라 이 값으로 답한다.
+- 단계는 "6단계 중 3단계"처럼 숫자로 말하고, 비어 있는 자료는 이름을 그대로 말한다.
+- 현황이 없으면 있는 척하지 말고 "아직 접수 전"이라고 말한다.
+
+[지원제도 규칙]
+- 아래 '참고 지원제도'는 먹투 밖의 공적 제도다. 사장님이 자금·세금·폐업·보증을 물으면 함께 안내한다.
+- 금액·금리·기간은 해마다 바뀌므로 단정하지 말고 "${knowledgeAsOf} 기준이며 확정 조건은 기관 공고를 확인해야 한다"고 덧붙인다.
+- 먹투가 이 제도를 대신 신청해주는 것처럼 말하지 않는다.
 
 [형식]
-- 답변은 읽기 쉬운 3~7문장. 클릭 순서를 안내할 때만 번호 목록을 쓴다.
+- 답변은 읽기 쉬운 3~7문장. 클릭 순서나 해야 할 일을 안내할 때만 번호 목록을 쓴다.
+- 반드시 한국어로만 답한다. 영어 단어를 섞지 않는다.
+- 단계 번호는 '사장님 현재 상황'의 stageLabel 값을 그대로 쓴다. 임의로 다른 숫자를 만들지 않는다.
 
 화면 지도(UI 내비게이션): ${JSON.stringify(navigation)}
 
-GraphRAG 검색 결과: ${JSON.stringify(retrievedGraph)}
+사장님 현재 상황: ${situation ? JSON.stringify(situation) : '없음(투자자이거나 아직 심사 접수 전)'}
+
+참고 지원제도: ${matchedPrograms.length ? JSON.stringify(matchedPrograms) : '이 질문과 연결된 제도 없음'}
+
+참고자료(먹투 절차·현황 정보): ${JSON.stringify(retrievedGraph)}
 
 가상 식당 데이터: ${JSON.stringify(context)}`,
           },
