@@ -212,6 +212,7 @@ export interface Review {
   content: string
   visitVerified: boolean
   createdAt: string
+  status?: 'published' | 'hidden'
 }
 
 export interface VisitVerification {

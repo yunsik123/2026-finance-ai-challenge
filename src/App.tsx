@@ -3,7 +3,7 @@ import { NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-d
 import { io } from 'socket.io-client'
 import {
   ArrowRight, Bell, Building2, Check, ChevronRight, CircleDollarSign,
-  HandCoins, Heart, LogOut, MapPin, Menu, Search,
+  HandCoins, Heart, LogOut, MapPin, Menu, MessageCircleQuestion, Search,
   ShieldCheck, Sparkles, Store, Ticket, TrendingUp, UserRound, Users, WalletCards, X,
 } from 'lucide-react'
 import { api, clearToken, getToken, setToken } from './lib/api.ts'
@@ -16,7 +16,6 @@ import InsightPage from './InsightPage.tsx'
 import OwnerCenter from './OwnerCenter.tsx'
 import AdminCenter from './AdminCenter.tsx'
 import WalletTopup from './WalletTopup.tsx'
-import TrustCenter from './TrustCenter.tsx'
 import SupportPage from './SupportPage.tsx'
 import FloatingAiChat from './FloatingAiChat.tsx'
 import type { ApplicationResult, AppNotification, MeState, Position, PublicState, Restaurant, Role, User } from './types.ts'
@@ -33,6 +32,8 @@ function App() {
   const [toast, setToast] = useState('')
   const [loading, setLoading] = useState(true)
   const navigate = useNavigate()
+  const location = useLocation()
+  const adminRoute = location.pathname.startsWith('/admin')
 
   const notify = (message: string) => {
     setToast(message)
@@ -108,14 +109,13 @@ function App() {
 
   return (
     <div className="app-shell">
-      <Header user={me?.user} notifications={me?.notifications || []} unread={me?.unreadNotifications || 0} refresh={refresh} onLogin={() => setAuthOpen(true)} onLogout={logout} />
+      {!adminRoute && <Header user={me?.user} notifications={me?.notifications || []} unread={me?.unreadNotifications || 0} refresh={refresh} onLogin={() => setAuthOpen(true)} onLogout={logout} />}
       <main>
         <Routes>
           <Route path="/" element={<Home state={state} onSelect={setSelected} onExplore={() => navigate('/discover')} favoriteIds={me?.favoriteRestaurantIds || []} onFavorite={toggleFavorite} />} />
           <Route path="/discover" element={<Discover restaurants={state.restaurants} onSelect={setSelected} favoriteIds={me?.favoriteRestaurantIds || []} onFavorite={toggleFavorite} />} />
           <Route path="/market" element={<MarketPage state={state} me={me} requireLogin={requireLogin} onSelect={setSelected} refresh={refresh} notify={notify} />} />
           <Route path="/insight" element={<InsightPage state={state} onSelect={setSelected} notify={notify} />} />
-          <Route path="/trust" element={<TrustCenter state={state} onSelect={setSelected} />} />
           <Route path="/owner" element={<OwnerCenter me={me} onLogin={() => setAuthOpen(true)} refresh={refresh} notify={notify} />} />
           <Route path="/admin" element={<AdminCenter me={me} onLogin={() => setAuthOpen(true)} notify={notify} />} />
           <Route path="/my" element={<MyPage me={me} state={state} restaurants={state.restaurants} requireLogin={requireLogin} onSelect={setSelected} transact={transact} refresh={refresh} notify={notify} />} />
@@ -123,12 +123,12 @@ function App() {
           <Route path="*" element={<NotFound />} />
         </Routes>
       </main>
-      <Footer />
-      <MobileNav />
+      {!adminRoute && <Footer />}
+      {!adminRoute && <MobileNav user={me?.user} />}
       {authOpen && <AuthModal onClose={() => setAuthOpen(false)} onAuth={onAuth} notify={notify} />}
       {selected && <FundDetailModal restaurant={state.restaurants.find((r) => r.id === selected.id) || selected} me={me} onClose={() => setSelected(null)} onLogin={() => setAuthOpen(true)} refresh={refresh} notify={notify} />}
       {toast && <div className="toast"><Check size={18} />{toast}</div>}
-      <FloatingAiChat role={me?.user.role || 'investor'} />
+      {!adminRoute && <FloatingAiChat role={me?.user.role || 'investor'} />}
     </div>
   )
 }
@@ -141,7 +141,7 @@ function Header({ user, notifications, unread, refresh, onLogin, onLogout }: { u
     <div className="header-inner">
       <NavLink to="/" className="logo"><span className="brand-mark">묵</span><span>먹투<small>먹는 투자의 시작</small></span></NavLink>
       <nav className={menuOpen ? 'desktop-nav open' : 'desktop-nav'}>
-        <NavLink to="/discover">식당 발견</NavLink><NavLink to="/market">거래장</NavLink><NavLink to="/insight">AI 인사이트</NavLink><NavLink to="/trust">검증 데이터룸</NavLink><NavLink to="/owner">사장님 센터</NavLink>{user?.role === 'admin' && <NavLink to="/admin">운영센터</NavLink>}
+        {user?.role === 'admin' ? <NavLink to="/admin">운영센터</NavLink> : <><NavLink to="/discover">식당 발견</NavLink><NavLink to="/market">거래장</NavLink><NavLink to="/insight">AI 인사이트</NavLink><NavLink to="/support">신고·문의</NavLink>{user?.role === 'investor' && <NavLink to="/my">마이페이지</NavLink>}{user?.role === 'owner' && <NavLink to="/owner">사장님 센터</NavLink>}</>}
       </nav>
       <div className="header-actions">
         {user ? <NotificationBell notifications={notifications} unread={unread} refresh={refresh} /> : <button className="icon-button hide-mobile" aria-label="알림" onClick={onLogin}><Bell size={20} /></button>}
@@ -152,9 +152,9 @@ function Header({ user, notifications, unread, refresh, onLogin, onLogout }: { u
   </header>
 }
 
-function MobileNav() {
+function MobileNav({ user }: { user?: User }) {
   return <nav className="mobile-nav">
-    <NavLink to="/"><Store /><span>홈</span></NavLink><NavLink to="/discover"><Search /><span>발견</span></NavLink><NavLink to="/market"><ArrowRight /><span>거래</span></NavLink><NavLink to="/insight"><Sparkles /><span>AI</span></NavLink><NavLink to="/my"><UserRound /><span>MY</span></NavLink>
+    {user?.role === 'admin' ? <NavLink to="/admin"><ShieldCheck /><span>운영</span></NavLink> : <><NavLink to="/discover"><Search /><span>발견</span></NavLink><NavLink to="/market"><ArrowRight /><span>거래</span></NavLink><NavLink to="/insight"><Sparkles /><span>AI</span></NavLink><NavLink to="/support"><MessageCircleQuestion /><span>문의</span></NavLink>{user?.role === 'owner' ? <NavLink to="/owner"><Building2 /><span>사장님</span></NavLink> : user?.role === 'investor' ? <NavLink to="/my"><UserRound /><span>MY</span></NavLink> : <NavLink to="/"><Store /><span>홈</span></NavLink>}</>}
   </nav>
 }
 
@@ -255,6 +255,6 @@ function AuthModal({ onClose, onAuth, notify }: { onClose: () => void; onAuth: (
   return <div className="modal-backdrop" onMouseDown={onClose}><div className="auth-modal" onMouseDown={(e) => e.stopPropagation()}><button className="modal-close" onClick={onClose}><X /></button><div className="auth-brand"><span className="brand-mark">묵</span><div><b>먹투에 오신 걸 환영해요</b><p>맛있는 성장을 함께 시작해볼까요?</p></div></div><div className="auth-tabs"><button className={mode === 'login' ? 'active' : ''} onClick={() => setMode('login')}>로그인</button><button className={mode === 'signup' ? 'active' : ''} onClick={() => setMode('signup')}>회원가입</button></div><form onSubmit={submit}><div className="auth-role-heading"><b>{mode === 'login' ? '어떤 계정으로 로그인할까요?' : '어떤 계정으로 시작할까요?'}</b><small>{mode === 'login' ? '회원가입할 때 선택한 유형을 골라주세요.' : '가입 후에도 마이페이지에서 바로 확인할 수 있어요.'}</small></div><div className="role-picker"><button type="button" aria-pressed={role === 'investor'} className={role === 'investor' ? 'active' : ''} onClick={() => setRole('investor')}><UserRound /><span><b>투자자</b><small>맛집을 응원하고 혜택 받기</small></span></button><button type="button" aria-pressed={role === 'owner'} className={role === 'owner' ? 'active' : ''} onClick={() => setRole('owner')}><Store /><span><b>사장님</b><small>단골에게 펀딩 받기</small></span></button></div>{mode === 'signup' && <Field label="이름"><input name="name" required placeholder="이름을 입력해주세요" /></Field>}<Field label="이메일"><input name="email" type="email" required placeholder="hello@meoktu.kr" /></Field><Field label="비밀번호"><input name="password" type="password" required minLength={8} placeholder="8자 이상 입력해주세요" /></Field><button className="button full large" disabled={busy}>{busy ? '잠시만요...' : mode === 'login' ? `${role === 'owner' ? '사장님' : '투자자'}로 로그인` : '먹투 시작하기'}</button></form>{mode === 'login' && <><div className="divider"><span>또는 데모로 바로 보기</span></div><div className="demo-buttons"><button disabled={busy} onClick={() => demo('investor')}>😋 투자자 데모</button><button disabled={busy} onClick={() => demo('owner')}>👩‍🍳 사장님 데모</button><button disabled={busy} onClick={() => demo('admin')}>🛡️ 관리자 데모</button></div><p className="demo-limit-note">버튼을 누르면 입력 없이 해당 역할의 데모 계정으로 로그인하고 전용 화면으로 바로 이동합니다.</p></>}<p className="auth-legal">계속하면 먹투의 이용약관과 개인정보처리방침에 동의하게 됩니다.</p></div></div>
 }
 
-function Footer() { return <footer><div className="footer-inner"><div><div className="logo footer-logo"><span className="brand-mark">묵</span><span>먹투<small>먹는 투자의 시작</small></span></div><p>좋아하는 식당의 내일을<br />오늘의 단골과 함께 만듭니다.</p></div><div className="footer-links"><div><b>서비스</b><NavLink to="/discover">식당 발견</NavLink><NavLink to="/market">거래장</NavLink><NavLink to="/insight">AI 인사이트</NavLink><NavLink to="/trust">검증 데이터룸</NavLink></div><div><b>사장님</b><NavLink to="/owner">펀딩 심사</NavLink><NavLink to="/owner">자료 제출 가이드</NavLink><NavLink to="/owner">쿠폰 손익 관리</NavLink></div><div><b>도움말</b><NavLink to="/support">1:1 문의</NavLink><NavLink to="/insight">AI 상담</NavLink><NavLink to="/trust">위험 고지와 검증 근거</NavLink></div></div></div><div className="footer-bottom"><span>© 2026 먹투. MVP Demo.</span><p>식당·투자·거래 수치는 가상이며, 일부 상권 설명은 출처가 표시된 공공자료를 사용합니다. 금융상품 판매 서비스가 아닙니다.</p></div></footer> }
+function Footer() { return <footer><div className="footer-inner"><div><div className="logo footer-logo"><span className="brand-mark">묵</span><span>먹투<small>먹는 투자의 시작</small></span></div><p>좋아하는 식당의 내일을<br />오늘의 단골과 함께 만듭니다.</p></div><div className="footer-links"><div><b>서비스</b><NavLink to="/discover">식당 발견</NavLink><NavLink to="/market">거래장</NavLink><NavLink to="/insight">AI 인사이트</NavLink></div><div><b>계정</b><NavLink to="/my">마이페이지</NavLink><NavLink to="/owner">사장님 센터</NavLink></div><div><b>도움말</b><NavLink to="/support">신고·문의</NavLink><NavLink to="/insight">AI 상담</NavLink></div></div></div><div className="footer-bottom"><span>© 2026 먹투. MVP Demo.</span><p>식당·투자·거래 수치는 가상이며, 일부 상권 설명은 출처가 표시된 공공자료를 사용합니다. 금융상품 판매 서비스가 아닙니다.</p></div></footer> }
 
 export default App

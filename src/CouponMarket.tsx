@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { NavLink } from 'react-router-dom'
-import { ArrowRight, ArrowLeftRight, Check, Clock3, Filter, Handshake, Inbox, RotateCcw, Search, Send, Ticket, TriangleAlert, WalletCards, X } from 'lucide-react'
+import { ArrowRight, ArrowLeftRight, Check, Clock3, Filter, Handshake, Inbox, Plus, RotateCcw, Search, Send, Ticket, TriangleAlert, WalletCards, X } from 'lucide-react'
 import { api } from './lib/api.ts'
+import { ListingComposer } from './CouponWallet.tsx'
 import type { Coupon, ExchangeRules, Listing, MarketMine, MeState, PublicState } from './types.ts'
 
 const won = (value: number) => `${Math.round(value).toLocaleString('ko-KR')}원`
@@ -114,6 +115,8 @@ export default function CouponMarket({ state, me, requireLogin, refresh, notify 
   const [tab, setTab] = useState<'browse' | 'mine'>('browse')
   const [busyId, setBusyId] = useState<string | null>(null)
   const [composing, setComposing] = useState<Listing | null>(null)
+  const [listingPickerOpen, setListingPickerOpen] = useState(false)
+  const [listingCoupon, setListingCoupon] = useState<Coupon | null>(null)
   const [mine, setMine] = useState<MarketMine | null>(null)
   const [filters, setFilters] = useState({ category: '', region: '', matchable: false, query: '' })
 
@@ -163,11 +166,30 @@ export default function CouponMarket({ state, me, requireLogin, refresh, notify 
     finally { setBusyId(null) }
   }
 
+  const openListing = () => {
+    if (!requireLogin()) return
+    if (!myCoupons.length) { notify('교환할 수 있는 쿠폰이 없어요. 투자한 식당에서 쿠폰을 먼저 발급해주세요.'); return }
+    setListingPickerOpen(true)
+  }
+
+  const submitListing = async (body: Record<string, unknown>) => {
+    if (!listingCoupon) return
+    setBusyId(listingCoupon.id)
+    try {
+      const result = await api<{ message: string }>(`/api/coupons/${listingCoupon.id}/list`, { method: 'POST', body: JSON.stringify(body) })
+      notify(result.message); setListingCoupon(null); await refresh(); await loadMine()
+    } catch (error) { notify((error as Error).message) }
+    finally { setBusyId(null) }
+  }
+
   return <div className="page-wrap coupon-market-page">
-    <div className="page-heading compact">
+    <div className="page-heading compact coupon-market-heading">
+      <div>
       <span className="eyebrow coral"><Ticket /> 쿠폰 교환장</span>
       <h1>안 쓰는 혜택을<br />먹고 싶은 혜택으로.</h1>
       <p>원하는 업종·지역을 걸어 올리면, 조건이 맞는 사람만 교환을 제안할 수 있어요.</p>
+      </div>
+      <button className="button large market-list-button" onClick={openListing}><Plus /> 내 쿠폰 등록</button>
     </div>
 
     <div className="market-stats">
@@ -323,5 +345,7 @@ export default function CouponMarket({ state, me, requireLogin, refresh, notify 
       onClose={() => setComposing(null)}
       onSubmit={submitOffer}
     />}
+    {listingPickerOpen && <div className="modal-backdrop" onMouseDown={() => setListingPickerOpen(false)}><div className="offer-composer coupon-picker-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setListingPickerOpen(false)}><X /></button><span className="eyebrow coral"><Ticket /> 내 쿠폰 등록</span><h2>어떤 쿠폰을 올릴까요?</h2><p>교환할 쿠폰을 고르면 받고 시픈 조건을 이어서 선택하세요.</p><div className="market-coupon-picker">{myCoupons.map((coupon) => <button key={coupon.id} onClick={() => { setListingCoupon(coupon); setListingPickerOpen(false) }}><span>{coupon.restaurant?.emoji || '🎟️'}</span><div><b>{coupon.restaurant?.name} {coupon.discount}%</b><small>{coupon.title} · 최대 {won(coupon.maxDiscountWon)}</small></div><ArrowRight /></button>)}</div></div></div>}
+    {listingCoupon && <ListingComposer coupon={listingCoupon} categories={state.exchange.categories} regions={state.exchange.regions} rules={rules} busy={busyId === listingCoupon.id} onClose={() => setListingCoupon(null)} onSubmit={submitListing} />}
   </div>
 }

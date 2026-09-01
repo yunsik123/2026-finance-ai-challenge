@@ -243,7 +243,10 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
       </section> : (!owner || showForm || !restaurant) && <form className={`application-form source-application ${!owner ? 'locked' : ''}`} onSubmit={submit}>
         {!owner && <div className="owner-lock-overlay"><LockKeyhole /><h2>사장님 계정 전용 기능이에요</h2><p>상호명과 자료 업로드를 포함한 모든 입력은 소상공인 계정으로 로그인한 뒤 사용할 수 있습니다.</p><button type="button" className="button" onClick={onLogin}>{me ? '소상공인 계정으로 다시 로그인' : '로그인·회원가입'}</button></div>}
         <fieldset disabled={!owner}>
-          {owner && restaurant && showForm && <button type="button" className="application-back" onClick={goBack}><ArrowLeft /> 사장님 센터로 돌아가기</button>}
+          {owner && restaurant && showForm && <>
+            <button type="button" className="application-back" onClick={goBack}><ArrowLeft /> 사장님 센터로 돌아가기</button>
+            <div className="additional-fund-intro"><span>ADDITIONAL FUNDING</span><h2>추가 펀딩을 준비해볼까요?</h2><p>기존 운영 순서와 다운로드 자료는 그대로 유지하면서, 최근 자료만 갱신해 다음 라운드의 한도와 조건을 다시 확인합니다.</p></div>
+          </>}
           <div className="form-heading"><span>원천데이터 기반 예비심사</span><h2>필요한 자료를 하나씩 제출해주세요</h2><p>매출액·성장률·재방문율은 직접 입력하지 않습니다. 각 자료의 정확한 범위와 항목을 확인하고 파일을 선택하면 먹투가 계산합니다.</p></div>
 
           <section className="form-section">

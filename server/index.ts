@@ -619,7 +619,7 @@ function restaurantView() {
   return db.restaurants.map((restaurant) => {
     const fund = db.funds.find((item) => item.restaurantId === restaurant.id)
     const opportunityScore = Math.round(restaurant.salesGrowth * 1.1 + restaurant.repeatRate * 0.32 + restaurant.communityScore * 0.22 + restaurant.stabilityScore * 0.2 - restaurant.closingRate * 0.35)
-    const reviews = db.reviews.filter((review) => review.restaurantId === restaurant.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 8)
+    const reviews = db.reviews.filter((review) => review.restaurantId === restaurant.id && review.status !== 'hidden').sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 8)
     return { ...restaurant, salesHistory: restaurant.salesDisclosure ? restaurant.salesHistory : undefined, reviews, fund, opportunityScore: Math.min(99, opportunityScore) }
   })
 }
@@ -1226,16 +1226,16 @@ app.get('/api/me', auth(), async (req: AuthedRequest, res) => {
 })
 
 app.get('/api/admin/dashboard', auth('admin'), (_req, res) => {
-  const applications = [...db.applications]
-    .filter((application) => application.status === 'manual_review')
-    .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))
+  const applications = [...db.applications].sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))
   res.json({
     stats: {
       users: db.users.filter((user) => user.role !== 'admin').length,
       owners: db.users.filter((user) => user.role === 'owner').length,
-      pendingApplications: applications.length,
+      pendingApplications: applications.filter((application) => application.status === 'manual_review').length,
       activeFunds: db.funds.filter((fund) => fund.status !== 'closed').length,
       funded: db.funds.reduce((sum, fund) => sum + fund.raised, 0),
+      openSupport: (db.supportRequests || []).filter((request) => !['answered', 'closed'].includes(request.status)).length,
+      coupons: db.coupons.length,
     },
     users: db.users
       .filter((user) => user.role !== 'admin')
@@ -1248,7 +1248,66 @@ app.get('/api/admin/dashboard', auth('admin'), (_req, res) => {
       const owner = db.users.find((user) => user.id === application.userId)
       return { ...application, owner: owner ? publicUser(owner) : undefined }
     }),
+    restaurants: db.restaurants,
+    funds: db.funds,
+    reviews: db.reviews,
+    support: [...(db.supportRequests || [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    coupons: db.coupons,
   })
+})
+
+app.patch('/api/admin/users/:id', auth('admin'), async (req: AuthedRequest, res) => {
+  const user = db.users.find((item) => item.id === req.params.id)
+  if (!user) return res.status(404).json({ error: '회원을 찾지 못했어요.' })
+  if (user.role === 'admin') return res.status(400).json({ error: '관리자 계정은 변경할 수 없어요.' })
+  if (req.body.accountStatus === 'active' || req.body.accountStatus === 'suspended') user.accountStatus = req.body.accountStatus
+  audit(req.user!.id, 'admin.user_status', 'user', user.id, `${user.email} 계정 상태 ${user.accountStatus}`)
+  await saveDatabase(); changed(); res.json(publicUser(user))
+})
+
+app.patch('/api/admin/restaurants/:id', auth('admin'), async (req: AuthedRequest, res) => {
+  const restaurant = db.restaurants.find((item) => item.id === req.params.id)
+  if (!restaurant) return res.status(404).json({ error: '식당을 찾지 못했어요.' })
+  if (typeof req.body.salesDisclosure === 'boolean') restaurant.salesDisclosure = req.body.salesDisclosure
+  await saveDatabase(); changed(); res.json(restaurant)
+})
+
+app.patch('/api/admin/funds/:id', auth('admin'), async (req: AuthedRequest, res) => {
+  const fund = db.funds.find((item) => item.id === req.params.id)
+  if (!fund) return res.status(404).json({ error: '펀드룰 찾지 못했어요.' })
+  if (!['funding', 'trading', 'closed'].includes(req.body.status)) return res.status(400).json({ error: '펀드 상태를 다시 선택해주세요.' })
+  fund.status = req.body.status
+  await saveDatabase(); changed(); res.json(fund)
+})
+
+app.patch('/api/admin/applications/:id', auth('admin'), async (req: AuthedRequest, res) => {
+  const application = db.applications.find((item) => item.id === req.params.id)
+  if (!application) return res.status(404).json({ error: '심사를 찾지 못했어요.' })
+  if (['approved', 'conditional', 'manual_review', 'rejected'].includes(req.body.status)) application.status = req.body.status
+  await saveDatabase(); changed(); res.json(application)
+})
+
+app.patch('/api/admin/reviews/:id', auth('admin'), async (req: AuthedRequest, res) => {
+  const review = db.reviews.find((item) => item.id === req.params.id)
+  if (!review) return res.status(404).json({ error: '리뷰를 찾지 못했어요.' })
+  review.status = req.body.status === 'hidden' ? 'hidden' : 'published'
+  await saveDatabase(); changed(); res.json(review)
+})
+
+app.patch('/api/admin/support/:id', auth('admin'), async (req: AuthedRequest, res) => {
+  const request = (db.supportRequests || []).find((item) => item.id === req.params.id)
+  if (!request) return res.status(404).json({ error: '문의를 찾지 못했어요.' })
+  const answer = String(req.body.answer || '').trim()
+  request.status = answer ? 'answered' : req.body.status === 'closed' ? 'closed' : 'in_review'
+  if (answer) { request.answer = answer.slice(0, 2000); request.answeredAt = now(); pushNotification(request.userId, 'support', '문의에 답변이 도착했어요', `“${request.subject}” 문의의 답변을 확인해보세요.`, '/support') }
+  await saveDatabase(); changed(); res.json(request)
+})
+
+app.patch('/api/admin/coupons/:id', auth('admin'), async (req: AuthedRequest, res) => {
+  const coupon = db.coupons.find((item) => item.id === req.params.id)
+  if (!coupon) return res.status(404).json({ error: '쿠폰을 찾지 못했어요.' })
+  if (['available', 'used', 'expired'].includes(req.body.status)) coupon.status = req.body.status
+  await saveDatabase(); changed(); res.json(coupon)
 })
 
 app.put('/api/favorites/:restaurantId', auth(), async (req: AuthedRequest, res) => {

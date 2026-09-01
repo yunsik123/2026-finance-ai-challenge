@@ -10,6 +10,9 @@ import './commercial.css'
 import './credit.css'
 import './market-support.css'
 import './polish.css'
+import './discover-ai.css'
+import './design-unify.css'
+import './admin.css'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

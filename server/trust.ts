@@ -159,7 +159,7 @@ export function buildKnowledgeGraph(role: Role, restaurant?: Restaurant, fund?: 
   edges.push(...siteGraphEdges())
   const stepScreens = role === 'owner'
     ? ['page:owner', 'page:owner', 'page:owner', 'page:owner', 'page:owner', 'page:owner', 'page:owner']
-    : ['page:discover', 'page:home', 'page:trust', 'page:home', 'page:discover', 'page:my', 'page:my']
+    : ['page:discover', 'page:home', 'page:insight', 'page:home', 'page:discover', 'page:my', 'page:my']
   steps.forEach((_, index) => {
     const screen = stepScreens[index]
     if (screen) edges.push({ from: stepId(index + 1), relation: 'HAPPENS_ON', to: screen })

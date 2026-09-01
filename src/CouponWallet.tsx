@@ -17,7 +17,7 @@ const statusLabel: Record<Coupon['status'], string> = {
 }
 
 /** 교환 조건을 직접 고르는 창. 예전엔 '한식·서울'이 코드에 박혀 있었다. */
-function ListingComposer({ coupon, categories, regions, rules, busy, onClose, onSubmit }: {
+export function ListingComposer({ coupon, categories, regions, rules, busy, onClose, onSubmit }: {
   coupon: Coupon
   categories: string[]
   regions: string[]
