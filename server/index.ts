@@ -29,6 +29,7 @@ const secret = process.env.APP_SECRET || 'meoktu-local-development-secret-change
 const supabaseUrl = String(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim().replace(/\/$/, '')
 const supabasePublishableKey = String(process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '').trim()
 const supabaseServiceKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim()
+const supabaseAuthConfigured = Boolean(supabaseUrl && supabasePublishableKey)
 const aiApiUrl = String(process.env.OPENAI_BASE_URL ? `${String(process.env.OPENAI_BASE_URL).replace(/\/$/, '')}/chat/completions` : (process.env.AI_API_URL || 'https://api.openai.com/v1/chat/completions')).trim()
 const aiApiKey = String(process.env.OPENAI_API_KEY || process.env.AI_API_KEY || '').trim()
 
@@ -793,6 +794,7 @@ app.post('/api/ai/ocr', auth('owner'), async (req: AuthedRequest, res) => {
   const apiUrl = aiApiUrl
   const apiKey = aiApiKey
   if (apiUrl && apiKey) {
+    try {
       const requestedModel = process.env.OPENAI_OCR_MODEL || process.env.AI_OCR_MODEL || process.env.MOA_OCR_MODEL || process.env.OPENAI_CHAT_MODEL || process.env.AI_MODEL || 'gpt-4o-mini'
       const response = await fetch(apiUrl, {
         method: 'POST',
@@ -877,7 +879,7 @@ app.post('/api/ai/chat', async (req, res) => {
     retrieval: { strategy: 'symbolic-keyword-plus-one-hop', graphVersion: retrievedGraph.graphVersion },
   })
   try {
-    const model = process.env.AI_MODEL || process.env.MOA_CHAT_MODEL || 'gpt-4o-mini'
+    const model = process.env.OPENAI_CHAT_MODEL || process.env.AI_MODEL || process.env.MOA_CHAT_MODEL || 'gpt-4o-mini'
     const context = restaurantView().map((r) => ({
       name: r.name,
       region: r.neighborhood,
@@ -940,13 +942,13 @@ GraphRAG 검색 결과: ${JSON.stringify(retrievedGraph)}
         ],
       }),
     })
-    if (!response.ok) throw new Error(`SG-LLM ${response.status}`)
+    if (!response.ok) throw new Error(`OpenAI API ${response.status}`)
     const result = await response.json() as { choices?: Array<{ message?: { content?: string } }> }
     const answer = result.choices?.[0]?.message?.content?.trim()
-    if (!answer) throw new Error('SG-LLM returned an empty answer')
-    res.json({ answer, mode: 'graph-rag-generative', provider: 'sgllm', model, sources: retrievedGraph.sources, retrieval: { strategy: 'symbolic-keyword-plus-one-hop', graphVersion: retrievedGraph.graphVersion } })
+    if (!answer) throw new Error('OpenAI API returned an empty answer')
+    res.json({ answer, mode: 'graph-rag-generative', provider: 'openai', model, sources: retrievedGraph.sources, retrieval: { strategy: 'symbolic-keyword-plus-one-hop', graphVersion: retrievedGraph.graphVersion } })
   } catch (error) {
-    console.error('SG-LLM request failed:', error instanceof Error ? error.message : error)
+    console.error('OpenAI API request failed:', error instanceof Error ? error.message : error)
     res.json({ answer: graphAnswer || fallback, mode: 'graph-rag-fallback', provider: 'local-knowledge-graph', sources: retrievedGraph.sources, retrieval: { strategy: 'symbolic-keyword-plus-one-hop', graphVersion: retrievedGraph.graphVersion } })
   }
 })

@@ -32,11 +32,12 @@ npm run dev
 
 ## AI 연결
 
-현재 서버는 서강대 SG-LLM(Mindlogic Gateway)의 OpenAI 호환 Chat Completions API를 통해 실제 생성형 AI 답변을 만듭니다. 설정은 프로젝트 루트의 `.env`에서만 읽으며, 브라우저에는 API 키가 전달되지 않습니다.
+현재 서버는 OpenAI의 Chat Completions API(`gpt-4o-mini` 등)를 통해 실제 생성형 AI 답변과 영수증/증빙 OCR을 처리합니다. 설정은 프로젝트 루트의 `.env` 또는 `.env.local`에서만 읽으며, 브라우저에는 API 키가 전달되지 않습니다.
 
-- `AI_API_URL`: `https://factchat-cloud.mindlogic.ai/v1/gateway/chat/completions/`
-- `AI_API_KEY`: 개발자 페이지에서 발급한 서버용 API 키
-- `AI_MODEL`: 현재 사용 모델(기본값 `gpt-5.6-terra`)
+- `OPENAI_API_KEY`: OpenAI API 키
+- `OPENAI_BASE_URL`: 기본값 `https://api.openai.com/v1`
+- `OPENAI_CHAT_MODEL`: AI 상담원 모델 (기본값 `gpt-4o-mini`)
+- `OPENAI_OCR_MODEL`: 사업자 증빙/영수증 판독 모델 (기본값 `gpt-4o-mini`)
 
 다른 PC나 서버에 배포할 때는 `.env.example`을 복사해 값을 설정하세요. `.env`는 Git 제외 대상으로 유지하고, 채팅이나 화면에 노출된 키는 재발급하는 편이 안전합니다.
 
@@ -61,9 +62,9 @@ Supabase가 설정되지 않은 로컬 환경과 `@meoktu.demo` 데모 계정은
 `api/index.ts`가 Express 서버리스 함수 진입점이고, `vercel.json`이 `/api/*` 요청을 함수로 전달하고 나머지 경로를 Vite SPA로 연결합니다. 필요한 Vercel 환경변수는 다음과 같습니다.
 
 - `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
-- `OPENAI_API_KEY` 또는 `AI_API_KEY`
-- `OPENAI_BASE_URL` 또는 `AI_API_URL`
-- `MOA_CHAT_MODEL`/`MOA_OCR_MODEL` 또는 `AI_MODEL`/`AI_OCR_MODEL`
+- `OPENAI_API_KEY`
+- `OPENAI_BASE_URL` (선택, 기본: `https://api.openai.com/v1`)
+- `OPENAI_CHAT_MODEL`, `OPENAI_OCR_MODEL` (선택, 기본: `gpt-4o-mini`)
 - `APP_SECRET`
 
 Vercel 서버리스 환경의 `/tmp` JSON은 영구 저장소가 아닙니다. Supabase Auth 계정은 영구 저장되지만 투자·쿠폰·감사 원장을 실제 운영 데이터로 보존하려면 `db/postgres-schema.sql`과 RPC 데이터 계층으로 전환해야 합니다. 현재 서버리스 JSON 경로는 데모 실행용입니다.
