@@ -2429,7 +2429,7 @@ function consultationAccount(user?: SessionUser): ConsultationAccount | undefine
 
 function isAccountStatusQuestion(question: string) {
   const text = question.replace(/\s/g, '')
-  return /(내|나의|보유|잔액|현재).*(쿠폰|머니|잔액|투자금|투자내역|예약|주문|대기|교환제안|알림|찜)|몇(장|건)|쿠폰.*현황|예약.*현황/.test(text)
+  return /(내|나의|보유|잔액|현재).*(쿠폰|머니|잔액|투자금|투자내역|예약|주문|대기|교환제안|알림|찜|관심)|몇(장|건)|쿠폰.*현황|예약.*현황/.test(text)
 }
 
 function answerAccountStatusQuestion(question: string, account?: ConsultationAccount) {
@@ -2767,9 +2767,13 @@ app.post('/api/ai/chat', async (req: AuthedRequest, res) => {
   const ownerAsk = question.replace(/\s/g, '')
   const reviewIntent = /(심사|신청|승인|보완|자료|서류|등급|접수|단계)/.test(ownerAsk)
   const opsIntent = /(모금|모집|쿠폰|투자자|매출|부담|목표|배당|정산|알림|문의)/.test(ownerAsk)
-  const ledgerAnswer = ownerRole
+  // "내 쿠폰 교환장에 어떻게 올려?"는 현황 집계가 아니라 클릭 순서를 원하는 질문이다.
+  // 방법을 묻는 문장이면 원장 요약보다 화면 안내가 먼저다.
+  const howToIntent = /(어떻게|어디서|어디에|어디로|어디야|방법|하려면|려면)/.test(ownerAsk)
+  const rawLedgerAnswer = ownerRole
     ? (!reviewIntent && opsIntent ? (accountAnswer || statusAnswer) : (statusAnswer || accountAnswer))
     : (accountAnswer || statusAnswer)
+  const ledgerAnswer = howToIntent && wantsNavigation && navigationAnswer ? '' : rawLedgerAnswer
   const localAnswer = ledgerAnswer || currentPageAnswer || ((wantsNavigation && navigationAnswer) ? navigationAnswer : (supportAnswer || graphAnswer || fallback))
   // 개인 원장 값은 외부 생성형 서비스로 보내지 않고 서버 원장에서 집계한 답을 그대로 돌려준다.
   if (ledgerAnswer) return res.json({
@@ -2840,6 +2844,7 @@ app.post('/api/ai/chat', async (req: AuthedRequest, res) => {
 - "어디로 가야 해요", "어디서 하나요", "어떻게 신청해요" 같은 질문은 **화면 위치 질문**이다. 반드시 아래 '화면 지도'의 menuPath와 steps를 그대로 활용해 "상단 메뉴의 OO을 클릭하세요"처럼 눌러야 할 메뉴와 버튼 이름으로 답한다.
 - 심사 절차 정보의 단계 이름(예: '사업체·대표자 등록', '데이터 출처 선택', '제출자료 자동 확인')은 **심사가 진행되는 순서의 이름**이지 화면에 있는 메뉴나 버튼이 아니다. 이것을 "OO 단계로 가셔야 합니다"처럼 이동할 장소인 것처럼 안내하면 안 된다. 절차를 설명할 때는 "심사는 이런 순서로 진행돼요"라고 순서임을 밝힌다.
 - 화면 지도에 없는 메뉴, 버튼, 페이지 이름을 지어내지 않는다.
+- 화면 지도의 intent(예: '쿠폰 교환하기', '먹투머니 충전하기')는 **기능을 부르는 이름일 뿐 화면에 적힌 메뉴명이 아니다.** 눌러야 할 것을 말할 때는 menuPath와 steps의 따옴표 안 문구만 그대로 인용한다.
 - 먹투에는 상담 전화번호나 이메일 창구가 없다. 대신 화면 안에 “1:1 문의” 접수 화면이 있으니, AI가 답할 수 없는 계정·거래 문제는 그 화면으로 안내한다.
 - 사장님(소상공인) 기능은 소상공인 계정 로그인이 필요하다는 점을 필요할 때 알려준다.
 

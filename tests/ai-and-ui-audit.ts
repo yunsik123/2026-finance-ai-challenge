@@ -55,6 +55,17 @@ const ownerFund = ownerPublic.restaurants.find((item: any) => item.name === '소
 assert(ownerFund && ownerLedger.answer.includes(money(ownerFund.raised)), '사장님 답변의 모금액이 현재 DB 펀드 원장과 같아야 합니다.')
 assert(ownerLedger.sources.some((source: any) => source.type === 'AccountSummary'), '사장님 상담 근거에 가게 운영 원장 요약이 필요합니다.')
 
+// "관심 식당 몇 곳"처럼 다른 낱말로 물어도 원장 집계로 답해야 한다(외부 AI 추측 금지).
+const favoriteAsk = await ok('/api/ai/chat', { method: 'POST', body: JSON.stringify({ role: 'investor', currentPath: '/my', question: '내 관심 식당 몇 곳이야?' }) }, investor.token)
+assert(favoriteAsk.mode === 'account-ledger-local', '관심 식당 질문도 개인 원장 모드로 답해야 합니다.')
+assert(favoriteAsk.answer.includes(`관심 식당은 ${before.favoriteRestaurantIds.length}곳`), 'AI 답변의 관심 식당 수가 현재 DB 원장과 같아야 합니다.')
+
+// "어떻게 올려?"는 현황 나열이 아니라 클릭 순서로 답해야 한다.
+const howTo = '내 쿠폰을 교환장에 올리려면 어떻게 해?'
+assert(answerNavigationQuestion(howTo).includes('내 쿠폰 등록'), '쿠폰 등록 안내는 실제 주황색 버튼 이름을 알려줘야 합니다.')
+const howToReply = await ok('/api/ai/chat', { method: 'POST', body: JSON.stringify({ role: 'investor', currentPath: '/market', question: howTo }) }, investor.token)
+assert(howToReply.mode !== 'account-ledger-local', '방법을 묻는 질문에 보유 쿠폰 집계로 답하면 안 됩니다.')
+
 // 예약 거래 카드의 “예약 걸기”와 “취소”가 사용하는 실제 API 흐름을 검증한다.
 const stamp = Date.now()
 const queueUser = await ok('/api/auth/signup', { method: 'POST', body: JSON.stringify({ email: `queue-ui-${stamp}@meoktu.test`, password: 'test1234!', name: '예약화면테스터', role: 'investor' }) })
@@ -70,4 +81,4 @@ await ok(`/api/orders/${mine.orderId}`, { method: 'DELETE' }, queueUser.token)
 const afterCancel = (await ok('/api/market/orderbook', {}, queueUser.token)).books.find((item: any) => item.fundId === emptyBookFund.id)
 assert(!afterCancel.buyQueue.some((entry: any) => entry.mine), '취소 버튼 API 실행 후 내 예약이 대기열에서 사라져야 합니다.')
 
-console.log('PASS: role-aware AI guide | live account ledger | owner store ledger | owner privacy boundary | coupon guidance | orderbook reserve/cancel click flow')
+console.log('PASS: role-aware AI guide | live account ledger | owner store ledger | owner privacy boundary | how-to over ledger dump | coupon guidance | orderbook reserve/cancel click flow')
