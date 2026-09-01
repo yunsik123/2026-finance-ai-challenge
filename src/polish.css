@@ -161,6 +161,40 @@
 .sample-pack-hint svg{flex:0 0 auto;width:14px;height:14px;margin-top:3px;color:var(--green)}
 .sample-pack-hint b{color:var(--ink)}
 
+/* 체험 모드 전용 일괄 업로드 바: 카드 11장 아래에서 마지막 안내 역할을 한다. */
+.sample-autofill{
+  margin-top:16px;padding:16px 18px;border-radius:18px;
+  display:grid;grid-template-columns:44px 1fr auto;gap:14px;align-items:center;
+  background:linear-gradient(140deg,#f2f7ff,#fbfdff);border:1.5px dashed #b9d3f5
+}
+.sample-autofill-icon{
+  width:44px;height:44px;border-radius:14px;display:grid;place-items:center;
+  background:#2f6fd0;color:#fff;box-shadow:0 8px 18px rgba(47,111,208,.24)
+}
+.sample-autofill-icon svg{width:22px}
+.sample-autofill-copy b{font-size:14px;display:block}
+.sample-autofill-copy p{margin:4px 0 0;font-size:12px;line-height:1.7;color:#6b6259}
+.sample-autofill-copy em{font-style:normal;font-weight:800;color:#2f6fd0}
+.sample-autofill-copy strong{
+  margin-top:8px;display:inline-flex;gap:6px;align-items:center;
+  font-size:12px;font-weight:700;color:var(--green)
+}
+.sample-autofill-copy strong svg{width:14px;height:14px}
+.sample-autofill-actions{display:flex;flex-direction:column;gap:8px;align-items:stretch}
+.sample-autofill-actions .button{
+  white-space:nowrap;font-size:12px;padding:11px 16px;
+  background:#2f6fd0;border-color:#2f6fd0
+}
+.sample-autofill-actions .button:hover:not(:disabled){background:#245ab0;border-color:#245ab0}
+.sample-autofill-actions .button svg{width:16px}
+.sample-autofill-clear{
+  display:inline-flex;gap:6px;align-items:center;justify-content:center;white-space:nowrap;
+  padding:9px 14px;border-radius:10px;font-size:12px;font-weight:700;
+  background:#fff;color:#6b6259;border:1px solid #d9e4f2
+}
+.sample-autofill-clear:hover:not(:disabled){background:#f2f7ff;color:#2f6fd0}
+.sample-autofill-clear svg{width:14px;height:14px}
+
 /* 카드 안 샘플 버튼: 8px 회색 글씨라 있는 줄도 모르고 지나쳤다. */
 .sample-download{
   margin-top:10px;padding:8px 12px;border-radius:10px;font-size:12px;
@@ -174,6 +208,9 @@
   .market-stats>div:nth-child(2n){border-right:0}
   .sample-pack-head{grid-template-columns:40px 1fr}
   .sample-pack-head .button{grid-column:1/-1;justify-content:center}
+  .sample-autofill{grid-template-columns:40px 1fr}
+  .sample-autofill-actions{grid-column:1/-1}
+  .sample-autofill-actions .button{justify-content:center}
 }
 
 /* ── 떠 있는 AI 버튼이 푸터 링크를 가리는 문제 ───────────────────

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react'
-import { ArrowLeft, BadgeCheck, Banknote, Building2, Check, Database, Download, FileSpreadsheet, FolderDown, Landmark, Link2, LockKeyhole, PlugZap, ReceiptText, ShieldCheck, Store, UploadCloud, UserCheck, Users, type LucideIcon } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
+import { ArrowLeft, BadgeCheck, Banknote, Building2, Check, Database, Download, Eraser, FileSpreadsheet, FolderDown, Landmark, Link2, LockKeyhole, PlugZap, ReceiptText, ShieldCheck, Sparkles, Store, UploadCloud, UserCheck, Users, type LucideIcon } from 'lucide-react'
 import { api } from './lib/api.ts'
 import OwnerDashboard from './OwnerDashboard.tsx'
 import CouponVerify from './CouponVerify.tsx'
@@ -48,6 +48,48 @@ const partnerOptions = [
 
 type DocumentMetadata = { name: string; size: number; type: string; rowCount: number; headers: string[] }
 
+/**
+ * public/samples 의 12개월 가상 원자료와 값이 맞물리는 '샘플식당' 프로필.
+ * 한 번에 업로드 버튼이 1·4단계 입력란까지 같은 값으로 채워야
+ * 문서 판독값과 신고값이 일치해 교차검증 결과를 그대로 볼 수 있다.
+ */
+const sampleProfile: Record<string, string> = {
+  restaurantName: '샘플식당',
+  ownerName: '김소담',
+  businessNumber: '123-45-67891',
+  licenseNumber: '제 2022-마포-0451 호',
+  address: '서울특별시 마포구 망원동 12-3',
+  fundPurpose: '저온 저장고 교체 1,800만원 / 주방 동선 개선 1,200만원',
+  businessPlan: '망원동 골목 상권에서 12개월 연속 재방문 고객이 늘고 있습니다. 저장·조리 설비를 바꿔 품절과 대기시간을 줄이고 점심 회전율을 높이려 합니다.',
+  expectedEffect: '좌석 24석 → 38석, 점심 회전율 2.1회 → 2.8회, 재료 품절로 인한 판매 손실 월 180만원 감소',
+}
+
+const sampleMimeTypes: Record<string, string> = { csv: 'text/csv', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', pdf: 'application/pdf' }
+
+/** CSV는 열·행 수까지 세어 업로드 카드와 심사 원장에 남긴다. */
+async function readDocumentMetadata(file: File): Promise<DocumentMetadata> {
+  let rowCount = 0
+  let headers: string[] = []
+  if (/\.csv$/i.test(file.name)) {
+    const text = await file.text()
+    const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/).filter((line) => line.trim())
+    headers = (lines[0] || '').split(',').map((item) => item.trim()).filter(Boolean).slice(0, 40)
+    rowCount = Math.max(0, lines.length - 1)
+  }
+  return { name: file.name, size: file.size, type: file.type || 'application/octet-stream', rowCount, headers }
+}
+
+/** public/samples 의 정적 파일을 실제 선택한 것과 같은 File 객체로 바꾼다. */
+async function fetchSampleFile(option: UploadOption): Promise<File> {
+  const url = option.sampleUrl as string
+  const response = await fetch(url)
+  if (!response.ok) throw new Error(`${option.title} 샘플 파일을 불러오지 못했어요.`)
+  const blob = await response.blob()
+  const name = url.split('/').pop() || `${option.id}-sample`
+  const extension = (name.split('.').pop() || '').toLowerCase()
+  return new File([blob], name, { type: sampleMimeTypes[extension] || blob.type || 'application/octet-stream' })
+}
+
 /** 감사 로그의 내부 동작 코드를 사장님이 읽을 말로 바꾼다. */
 const auditActions: Record<string, string> = {
   'application.analyzed': '예비심사 실행',
@@ -93,6 +135,8 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
   const [identityVerified, setIdentityVerified] = useState(false)
   const [result, setResult] = useState<ApplicationResult | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [fillingSamples, setFillingSamples] = useState(false)
+  const formRef = useRef<HTMLFormElement | null>(null)
 
   useEffect(() => { if (owner) api<any>('/api/owner').then(setOwnerData).catch(() => undefined) }, [owner, me?.applications.length])
   const restaurant = ownerData?.restaurants?.[0]
@@ -143,20 +187,63 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
       return next
     })
     if (file) {
-      let rowCount = 0
-      let headers: string[] = []
-      if (/\.csv$/i.test(file.name)) {
-        const text = await file.text()
-        const lines = text.replace(/^\uFEFF/, '').split(/\r?\n/).filter((line) => line.trim())
-        headers = (lines[0] || '').split(',').map((item) => item.trim()).filter(Boolean).slice(0, 40)
-        rowCount = Math.max(0, lines.length - 1)
-      }
-      setDocumentMetadata((current) => ({ ...current, [sourceId]: { name: file.name, size: file.size, type: file.type || 'application/octet-stream', rowCount, headers } }))
-      notify(rowCount ? `${file.name}: ${headers.length}개 열·${rowCount}개 행을 확인했어요.` : `${file.name} 파일 형식과 크기를 확인했어요.`)
+      const metadata = await readDocumentMetadata(file)
+      setDocumentMetadata((current) => ({ ...current, [sourceId]: metadata }))
+      notify(metadata.rowCount ? `${file.name}: ${metadata.headers.length}개 열·${metadata.rowCount}개 행을 확인했어요.` : `${file.name} 파일 형식과 크기를 확인했어요.`)
     } else {
       setDocumentMetadata((current) => { const next = { ...current }; delete next[sourceId]; return next })
     }
     setOcrResults((current) => { const next = { ...current }; delete next[sourceId]; return next })
+  }
+  /**
+   * 샘플 자료 한 번에 올리기. 사장님 체험 모드에서만 호출된다.
+   * 카드마다 파일을 고르는 대신 public/samples 의 원자료 전체를 받아
+   * 실제 선택과 똑같은 File 로 채우고, 문서와 값이 맞물리는 1·4단계 입력란까지 함께 채운다.
+   * 3단계 필수 동의는 사장님이 직접 확인해야 하므로 자동으로 체크하지 않는다.
+   */
+  const fillWithSamples = async () => {
+    if (!demoMode) return
+    const options = uploadOptions.filter((option) => option.sampleUrl)
+    setFillingSamples(true)
+    try {
+      const files = await Promise.all(options.map(fetchSampleFile))
+      const metadataList = await Promise.all(files.map(readDocumentMetadata))
+      const names: Record<string, string> = {}
+      const picked: Record<string, File> = {}
+      const metadata: Record<string, DocumentMetadata> = {}
+      options.forEach((option, index) => {
+        names[option.id] = files[index].name
+        picked[option.id] = files[index]
+        metadata[option.id] = metadataList[index]
+      })
+      setUploadedFiles(names)
+      setSelectedFiles(picked)
+      setDocumentMetadata(metadata)
+      setOcrResults({})
+      const form = formRef.current
+      if (form) {
+        for (const [name, value] of Object.entries(sampleProfile)) {
+          const field = form.elements.namedItem(name)
+          if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) field.value = value
+        }
+      }
+      setIdentityVerified(true)
+      const rows = metadataList.reduce((sum, item) => sum + item.rowCount, 0)
+      notify(`샘플 자료 ${files.length}종을 올렸어요. 표 자료 ${rows.toLocaleString('ko-KR')}행을 확인했고 1·4단계 입력란도 채웠습니다. 3단계 필수 동의 2개만 체크하면 자동분석을 실행할 수 있어요.`)
+    } catch (error) { notify((error as Error).message) }
+    finally { setFillingSamples(false) }
+  }
+  /** 샘플로 채운 업로드만 비운다. 입력한 사업체 정보는 그대로 둔다. */
+  const clearUploads = () => {
+    setUploadedFiles({})
+    setSelectedFiles({})
+    setDocumentMetadata({})
+    setOcrResults({})
+    for (const option of uploadOptions) {
+      const field = formRef.current?.elements.namedItem(`document-${option.id}`)
+      if (field instanceof HTMLInputElement) field.value = ''
+    }
+    notify('업로드한 자료를 모두 비웠어요.')
   }
   const connectPartner = async (sourceId: string) => {
     try {
@@ -240,7 +327,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
         {/* 초기 MVP에 있던 안내. 점수가 낮게 나왔을 때 사장님이 가장 먼저 궁금해하는 것이라 되살렸다. */}
         <div className="result-why"><b>왜 바로 탈락시키지 않았나요?</b><p>먹투는 기존 신용점수만으로 판단하지 않습니다. 실제 고객의 재방문과 최근 성장 흐름이 보이면 조건부 승인이나 사람의 추가 검토 기회를 드려요. 자료가 부족하다는 이유만으로 자동 거절하지 않습니다.</p></div>
         <button className="button" onClick={goBack}>사장님 센터로 돌아가기</button>
-      </section> : (!owner || showForm || !restaurant) && <form className={`application-form source-application ${!owner ? 'locked' : ''}`} onSubmit={submit}>
+      </section> : (!owner || showForm || !restaurant) && <form ref={formRef} className={`application-form source-application ${!owner ? 'locked' : ''}`} onSubmit={submit}>
         {!owner && <div className="owner-lock-overlay"><LockKeyhole /><h2>사장님 계정 전용 기능이에요</h2><p>상호명과 자료 업로드를 포함한 모든 입력은 소상공인 계정으로 로그인한 뒤 사용할 수 있습니다.</p><button type="button" className="button" onClick={onLogin}>{me ? '소상공인 계정으로 다시 로그인' : '로그인·회원가입'}</button></div>}
         <fieldset disabled={!owner}>
           {owner && restaurant && showForm && <>
@@ -261,7 +348,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
 
             <div className="evidence-lane partner-lane"><div className="evidence-lane-heading"><PlugZap /><div><b>A. 제휴기관·마이데이터형 연결</b><p>동의 범위·제공기관·동기화 시각이 함께 기록됩니다. 현재 버튼은 실제 기관 API 대신 시연 어댑터를 사용합니다.</p></div></div><div className="partner-connection-grid">{partnerOptions.map((option) => { const Icon = option.icon; const connection = activeConnections.find((item: any) => item.sourceId === option.id); return <article className={connection ? 'connected' : ''} key={option.id}><Icon /><div><b>{option.title}</b><span>{option.provider}</span><small>{option.scope}</small>{connection && <em><Check /> {connection.recordCount.toLocaleString()}건 · {new Date(connection.lastSyncedAt).toLocaleDateString('ko-KR')}</em>}</div><button type="button" disabled={Boolean(connection)} onClick={() => connectPartner(option.id)}>{connection ? '연결됨' : '동의하고 연결'}</button></article> })}</div></div>
 
-            <div className="evidence-lane upload-lane"><div className="evidence-lane-heading"><UploadCloud /><div><b>B. 소상공인 직접 업로드</b><p>사업자·영업신고·임대차처럼 직접 보유한 문서 또는 기관 연결이 어려울 때의 대체 파일입니다. CSV는 브라우저에서 열·행 수를 확인합니다.</p></div></div><SamplePack /><div className="document-upload-grid">{uploadOptions.map((option) => <DocumentUploadCard key={option.id} option={option} fileName={uploadedFiles[option.id]} metadata={documentMetadata[option.id]} required={Boolean(option.required && !connectedIds.has(option.id))} onChange={(event) => selectFile(option.id, event)} />)}</div></div>
+            <div className="evidence-lane upload-lane"><div className="evidence-lane-heading"><UploadCloud /><div><b>B. 소상공인 직접 업로드</b><p>사업자·영업신고·임대차처럼 직접 보유한 문서 또는 기관 연결이 어려울 때의 대체 파일입니다. CSV는 브라우저에서 열·행 수를 확인합니다.</p></div></div><SamplePack /><div className="document-upload-grid">{uploadOptions.map((option) => <DocumentUploadCard key={option.id} option={option} fileName={uploadedFiles[option.id]} metadata={documentMetadata[option.id]} required={Boolean(option.required && !connectedIds.has(option.id))} onChange={(event) => selectFile(option.id, event)} />)}</div>{demoMode && <SampleAutoFill filling={fillingSamples} uploadedCount={uploadedCount} onFill={fillWithSamples} onClear={clearUploads} />}</div>
             {Object.entries(selectedFiles).some(([, file]) => /^image\/(png|jpeg|webp)$/.test(file.type)) && <div className="ocr-workbench"><div><Database /><div><b>AI 문서 자동 확인</b><p>올리신 이미지 서류에서 사업자번호·날짜·금액을 읽어 서로 맞는지 대조합니다. 확인 결과는 승인 결정이 아니며, 원본 이미지는 저장하지 않습니다.</p></div></div>{Object.entries(selectedFiles).filter(([, file]) => /^image\/(png|jpeg|webp)$/.test(file.type)).map(([sourceId, file]) => { const analysis = ocrResults[sourceId]; const result = analysis?.result; return <article key={sourceId}><div><b>{file.name}</b><span>{uploadOptions.find((option) => option.id === sourceId)?.title}</span></div>{analysis ? <div className="ocr-result"><strong>{analysis.status === 'ai_extracted' ? 'AI 구조화 완료' : '수동 검토 대기'}</strong><span>{result.documentType || '문서 종류 미확인'} · 신뢰도 {Math.round((result.confidence || 0) * 100)}%</span>{result.businessNumber && <small>사업자번호 {result.businessNumber}</small>}{result.total ? <small>판독 금액 {won(result.total)}</small> : null}{result.warnings?.map((warning) => <small className="warning" key={warning}>{warning}</small>)}</div> : <button type="button" disabled={Boolean(analyzingSource)} onClick={() => analyzeDocument(sourceId)}>{analyzingSource === sourceId ? 'AI가 문서를 읽는 중...' : 'AI 문서 판독'}</button>}</article> })}</div>}
             <p className="mvp-source-note">MVP는 직접 업로드 파일의 이름·크기·형식과 CSV 열·행 수를 검증해 심사 출처로 기록합니다. 이미지에서 ‘AI 문서 판독’을 누른 경우에만 서버 AI로 전송하며 원본 이미지는 저장하지 않습니다. 실제 기관 연결은 현재 모의 어댑터이고, 운영 전 기관 OAuth·전자서명·암호화 보관으로 교체해야 합니다.</p>
           </section>
@@ -284,6 +371,27 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
           <p className="form-disclaimer">이 결과는 공식 SCB 등급이나 최종 펀딩 승인이 아닙니다. 실제 서비스 출시 전 개인정보·신용정보 처리 구조와 보유기간은 전문 법률 검토 및 제휴기관 요건 확인이 필요합니다.</p>
         </fieldset>
       </form>}
+    </div>
+  </div>
+}
+
+/**
+ * 사장님 체험 모드 전용 · 샘플 자료 한 번에 올리기.
+ * 카드 11장을 하나씩 고르지 않고도 자동분석 결과까지 바로 확인하기 위한 시연 도구라서
+ * 실제 소상공인 계정으로 로그인한 화면에는 노출하지 않는다.
+ */
+function SampleAutoFill({ filling, uploadedCount, onFill, onClear }: { filling: boolean; uploadedCount: number; onFill: () => void; onClear: () => void }) {
+  const total = uploadOptions.filter((option) => option.sampleUrl).length
+  return <div className="sample-autofill">
+    <span className="sample-autofill-icon"><Sparkles /></span>
+    <div className="sample-autofill-copy">
+      <b>체험 모드 전용 · 샘플 자료 {total}종 한 번에 올리기</b>
+      <p>파일을 하나씩 고르지 않아도 <em>샘플식당</em>의 원자료를 위 카드에 자동으로 채우고, 1단계 사업체 정보와 4단계 작성란·대표자 인증까지 함께 완료합니다. 3단계 필수 동의 2개만 직접 체크하면 바로 자동분석 결과를 볼 수 있어요.</p>
+      {uploadedCount > 0 && <strong><Check /> 현재 {uploadedCount}종의 자료가 올라가 있어요.</strong>}
+    </div>
+    <div className="sample-autofill-actions">
+      <button type="button" className="button small" disabled={filling} onClick={onFill}><Sparkles /> {filling ? '샘플 자료를 불러오는 중...' : '샘플 자료 한 번에 올리기'}</button>
+      {uploadedCount > 0 && <button type="button" className="sample-autofill-clear" disabled={filling} onClick={onClear}><Eraser /> 업로드 비우기</button>}
     </div>
   </div>
 }
@@ -315,7 +423,7 @@ function DocumentUploadCard({ option, fileName, metadata, required, onChange }: 
   return <div className={`document-upload-card ${fileName ? 'uploaded' : ''}`}>
     <span className="document-icon"><Icon /></span>
     <div className="document-copy"><span className={required ? 'required' : 'optional'}>{required ? '필수 제출' : option.required ? '기관연동 대체 가능' : '선택 제출'}</span><b>{option.title}</b><p>{option.exact}</p><small>{option.columns}</small>{fileName && <strong><Check /> {fileName}{metadata?.rowCount ? ` · ${metadata.headers.length}열 ${metadata.rowCount}행` : ''}</strong>}{option.sampleUrl && <a className="sample-download" href={option.sampleUrl} download><Download /> {option.sampleLabel} 다운로드</a>}{option.samplePdfUrl && <a className="sample-download" href={option.samplePdfUrl} download><Download /> PDF 샘플 다운로드</a>}</div>
-    <label className="document-action"><UploadCloud />{fileName ? '다시 선택' : '파일 선택'}<input type="file" name={`document-${option.id}`} accept={option.accept} required={required} onChange={onChange} /></label>
+    <label className="document-action"><UploadCloud />{fileName ? '다시 선택' : '파일 선택'}<input type="file" name={`document-${option.id}`} accept={option.accept} required={required && !fileName} onChange={onChange} /></label>
   </div>
 }
 
