@@ -38,11 +38,11 @@
 
 /* 탭·필터: .chip-row / .search-box 규격(높이 52, 라운드 14)에 맞춘다. */
 .market-tabs{gap:9px;margin-bottom:18px}
-.market-tabs button{padding:14px 20px;border-radius:14px;font-size:13.5px}
+.market-tabs button{padding:14px 20px;border-radius:14px;font-size:13px}
 .market-tabs button.active{box-shadow:0 10px 24px rgba(22,60,52,.18)}
 .market-filters{gap:9px;margin-bottom:20px}
 .market-filters label{height:52px;border-radius:14px;padding:0 15px}
-.market-filters input,.market-filters select{font-size:13.5px}
+.market-filters input,.market-filters select{font-size:13px}
 .filter-toggle{height:52px;border-radius:14px;font-size:13px}
 
 /* 매물 카드: 8~9px로 눌려 있던 글자를 읽을 수 있는 크기로 올린다. */
@@ -54,8 +54,8 @@
 .swap-wants span{font-size:11px}
 .swap-wants b{font-size:13px}
 .listing-meta{font-size:11px;align-items:baseline}
-.listing-meta span{font-weight:700;color:#59615c}
-.listing-note{font-size:12.5px}
+.listing-meta span{font-weight:700;color:var(--ink-soft)}
+.listing-note{font-size:12px}
 .my-listing-badge,.mode-badge,.match-badge{font-size:11px;padding:6px 12px}
 .listing-offers-count{font-size:12px}
 
@@ -76,17 +76,17 @@
 .listing-cta a svg{width:16px}
 
 /* 제안 목록·거래 이력의 잔글씨도 함께 올린다. */
-.offer-row small,.trade-record small{font-size:11.5px}
+.offer-row small,.trade-record small{font-size:12px}
 .offer-row b{font-size:13px}
 
 /* ── 3. AI 인사이트 ──────────────────────────────────────────────── */
 /* 대화창이 짧아 오른쪽 컬럼만 일찍 끝나 보였다. 화면 높이에 맞춰 조금 늘리되,
    빈 말풍선 영역이 과하게 남지 않도록 상한을 둔다. */
 .chat-messages{height:clamp(340px,calc(100vh - 470px),460px)}
-.chat-bubble{font-size:12.5px;line-height:1.75}
+.chat-bubble{font-size:12px;line-height:1.75}
 /* 추천 질문이 가로로 잘려 있었다. 줄바꿈해서 전부 보이게 한다. */
 .suggestions{flex-wrap:wrap;overflow-x:visible;gap:6px;padding:12px 12px 6px}
-.suggestions button{white-space:normal;font-size:11.5px;padding:8px 12px}
+.suggestions button{white-space:normal;font-size:12px;padding:8px 12px}
 .chat-input{padding:6px 6px 6px 13px}
 .chat-input input{font-size:13px}
 .ai-disclaimer{font-size:11px}
@@ -96,8 +96,8 @@
 .trust-score-grid>article,.trust-section,.commercial-panel,.commercial-missing,.contextual-alerts{
   border-radius:20px
 }
-.contextual-alerts li{font-size:12.5px;line-height:1.8}
-.method-note{font-size:11.5px}
+.contextual-alerts li{font-size:12px;line-height:1.8}
+.method-note{font-size:12px}
 
 /* ── 5. 사장님 센터 ──────────────────────────────────────────────── */
 /* 로그인 전 화면: 4,000px짜리 흐린 폼이 통째로 깔려서 안내문이 화면 밖에 있었다.
@@ -116,27 +116,27 @@
 .evidence-lane-heading b{font-size:14px}
 .evidence-lane-heading p{font-size:12px;line-height:1.7}
 .source-progress{padding:16px;border-radius:16px;gap:8px 16px}
-.source-progress span,.source-progress small{font-size:11.5px}
+.source-progress span,.source-progress small{font-size:12px}
 .partner-connection-grid{gap:11px}
 .partner-connection-grid article{padding:14px;border-radius:15px}
 .partner-connection-grid b{font-size:13px}
-.partner-connection-grid span{font-size:11.5px;color:var(--muted)}
+.partner-connection-grid span{font-size:12px;color:var(--muted)}
 .partner-connection-grid small{font-size:11px}
 .partner-connection-grid em{font-size:11px}
-.partner-connection-grid button{padding:9px 13px;border-radius:11px;font-size:11.5px}
+.partner-connection-grid button{padding:9px 13px;border-radius:11px;font-size:12px}
 .document-upload-card{padding:16px;border-radius:17px;gap:12px}
-.document-copy>span{font-size:10px;padding:4px 9px}
-.document-copy>b{font-size:13.5px}
+.document-copy>span{font-size:11px;padding:4px 9px}
+.document-copy>b{font-size:13px}
 .document-copy>p{font-size:12px;margin:6px 0}
 .document-copy>small{font-size:11px}
-.document-copy>strong{font-size:11.5px}
+.document-copy>strong{font-size:12px}
 .document-action{font-size:12px;padding-top:11px}
 .document-action svg{width:16px}
 .demo-mode-banner{border-radius:18px;padding:16px 18px}
-.demo-mode-banner b{font-size:13.5px}
+.demo-mode-banner b{font-size:13px}
 .demo-mode-banner p{font-size:12px}
-.source-provenance-result b{font-size:12.5px}
-.source-provenance-result span{font-size:11.5px}
+.source-provenance-result b{font-size:12px}
+.source-provenance-result span{font-size:12px}
 .mvp-source-note{font-size:11px;line-height:1.8}
 
 /* 샘플 자료 안내: 업로드 흐름의 출발점이라 눈에 먼저 들어와야 한다. */
@@ -153,17 +153,17 @@
 .sample-pack-head b{font-size:14px;display:block}
 .sample-pack-head p{margin:4px 0 0;font-size:12px;line-height:1.7;color:#6b6259}
 .sample-pack-head em{font-style:normal;font-weight:800;color:var(--coral-dark)}
-.sample-pack-head .button{white-space:nowrap;font-size:12.5px;padding:11px 16px}
+.sample-pack-head .button{white-space:nowrap;font-size:12px;padding:11px 16px}
 .sample-pack-head .button svg{width:16px}
 .sample-pack-hint{list-style:none;margin:14px 0 0;padding:14px 0 0;border-top:1px dashed #ffd0bd}
-.sample-pack-hint li{display:flex;gap:7px;align-items:flex-start;font-size:11.5px;line-height:1.75;color:#6b6259}
+.sample-pack-hint li{display:flex;gap:7px;align-items:flex-start;font-size:12px;line-height:1.75;color:#6b6259}
 .sample-pack-hint li+li{margin-top:5px}
 .sample-pack-hint svg{flex:0 0 auto;width:14px;height:14px;margin-top:3px;color:var(--green)}
 .sample-pack-hint b{color:var(--ink)}
 
 /* 카드 안 샘플 버튼: 8px 회색 글씨라 있는 줄도 모르고 지나쳤다. */
 .sample-download{
-  margin-top:10px;padding:8px 12px;border-radius:10px;font-size:11.5px;
+  margin-top:10px;padding:8px 12px;border-radius:10px;font-size:12px;
   background:#fff1ea;color:var(--coral-dark);border:1px solid #ffd6c6
 }
 .sample-download:hover{background:var(--coral);color:#fff;border-color:var(--coral)}
@@ -209,30 +209,30 @@ footer .footer-bottom{padding-bottom:76px}
 .admin-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
 .admin-kpis>div{background:#fff;border:1px solid var(--line);border-radius:18px;padding:18px;display:grid;grid-template-columns:34px 1fr;align-items:center}
 .admin-kpis svg{grid-row:1/3;color:var(--green)}
-.admin-kpis span{font-size:9px;color:var(--muted)}
+.admin-kpis span{font-size:11px;color:var(--muted)}
 .admin-kpis b{font-size:18px}
 .admin-tabs{display:flex;gap:8px;margin:28px 0 14px}
 .admin-tabs button{border:0;border-radius:99px;padding:11px 18px;font-weight:900;background:#eee;cursor:pointer}
 .admin-tabs button.active{background:var(--green);color:#fff}
 .admin-review-list{display:grid;gap:10px}
 .admin-review-list article{display:grid;grid-template-columns:110px minmax(0,1fr) 150px;gap:18px;align-items:center;border:1px solid var(--line);background:#fff;border-radius:18px;padding:17px}
-.review-state{border-radius:10px;padding:9px;text-align:center;background:#edf2f8;color:#48627c;font-size:9px;font-weight:900}
+.review-state{border-radius:10px;padding:9px;text-align:center;background:#edf2f8;color:#48627c;font-size:11px;font-weight:900}
 .review-state.approved,.review-state.conditional{background:#e9f7ee;color:#277348}
 .review-state.rejected{background:#fdecea;color:#a64035}
-.review-main small,.review-score small{font-size:8px;color:var(--muted)}
+.review-main small,.review-score small{font-size:11px;color:var(--muted)}
 .review-main h3{margin:3px 0;font-size:16px}
-.review-main p{font-size:9px;color:var(--muted);margin:0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.review-main p{font-size:11px;color:var(--muted);margin:0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .review-score{display:flex;flex-direction:column;text-align:right}
 .review-score b{font-size:25px;color:var(--green)}
-.review-score span{font-size:9px;color:var(--muted)}
+.review-score span{font-size:11px;color:var(--muted)}
 .admin-empty{text-align:center;border:1px dashed var(--line);border-radius:18px;padding:45px;color:var(--muted)}
 .admin-empty svg{display:block;margin:0 auto 10px;color:var(--green)}
 .admin-empty b{color:var(--ink)}
-.admin-empty p{font-size:10px;margin:6px 0 0}
+.admin-empty p{font-size:11px;margin:6px 0 0}
 .admin-user-table{border:1px solid var(--line);border-radius:18px;overflow:hidden;background:#fff}
-.admin-user-table>div{display:grid;grid-template-columns:minmax(220px,1.5fr) repeat(4,1fr);gap:12px;align-items:center;padding:13px 18px;border-top:1px solid var(--line);font-size:10px}
+.admin-user-table>div{display:grid;grid-template-columns:minmax(220px,1.5fr) repeat(4,1fr);gap:12px;align-items:center;padding:13px 18px;border-top:1px solid var(--line);font-size:11px}
 .admin-user-table>div:first-child{border-top:0}
-.admin-user-table .table-head{background:#f6f6f2;color:var(--muted);font-size:9px;font-weight:900}
+.admin-user-table .table-head{background:#f6f6f2;color:var(--muted);font-size:11px;font-weight:900}
 .admin-user-table span{display:flex;flex-direction:column}
 .admin-user-table small{color:var(--muted)}
 .admin-user-table .active{color:var(--green);font-weight:900}

@@ -6,7 +6,7 @@
 
 /* ── 거래장 상단 모드 탭 ─────────────────────────────────────── */
 .market-mode-tabs{display:flex;gap:8px;max-width:1160px;margin:26px auto 0;padding:0 22px}
-.market-mode-tabs button{display:flex;align-items:center;gap:7px;padding:11px 18px;border:1px solid var(--line);border-radius:99px;background:var(--paper);color:var(--muted);font-size:13.5px;font-weight:700;transition:all .16s ease}
+.market-mode-tabs button{display:flex;align-items:center;gap:7px;padding:11px 18px;border:1px solid var(--line);border-radius:99px;background:var(--paper);color:var(--muted);font-size:13px;font-weight:700;transition:all .16s ease}
 .market-mode-tabs button svg{width:16px;height:16px}
 .market-mode-tabs button:hover{border-color:var(--coral);color:var(--coral-dark)}
 .market-mode-tabs button.active{background:var(--coral);border-color:var(--coral);color:#fff;box-shadow:0 8px 20px rgba(255,105,72,.24)}
@@ -25,7 +25,7 @@
 .orderbook-head>div{flex:1;min-width:0}
 .orderbook-head b{display:block;font-size:15px}
 .orderbook-head small{color:var(--muted);font-size:12px}
-.orderbook-raised{display:flex;align-items:center;gap:4px;font-size:11.5px;font-weight:700;color:var(--green);background:var(--mint);padding:5px 10px;border-radius:99px;white-space:nowrap}
+.orderbook-raised{display:flex;align-items:center;gap:4px;font-size:12px;font-weight:700;color:var(--green);background:var(--mint);padding:5px 10px;border-radius:99px;white-space:nowrap}
 .orderbook-raised svg{width:13px;height:13px}
 
 .orderbook-queues{display:grid;grid-template-columns:1fr 1fr;gap:12px}
@@ -33,32 +33,32 @@
 .queue-head{display:flex;align-items:center;gap:5px;font-size:12px}
 .queue-head svg{width:14px;height:14px}
 .queue-head b{flex:1;white-space:nowrap}
-.queue-head span{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;font-size:11.5px}
+.queue-head span{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;font-size:12px}
 .queue.buy .queue-head svg,.queue.buy .queue-head span{color:var(--green)}
 .queue.sell .queue-head svg,.queue.sell .queue-head span{color:var(--coral-dark)}
 .queue-row{display:grid;grid-template-columns:20px 1fr;gap:4px 7px;align-items:center;padding:7px 9px;background:var(--paper);border-radius:11px;font-size:12px}
 .queue-row.mine{outline:2px solid var(--coral);outline-offset:-2px}
-.queue-rank{display:grid;place-items:center;width:20px;height:20px;border-radius:7px;background:var(--line);font-size:10.5px;font-weight:700;color:var(--muted)}
+.queue-rank{display:grid;place-items:center;width:20px;height:20px;border-radius:7px;background:var(--line);font-size:11px;font-weight:700;color:var(--muted)}
 .queue-row b{font-variant-numeric:tabular-nums}
 .queue-row small{grid-column:1/-1;display:flex;align-items:center;gap:4px;color:var(--muted);font-size:11px}
 .queue-row small svg{width:11px;height:11px}
 .queue-row button{grid-column:1/-1;display:flex;align-items:center;justify-content:center;gap:4px;padding:5px;border:1px solid var(--line);border-radius:9px;background:var(--cream);font-size:11px;font-weight:700;color:var(--coral-dark)}
 .queue-row button svg{width:11px;height:11px}
-.queue-empty{margin:0;font-size:11.5px;color:var(--muted);padding:8px 2px;line-height:1.5}
+.queue-empty{margin:0;font-size:12px;color:var(--muted);padding:8px 2px;line-height:1.5}
 
 .orderbook-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
 .orderbook-mine{font-size:12px;font-weight:700;color:var(--muted)}
 .orderbook-foot .button{margin-left:auto}
-.orderbook-note{margin:22px 0 0;font-size:12.5px;color:var(--muted);line-height:1.7;text-align:center}
+.orderbook-note{margin:22px 0 0;font-size:12px;color:var(--muted);line-height:1.7;text-align:center}
 
 /* ── 1:1 문의 ────────────────────────────────────────────────── */
 .support-layout{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);gap:22px;align-items:start}
 .support-form{background:var(--paper);border:1px solid var(--line);border-radius:26px;padding:24px;display:grid;gap:15px;box-shadow:var(--shadow)}
 .support-types{display:flex;flex-wrap:wrap;gap:7px}
-.support-types button{padding:8px 15px;border:1px solid var(--line);border-radius:99px;background:var(--cream);font-size:12.5px;font-weight:700;color:var(--muted)}
+.support-types button{padding:8px 15px;border:1px solid var(--line);border-radius:99px;background:var(--cream);font-size:12px;font-weight:700;color:var(--muted)}
 .support-types button.active{background:var(--navy);border-color:var(--navy);color:#fff}
 .support-demo-note{margin:0;font-size:12px;color:var(--coral-dark);background:#fff2ee;border-radius:12px;padding:10px 13px;line-height:1.6}
-.support-privacy{margin:0;font-size:11.5px;color:var(--muted);line-height:1.6}
+.support-privacy{margin:0;font-size:12px;color:var(--muted);line-height:1.6}
 
 .support-history{background:var(--paper);border:1px solid var(--line);border-radius:26px;padding:22px;display:grid;gap:12px;align-content:start;box-shadow:var(--shadow)}
 .support-history h2{display:flex;align-items:center;gap:7px;font-family:'Jua',sans-serif;font-size:17px;margin:0}
@@ -66,17 +66,17 @@
 .support-empty{margin:0;font-size:13px;color:var(--muted);line-height:1.7}
 .support-item{border:1px solid var(--line);border-radius:16px;overflow:hidden}
 .support-item>button{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;padding:13px 15px;background:var(--paper);text-align:left}
-.support-item b{display:block;font-size:13.5px;margin-bottom:3px}
-.support-item small{display:flex;align-items:center;gap:4px;font-size:11.5px;color:var(--muted)}
+.support-item b{display:block;font-size:13px;margin-bottom:3px}
+.support-item small{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--muted)}
 .support-item small svg{width:11px;height:11px}
 .support-status{display:flex;align-items:center;gap:3px;padding:4px 10px;border-radius:99px;font-size:11px;font-weight:700;background:var(--cream);color:var(--muted);white-space:nowrap}
 .support-status svg{width:12px;height:12px}
 .support-status.answered{background:var(--mint);color:var(--green)}
 .support-status.received{background:#fff5e0;color:#a5700d}
 .support-detail{padding:0 15px 15px;display:grid;gap:10px;border-top:1px solid var(--line);padding-top:13px}
-.support-detail p{margin:0;font-size:12.5px;line-height:1.7;white-space:pre-wrap}
+.support-detail p{margin:0;font-size:12px;line-height:1.7;white-space:pre-wrap}
 .support-answer{background:var(--mint);border-radius:13px;padding:12px 14px;display:grid;gap:5px}
-.support-answer b{font-size:12.5px;color:var(--green)}
+.support-answer b{font-size:12px;color:var(--green)}
 .support-answer small{color:var(--muted);font-size:11px}
 .support-waiting{color:var(--muted)}
 

@@ -165,6 +165,39 @@ async function main() {
       ] },
     { no: 30, group: 'C.사장님', role: 'owner', token: owner.token, path: '/owner', q: '정책자금 지원 받을 수 있어?',
       expect: (a) => [{ label: '지원제도 안내', pass: hasAny(a, '정책자금', '보증', '지원', '소상공인') }] },
+
+    // ── D. 서비스 규칙 질문 (7) ──────────────────────────────────────
+    // 절차·현황이 아니라 "숫자 규칙"을 묻는 질문. 근거 노드가 없으면 생성형이 규칙을 지어내므로
+    // 서버가 실제로 강제하는 값(EXCHANGE_RULES 등)과 답이 일치하는지 본다.
+    { no: 31, group: 'D.규칙', role: 'investor', token: investor.token, q: '쿠폰 교환할 때 할인율 차이 제한이 몇 %야? 조건 다 알려줘',
+      expect: (a, r) => [
+        { label: '할인율 차이 10%p', pass: a.includes('10') && hasAny(a, '%p', '%포인트', '퍼센트포인트') },
+        { label: '액면가 2.5배', pass: a.includes('2.5') },
+        { label: '만료 7일', pass: a.includes('7일') },
+        { label: '규칙 근거 제시', pass: (r.sources || []).some((s: any) => s.type === 'ServiceRule') },
+      ] },
+    { no: 32, group: 'D.규칙', role: 'investor', token: investor.token, q: '내가 제안한 쿠폰은 상대가 수락하기 전까지 다른 데 쓸 수 있어?',
+      expect: (a) => [
+        { label: '못 쓴다고 명확히 답함', pass: hasAny(a, '없습니다', '없어요', '잠기', '잠겨') },
+        { label: '원장 나열로 도망가지 않음', pass: !/사용 가능 \d+장/.test(a) },
+      ] },
+    { no: 33, group: 'D.규칙', role: 'investor', token: investor.token, q: '만료 3일 남은 쿠폰도 교환장에 올릴 수 있어?',
+      expect: (a) => [{ label: '7일 미만 불가 안내', pass: a.includes('7') && hasAny(a, '없', '불가', '못') }] },
+    { no: 34, group: 'D.규칙', role: 'investor', token: investor.token, q: '한 식당에 최대 얼마까지 투자할 수 있어?',
+      expect: (a) => [{ label: '목표액 1% 한도', pass: a.includes('1%') || a.includes('1퍼센트') }] },
+    { no: 35, group: 'D.규칙', role: 'investor', token: investor.token, q: '사장님이 코드를 안 눌러주면 쿠폰 어떻게 돼?',
+      expect: (a) => [{ label: '20분 뒤 지갑 복귀', pass: a.includes('20') && hasAny(a, '지갑', '돌아') }] },
+    { no: 36, group: 'D.규칙', role: 'investor', token: investor.token, q: '소복소복은 아직 모금 중인데 지금 투자금 빼면 바로 돼?',
+      expect: (a) => [
+        { label: '모금 중 즉시 회수', pass: hasAny(a, '즉시', '바로') },
+        { label: '매칭 필요하다고 뒤집지 않음', pass: !/(반대 주문이 있어야|사는 사람이 나타나야|매칭될 때만)/.test(a) },
+      ] },
+    { no: 37, group: 'D.규칙', role: 'owner', token: owner.token, path: '/owner', q: '우리 가게 목표금액이랑 모인 금액 정확히 얼마야?',
+      expect: (a, r) => [
+        { label: '사장님 원장 모드', pass: r.mode === 'owner-ledger-local' },
+        { label: `목표액 일치(${won(ownerFund.goal)})`, pass: a.includes(ownerFund.goal.toLocaleString('ko-KR')) },
+        { label: `모금액 일치(${won(ownerFund.raised)})`, pass: a.includes(ownerFund.raised.toLocaleString('ko-KR')) },
+      ] },
   ]
 
   console.log(`평가 대상: ${base}`)

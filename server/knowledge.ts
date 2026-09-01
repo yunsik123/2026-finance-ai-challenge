@@ -170,10 +170,18 @@ export function matchSupportPrograms(question: string, limit = 3) {
   return scored.slice(0, limit).map((item) => item.program)
 }
 
+/**
+ * 제도 이름 없이 "정부 지원 뭐 있어?"라고만 물었을 때 쓰는 대표 제도.
+ * 매칭이 비었다고 근거 없이 두면 상담이 "알려줄 수 없다"로 끝나버린다.
+ */
+export function defaultSupportPrograms(limit = 3) {
+  return supportPrograms.slice(0, limit)
+}
+
 /** 지원제도를 묻는 질문인지 판별한다. */
 export function isSupportQuestion(question: string) {
   const text = squash(question)
-  return /(지원|정책자금|보조금|보증|공제|세금|세액|절세|폐업|재기|융자|대출|컨설팅|교육|수수료|상권정보)/.test(text)
+  return /(지원|정책자금|보조금|보증|공제|세금|세액|절세|폐업|재기|융자|대출|컨설팅|교육|수수료|상권정보|정부|국가|공공|지자체|소진공)/.test(text)
 }
 
 /** 외부 AI 없이도 지원제도를 안내하는 로컬 답변. */

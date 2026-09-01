@@ -25,7 +25,7 @@
 .restaurant-body{padding:21px}
 .card-title h3{font-size:21px}
 .restaurant-body>p{font-size:13px}
-.tag-row span{font-size:10px;padding:5px 8px}
+.tag-row span{font-size:11px;padding:5px 8px}
 .fund-progress span,.fund-progress small,.fund-progress strong{font-size:11px}
 
 .market-mode-tabs{max-width:var(--layout-wide);padding:0 32px;margin-top:32px}
@@ -38,9 +38,9 @@
 .listing-card.enhanced{padding:19px;gap:14px;border-radius:20px}
 .listing-card.enhanced .coupon-ticket{padding:17px}
 .listing-card.enhanced .coupon-ticket b{font-size:31px}
-.listing-meta{font-size:10px}
+.listing-meta{font-size:11px}
 .listing-cta{min-height:100%;padding:28px}
-.coupon-market-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:28px;max-width:none}
+.page-heading.coupon-market-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:28px;max-width:none}
 .coupon-market-heading>div{max-width:900px}
 .market-list-button{flex:none;margin-bottom:8px;background:var(--coral);font-size:15px}
 .coupon-picker-modal>p{font-size:13px;color:var(--muted)}
@@ -55,11 +55,11 @@
 .pick-row{padding:15px 8px;grid-template-columns:42px 52px 1fr 50px}
 .pick-row b{font-size:15px}.pick-row small{font-size:11px}
 .article-card h3{font-size:16px}.article-card p{font-size:12px}
-.chat-panel{padding:0}.chat-bubble{font-size:12px}.suggestions button{font-size:10px}
+.chat-panel{padding:0}.chat-bubble{font-size:12px}.suggestions button{font-size:11px}
 
 .my-head h1{font-size:50px}
 .portfolio-summary{grid-template-columns:repeat(5,minmax(0,1fr));padding:26px}
-.portfolio-summary b{font-size:23px}.portfolio-summary small{font-size:10px}
+.portfolio-summary b{font-size:23px}.portfolio-summary small{font-size:11px}
 .position-grid,.my-coupons{grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
 .position-card,.my-coupon{padding:20px;border-radius:20px}
 
@@ -68,7 +68,7 @@
 .owner-dashboard{max-width:none}
 .application-form{max-width:1120px;margin-inline:auto}
 .additional-fund-intro{margin:14px 0 22px;padding:26px 28px;border-radius:22px;background:linear-gradient(125deg,#183326,#28543d);color:#fff;box-shadow:0 16px 34px rgba(24,51,38,.14)}
-.additional-fund-intro span{font-size:10px;font-weight:900;letter-spacing:1.5px;color:#ff9a7d}.additional-fund-intro h2{margin:7px 0 5px;font-size:28px}.additional-fund-intro p{margin:0;color:#c7d6cc;font-size:13px;line-height:1.65}
+.additional-fund-intro span{font-size:11px;font-weight:900;letter-spacing:1.5px;color:#ff9a7d}.additional-fund-intro h2{margin:7px 0 5px;font-size:28px}.additional-fund-intro p{margin:0;color:#c7d6cc;font-size:13px;line-height:1.65}
 
 .support-layout{grid-template-columns:minmax(0,1.1fr) minmax(360px,.9fr);gap:26px}
 .support-form,.support-history{padding:28px}

@@ -1,6 +1,7 @@
 import type { Fund, Restaurant, Role } from './types.ts'
 import { commercialGraphProperties, commercialInsight, commercialResilience, findCommercialArea, type CommercialArea } from './commercial.ts'
 import { siteGraphEdges, siteGraphNodes } from './sitemap.ts'
+import { EXCHANGE_RULES } from './exchange.ts'
 
 const clamp = (value: number, min = 0, max = 100) => Math.max(min, Math.min(max, value))
 const baseline = 60
@@ -137,6 +138,65 @@ export type GraphContext = {
 }
 
 /**
+ * 서비스 규칙 노드.
+ *
+ * 절차 그래프(GuideStep)는 "무엇을 하는가"만 담고 있어서, "할인율 차이 제한이 몇 %야?",
+ * "제안한 쿠폰 다른 데 쓸 수 있어?", "10만원 넣으면 한 달에 몇 % 쌓여?" 같은
+ * 숫자 규칙 질문에는 근거가 없었다. 근거가 없으면 생성형 답변이 규칙을 지어낸다.
+ * 그래서 서버가 실제로 강제하는 상수(EXCHANGE_RULES 등)를 그대로 노드로 올린다.
+ */
+function serviceRuleNodes(): GraphNode[] {
+  return [
+    {
+      id: 'rule:exchange', type: 'ServiceRule', label: '쿠폰 교환 성립 조건', source: 'MEOKTU_EXCHANGE_RULES',
+      properties: {
+        discountGapRule: `두 쿠폰의 할인율 차이가 ${EXCHANGE_RULES.maxDiscountGap}%p 미만이어야 교환된다`,
+        valueRatioRule: `최대 할인 금액(액면가) 차이가 ${EXCHANGE_RULES.maxValueRatio}배를 넘으면 교환되지 않는다`,
+        expiryRule: `만료까지 ${EXCHANGE_RULES.minDaysLeft}일 미만 남은 쿠폰은 올릴 수도, 제안할 수도 없다`,
+        escrowRule: '제안에 건 쿠폰은 결과가 날 때까지 잠기고, 그 사이에는 매장 사용·재등록·다른 제안에 쓸 수 없다',
+        listingExpiry: `등록한 매물은 ${EXCHANGE_RULES.listingTtlDays}일 뒤 자동 만료된다`,
+        offerExpiry: `보낸 제안은 ${EXCHANGE_RULES.offerTtlDays}일 뒤 자동 만료되고 쿠폰은 지갑으로 돌아온다`,
+        limits: `한 사람이 동시에 매물 ${EXCHANGE_RULES.maxOpenListingsPerUser}건, 제안 ${EXCHANGE_RULES.maxPendingOffersPerUser}건까지 열어둘 수 있다`,
+        selfTradeRule: '자기 매물에는 제안할 수 없고, 같은 매물에 같은 사람이 대기 제안을 두 번 걸 수 없다',
+        settlement: '교환이 성립하면 두 쿠폰의 주인이 동시에 바뀌고, 같은 매물의 나머지 대기 제안은 자동으로 거절되어 쿠폰이 풀린다',
+      },
+    },
+    {
+      id: 'rule:redeem', type: 'ServiceRule', label: '쿠폰 매장 사용 규칙', source: 'MEOKTU_EXCHANGE_RULES',
+      properties: {
+        codeRule: '지갑에서 “사용하기”를 누르면 8자리 사용 코드가 나오고, 사장님이 그 코드를 확인해야 사용 처리된다',
+        holdRule: `사장님이 ${EXCHANGE_RULES.redeemHoldMinutes}분 안에 확인하지 않으면 쿠폰은 다시 지갑으로 돌아온다`,
+        stateRule: '매장 확인을 기다리는 쿠폰은 교환장에 올릴 수 없다',
+      },
+    },
+    {
+      id: 'rule:coupon-accrual', type: 'ServiceRule', label: '쿠폰 할인율 적립 공식', source: 'MEOKTU_FUND_POLICY',
+      properties: {
+        formula: '적립 할인율(%p) = (투자금 ÷ 100,000) × 0.5 × 보유일수 × (1 + 해당 펀드 매출 보너스 ÷ 100)',
+        baseRate: '10만원당 하루 0.5%p가 기본 적립분이다',
+        earlyBonus: '최초 투자자는 매출 보너스를 50% 더 받는다(보너스 자체가 1.5배가 되며, 할인율이 1.5배가 되는 것이 아니다)',
+        issueFloor: '누적 할인율이 10% 이상이어야 쿠폰으로 발급할 수 있다',
+        cap: '누적 할인율은 그 펀드의 최대 할인율(식당마다 30~55%)을 넘지 않는다',
+        resetRule: '쿠폰을 발급하면 누적 할인율은 0으로 초기화되고 다시 쌓인다',
+        example: '10만원을 최초 투자자로 30일 보유하고 매출 보너스가 14.7%인 펀드라면 0.5 × 30 × (1 + 0.147 × 1.5) ≈ 18.3%p가 쌓인다',
+      },
+    },
+    {
+      id: 'rule:invest-withdraw', type: 'ServiceRule', label: '투자·회수 규칙', source: 'MEOKTU_FUND_POLICY',
+      properties: {
+        unit: '투자와 회수 모두 1,000원 단위로만 가능하다',
+        personalCap: '한 식당에 넣을 수 있는 개인 한도는 그 펀드 목표액의 1%다',
+        duringFunding: '펀드 상태가 “모금 중”이면 신청한 금액이 그 자리에서 전액 즉시 회수된다. 이때는 사는 사람이 없어도 되고 기다릴 필요도 없다',
+        afterFunding: '펀드 상태가 “예약 거래 중”(모금 마감 뒤)일 때만 사는 사람이 필요하다. 이 경우 같은 금액을 사려는 예약 투자자와 1,000원 단위 선착순(FIFO)으로 매칭될 때 회수되고, 매칭 전까지는 회수 대기로 남는다',
+        doNotMix: '두 규칙을 섞어 말하면 안 된다. “모금 중”은 즉시 회수, “예약 거래 중”은 매칭 대기다',
+        noGuarantee: '투자금은 예금이 아니며 원금도 회수 시점도 보장되지 않는다',
+        cancelRule: '아직 체결되지 않은 예약 주문은 언제든 취소할 수 있고, 투자 예약을 취소하면 먹투머니로 즉시 돌아온다',
+      },
+    },
+  ]
+}
+
+/**
  * 역할별 절차 그래프 + 지금 보고 있는 대상의 동적 노드.
  * 소상공인 프로젝트의 dynamicInvestorGraph / dynamicOwnerGraph 를 먹투 데이터 모델에 맞춰 이식했다.
  */
@@ -157,6 +217,8 @@ export function buildKnowledgeGraph(role: Role, restaurant?: Restaurant, fund?: 
   // 이게 없으면 "어디로 가야 하나요"에 절차 단계 이름만 읽어주게 된다.
   nodes.push(...siteGraphNodes() as GraphNode[])
   edges.push(...siteGraphEdges())
+  // 서비스 규칙(교환 조건·적립 공식·회수 규칙)도 같은 그래프에 올린다.
+  nodes.push(...serviceRuleNodes())
   const stepScreens = role === 'owner'
     ? ['page:owner', 'page:owner', 'page:owner', 'page:owner', 'page:owner', 'page:owner', 'page:owner']
     : ['page:discover', 'page:home', 'page:insight', 'page:home', 'page:discover', 'page:my', 'page:my']
@@ -267,6 +329,12 @@ const queryAliases: Record<string, string[]> = {
   제휴: ['연동', '마이데이터', '기관 전송', '동의 범위'],
   쿠폰: ['소비 쿠폰', '적립', '혜택'],
   사장님: ['사업체', '대표자', '모집안', '집행'],
+  교환: ['할인율', '액면가', '만료', '에스크로', '제안', '매물', '잠기'],
+  제한: ['할인율', '차이', '한도', '단위', '조건'],
+  조건: ['할인율', '차이', '만료', '한도', '규칙'],
+  적립: ['할인율', '보너스', '보유일수', '공식'],
+  에스크로: ['잠기', '제안', '결과', '지갑'],
+  단위: ['1,000원', '한도', '회수'],
 }
 
 export function retrieveKnowledgeSubgraph(graph: KnowledgeGraph, question: string, limit = 6) {
@@ -276,10 +344,16 @@ export function retrieveKnowledgeSubgraph(graph: KnowledgeGraph, question: strin
     .filter(([keyword]) => normalized.includes(keyword))
     .flatMap(([keyword, aliases]) => [keyword, ...aliases])
   const terms = [...new Set([...baseTerms, ...matchedAliases])]
+  // "제한이 몇 %야", "쓸 수 있어?", "얼마나 쌓여" 처럼 규칙을 묻는 문장은
+  // 절차 단계보다 서비스 규칙 노드를 먼저 봐야 한다. 안 그러면 생성형이 규칙을 지어낸다.
+  const asksRule = /(제한|조건|규칙|몇\s*%|몇\s*퍼센트|얼마나|되나요|되나|수\s*있|가능한가|가능해|공식|기준)/.test(normalized)
   const scored = graph.nodes.map((node, index) => {
     const haystack = `${node.label} ${JSON.stringify(node.properties)}`.toLocaleLowerCase('ko')
     const exactLabel = normalized.includes(node.label.toLocaleLowerCase('ko')) ? 5 : 0
-    const score = exactLabel + terms.reduce((sum, term) => sum + (haystack.includes(term.toLocaleLowerCase('ko')) ? 1 : 0), 0)
+    const termScore = terms.reduce((sum, term) => sum + (haystack.includes(term.toLocaleLowerCase('ko')) ? 1 : 0), 0)
+    // 규칙 노드는 실제로 질문 단어와 겹칠 때만 끌어올린다. 무조건 올리면 절차 노드를 밀어낸다.
+    const ruleBoost = asksRule && node.type === 'ServiceRule' && termScore > 0 ? 3 : 0
+    const score = exactLabel + ruleBoost + termScore
     return { node, index, score }
   }).sort((a, b) => b.score - a.score || a.index - b.index)
   const direct = scored.filter((item) => item.score > 0).slice(0, limit)

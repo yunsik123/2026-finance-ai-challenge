@@ -261,7 +261,9 @@ export default function CouponMarket({ state, me, requireLogin, refresh, notify 
                   onClick={() => run(listing.id, () => api(`/api/offers/${listing.myOfferId}`, { method: 'DELETE' }))}>
                   <Clock3 /> 제안 보낸 상태 · 취소하기
                 </button>
-              : <button className="button full" disabled={busyId === listing.id || (Boolean(me) && !matchable)}
+              // 교환할 수 있는 내 쿠폰이 없을 때는 '할 수 있는 행동'이 아니라 '지금 상태'다.
+              // 주황 CTA를 흐리게만 보여주면 눌러야 할 버튼처럼 읽혀서, 안내 톤으로 낮춘다.
+              : <button className={`button full${!me || matchable ? '' : ' secondary'}`} disabled={busyId === listing.id || (Boolean(me) && !matchable)}
                   onClick={() => { if (requireLogin()) setComposing(listing) }}>
                   {!me ? '로그인하고 교환하기' : matchable ? <><ArrowLeftRight size={16} /> 교환 제안하기</> : '조건에 맞는 내 쿠폰이 없어요'}
                 </button>}

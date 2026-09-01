@@ -11,25 +11,25 @@ export const restaurants: Restaurant[] = [
     rating: 4.8, reviewCount: 1284, supporters: 347, communityScore: 92, stabilityScore: 81, story: '두 자매가 할머니의 반찬 레시피로 시작한 작은 식당이에요. 더 넓은 주방과 저온 저장고를 준비하려 합니다.', color: '#ff8465', tags: ['재방문 61%', '매출 상승', '로컬 식재료']
   },
   {
-    id: 'r-huaxiang', name: '화향면관', emoji: '🍜', category: '중식', region: '서울', neighborhood: '연남동',
+    id: 'r-huaxiang', ownerId: 'u-owner-hua', name: '화향면관', emoji: '🍜', category: '중식', region: '서울', neighborhood: '연남동',
     tagline: '불향 가득, 매일 뽑는 도삭면', description: '주문과 동시에 면을 깎고 직접 만든 향신유로 깊은 풍미를 냅니다.', signature: '우육 도삭면', avgPrice: 12000, maxMenuPrice: 28000,
     openedYears: 2, monthlySales: 57900000, salesGrowth: 26.8, repeatRate: 54, footTrafficGrowth: 12.5, competition: '높음', closingRate: 11.2,
     rating: 4.7, reviewCount: 934, supporters: 512, communityScore: 89, stabilityScore: 74, story: '호텔 중식당 출신 셰프가 여는 첫 독립 매장입니다. 제면실 확장을 통해 대기 시간을 줄이려 해요.', color: '#f5b83d', tags: ['성장률 26.8%', '웨이팅 맛집', '셰프 스토리']
   },
   {
-    id: 'r-mokhwa', name: '목화다방', emoji: '☕', category: '카페', region: '서울', neighborhood: '성수동',
+    id: 'r-mokhwa', ownerId: 'u-owner-mokhwa', name: '목화다방', emoji: '☕', category: '카페', region: '서울', neighborhood: '성수동',
     tagline: '천천히 내리는 커피와 구움과자', description: '소규모 농장의 원두와 국산 제철 과일로 만드는 동네 로스터리입니다.', signature: '참외 크림 라떼', avgPrice: 7000, maxMenuPrice: 12000,
     openedYears: 3, monthlySales: 34200000, salesGrowth: 14.2, repeatRate: 67, footTrafficGrowth: 8.1, competition: '높음', closingRate: 13.5,
     rating: 4.9, reviewCount: 641, supporters: 286, communityScore: 95, stabilityScore: 84, story: '동네 단골과 함께 성장한 12석 로스터리. 작은 로스팅룸을 마련해 원두 납품을 시작하려 합니다.', color: '#7bbf9d', tags: ['단골 67%', '고평점', '로스터리']
   },
   {
-    id: 'r-bada', name: '바다의 식탁', emoji: '🐟', category: '일식', region: '부산', neighborhood: '광안리',
+    id: 'r-bada', ownerId: 'u-owner-bada', name: '바다의 식탁', emoji: '🐟', category: '일식', region: '부산', neighborhood: '광안리',
     tagline: '오늘 잡은 생선으로 여는 작은 이자카야', description: '부산 공동어시장에서 직접 고른 제철 생선과 사케 페어링을 선보입니다.', signature: '오늘의 모둠 사시미', avgPrice: 29000, maxMenuPrice: 58000,
     openedYears: 5, monthlySales: 73100000, salesGrowth: 11.6, repeatRate: 58, footTrafficGrowth: 6.4, competition: '보통', closingRate: 8.6,
     rating: 4.8, reviewCount: 1112, supporters: 438, communityScore: 86, stabilityScore: 88, story: '어부였던 아버지와 요리사 아들이 함께 운영합니다. 숙성고를 들여 비수기 원가를 안정시키려 합니다.', color: '#66a6d9', tags: ['5년 운영', '원가 안정', '로컬 수산']
   },
   {
-    id: 'r-oven', name: '오후의 오븐', emoji: '🥐', category: '베이커리', region: '대전', neighborhood: '소제동',
+    id: 'r-oven', ownerId: 'u-owner-oven', name: '오후의 오븐', emoji: '🥐', category: '베이커리', region: '대전', neighborhood: '소제동',
     tagline: '골목에 퍼지는 버터 향', description: '우리 밀과 발효종으로 매일 소량 굽는 동네 빵집입니다.', signature: '소금버터 크루아상', avgPrice: 6500, maxMenuPrice: 36000,
     openedYears: 1, monthlySales: 29100000, salesGrowth: 34.1, repeatRate: 49, footTrafficGrowth: 17.8, competition: '낮음', closingRate: 9.1,
     rating: 4.7, reviewCount: 489, supporters: 221, communityScore: 91, stabilityScore: 68, story: '오픈 1년 만에 오전 품절이 잦아졌어요. 중고 데크오븐을 추가해 더 많은 이웃을 만나려 합니다.', color: '#dc9f6b', tags: ['성장률 34.1%', '오전 품절', '우리 밀']
@@ -41,7 +41,7 @@ export const restaurants: Restaurant[] = [
     rating: 4.6, reviewCount: 718, supporters: 192, communityScore: 83, stabilityScore: 79, story: '지역 식재료를 양식으로 풀어내는 팀입니다. 런치 운영을 위한 인력과 제면기를 마련합니다.', color: '#8f86c9', tags: ['지역 농가', '생면', '런치 확장']
   },
   {
-    id: 'r-dotori', name: '도토리분식', emoji: '🍢', category: '분식', region: '서울', neighborhood: '신림동',
+    id: 'r-dotori', ownerId: 'u-owner-dotori', name: '도토리분식', emoji: '🍢', category: '분식', region: '서울', neighborhood: '신림동',
     tagline: '학생 때 그 맛, 조금 더 건강하게', description: '직접 뽑은 쌀떡과 채소 육수로 만드는 든든한 동네 분식집입니다.', signature: '들깨 크림 떡볶이', avgPrice: 8500, maxMenuPrice: 16000,
     openedYears: 7, monthlySales: 38500000, salesGrowth: 8.7, repeatRate: 72, footTrafficGrowth: 3.4, competition: '보통', closingRate: 6.3,
     rating: 4.8, reviewCount: 1762, supporters: 608, communityScore: 97, stabilityScore: 93, story: '7년 동안 학생들의 아지트였어요. 배달 의존도를 낮추고 홀을 고쳐 더 오래 머무는 가게가 되려 합니다.', color: '#ef6f72', tags: ['단골 72%', '7년 운영', '동네 사랑방']
@@ -65,7 +65,7 @@ export const restaurants: Restaurant[] = [
     rating: 4.6, reviewCount: 998, supporters: 401, communityScore: 82, stabilityScore: 70, story: '푸드트럭에서 시작해 첫 매장을 열었습니다. 또르띠야 생산 장비로 품질과 원가를 함께 잡으려 합니다.', color: '#e47e44', tags: ['성장률 29.3%', '푸드트럭 출신', '직접 생산']
   },
   {
-    id: 'r-sunmandu', name: '선만두', emoji: '🥟', category: '한식', region: '수원', neighborhood: '행궁동',
+    id: 'r-sunmandu', ownerId: 'u-owner-sunmandu', name: '선만두', emoji: '🥟', category: '한식', region: '수원', neighborhood: '행궁동',
     tagline: '매일 아침 빚는 얇은 피 왕만두', description: '3대째 이어온 레시피로 당일 빚고 당일 판매합니다.', signature: '김치 왕만두전골', avgPrice: 11000, maxMenuPrice: 27000,
     openedYears: 11, monthlySales: 62100000, salesGrowth: 7.4, repeatRate: 69, footTrafficGrowth: 4.1, competition: '낮음', closingRate: 5.4,
     rating: 4.8, reviewCount: 2304, supporters: 711, communityScore: 96, stabilityScore: 96, story: '행궁동을 지켜온 만두집입니다. 냉동 유통이 아닌 가까운 지역 당일 배송을 위한 냉장차를 마련합니다.', color: '#d78a63', tags: ['11년 운영', '단골 69%', '3대 레시피']
@@ -184,13 +184,28 @@ export const etfs: EtfFund[] = [
 
 export function createSeed(ownerHash: string, investorHash: string): Database {
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     users: [
       { id: 'u-admin', email: 'admin@meoktu.demo', name: '먹투 운영팀', role: 'admin', passwordHash: ownerHash, cash: 0, accountStatus: 'active', createdAt: day(-500) },
+      // 사장님 계정 — 식당마다 한 명씩 둬야 "내 가게" 기준 상담·대시보드·쿠폰 확인을 각각 시연할 수 있다.
       { id: 'u-owner', email: 'owner@meoktu.demo', name: '김소담', role: 'owner', passwordHash: ownerHash, cash: 0, createdAt: day(-400) },
+      { id: 'u-owner-hua', email: 'owner-hua@meoktu.demo', name: '장위안', role: 'owner', passwordHash: ownerHash, cash: 0, createdAt: day(-330) },
+      { id: 'u-owner-mokhwa', email: 'owner-mokhwa@meoktu.demo', name: '정목화', role: 'owner', passwordHash: ownerHash, cash: 0, createdAt: day(-360) },
+      { id: 'u-owner-bada', email: 'owner-bada@meoktu.demo', name: '오해성', role: 'owner', passwordHash: ownerHash, cash: 0, createdAt: day(-420) },
+      { id: 'u-owner-dotori', email: 'owner-dotori@meoktu.demo', name: '남도리', role: 'owner', passwordHash: ownerHash, cash: 0, createdAt: day(-470) },
+      { id: 'u-owner-sunmandu', email: 'owner-sunmandu@meoktu.demo', name: '유선재', role: 'owner', passwordHash: ownerHash, cash: 0, createdAt: day(-510) },
+      { id: 'u-owner-oven', email: 'owner-oven@meoktu.demo', name: '배오후', role: 'owner', passwordHash: ownerHash, cash: 0, createdAt: day(-240) },
+      // 투자자 계정 — 쿠폰 교환장은 상대가 있어야 성립하므로, 업종·지역·할인율이
+      // 서로 다른 지갑을 여러 개 깔아둬야 조건 충족/불충족을 둘 다 시연할 수 있다.
       { id: 'u-investor', email: 'investor@meoktu.demo', name: '박한입', role: 'investor', passwordHash: investorHash, cash: 1640000, createdAt: day(-160) },
       { id: 'u-market-a', email: 'market-a@meoktu.demo', name: '동네단골A', role: 'investor', passwordHash: investorHash, cash: 920000, createdAt: day(-210) },
       { id: 'u-market-b', email: 'market-b@meoktu.demo', name: '동네단골B', role: 'investor', passwordHash: investorHash, cash: 880000, createdAt: day(-190) },
+      { id: 'u-market-c', email: 'market-c@meoktu.demo', name: '윤미식', role: 'investor', passwordHash: investorHash, cash: 1250000, createdAt: day(-175) },
+      { id: 'u-market-d', email: 'market-d@meoktu.demo', name: '조퇴근', role: 'investor', passwordHash: investorHash, cash: 760000, createdAt: day(-140) },
+      { id: 'u-market-e', email: 'market-e@meoktu.demo', name: '한주말', role: 'investor', passwordHash: investorHash, cash: 1480000, createdAt: day(-128) },
+      { id: 'u-market-f', email: 'market-f@meoktu.demo', name: '백새내', role: 'investor', passwordHash: investorHash, cash: 430000, createdAt: day(-21) },
+      { id: 'u-market-g', email: 'market-g@meoktu.demo', name: '서단골', role: 'investor', passwordHash: investorHash, cash: 2150000, createdAt: day(-245) },
+      { id: 'u-market-h', email: 'market-h@meoktu.demo', name: '문소액', role: 'investor', passwordHash: investorHash, cash: 180000, createdAt: day(-64) },
     ],
     restaurants,
     funds,
@@ -203,6 +218,17 @@ export function createSeed(ownerHash: string, investorHash: string): Database {
       { id: 'p-market-dotori', userId: 'u-market-a', fundId: 'f-dotori', amount: 230000, early: true, couponProgress: 28.3, updatedAt: day(-2) },
       { id: 'p-market-podo', userId: 'u-market-b', fundId: 'f-podo', amount: 160000, early: false, couponProgress: 19.4, updatedAt: day(-5) },
       { id: 'p-market-sunmandu', userId: 'u-market-a', fundId: 'f-sunmandu', amount: 260000, early: true, couponProgress: 21.8, updatedAt: day(-6) },
+      { id: 'p-market-c-jejudam', userId: 'u-market-c', fundId: 'f-jejudam', amount: 150000, early: true, couponProgress: 16.4, updatedAt: day(-3) },
+      { id: 'p-market-c-mokhwa', userId: 'u-market-c', fundId: 'f-mokhwa', amount: 90000, early: false, couponProgress: 9.8, updatedAt: day(-7) },
+      { id: 'p-market-d-nokturn', userId: 'u-market-d', fundId: 'f-nokturn', amount: 130000, early: false, couponProgress: 12.7, updatedAt: day(-2) },
+      { id: 'p-market-e-bada', userId: 'u-market-e', fundId: 'f-bada', amount: 240000, early: true, couponProgress: 24.1, updatedAt: day(-4) },
+      { id: 'p-market-e-greenbowl', userId: 'u-market-e', fundId: 'f-greenbowl', amount: 70000, early: false, couponProgress: 6.2, updatedAt: day(-9) },
+      { id: 'p-market-e-sunmandu', userId: 'u-market-e', fundId: 'f-sunmandu', amount: 150000, early: true, couponProgress: 13.5, updatedAt: day(-5) },
+      { id: 'p-market-f-mealmill', userId: 'u-market-f', fundId: 'f-mealmill', amount: 40000, early: false, couponProgress: 4.4, updatedAt: day(-1) },
+      { id: 'p-market-g-sunmandu', userId: 'u-market-g', fundId: 'f-sunmandu', amount: 310000, early: true, couponProgress: 26.9, updatedAt: day(-8) },
+      { id: 'p-market-g-dotori', userId: 'u-market-g', fundId: 'f-dotori', amount: 180000, early: false, couponProgress: 15.3, updatedAt: day(-6) },
+      { id: 'p-market-g-huaxiang', userId: 'u-market-g', fundId: 'f-huaxiang', amount: 120000, early: true, couponProgress: 11.1, updatedAt: day(-4) },
+      { id: 'p-market-h-podo', userId: 'u-market-h', fundId: 'f-podo', amount: 30000, early: false, couponProgress: 3.1, updatedAt: day(-2) },
     ],
     orders: [
       { id: 'o-seed-mokhwa-sell', userId: 'u-market-a', fundId: 'f-mokhwa', type: 'sell', originalAmount: 80000, remaining: 80000, status: 'open', createdAt: day(-2) },
@@ -210,6 +236,11 @@ export function createSeed(ownerHash: string, investorHash: string): Database {
       { id: 'o-seed-dotori-sell', userId: 'u-market-a', fundId: 'f-dotori', type: 'sell', originalAmount: 90000, remaining: 90000, status: 'open', createdAt: day(-1.8) },
       { id: 'o-seed-podo-buy', userId: 'u-market-a', fundId: 'f-podo', type: 'buy', originalAmount: 70000, remaining: 70000, status: 'open', createdAt: day(-1.5) },
       { id: 'o-seed-sunmandu-sell', userId: 'u-market-a', fundId: 'f-sunmandu', type: 'sell', originalAmount: 110000, remaining: 110000, status: 'open', createdAt: day(-1.2) },
+      { id: 'o-seed-mokhwa-sell-2', userId: 'u-market-c', fundId: 'f-mokhwa', type: 'sell', originalAmount: 50000, remaining: 50000, status: 'open', createdAt: day(-1.1) },
+      { id: 'o-seed-dotori-sell-2', userId: 'u-market-g', fundId: 'f-dotori', type: 'sell', originalAmount: 60000, remaining: 60000, status: 'open', createdAt: day(-0.9) },
+      { id: 'o-seed-sunmandu-sell-3', userId: 'u-market-e', fundId: 'f-sunmandu', type: 'sell', originalAmount: 40000, remaining: 40000, status: 'open', createdAt: day(-0.8) },
+      { id: 'o-seed-bada-buy-2', userId: 'u-market-g', fundId: 'f-bada', type: 'buy', originalAmount: 90000, remaining: 90000, status: 'open', createdAt: day(-0.7) },
+      { id: 'o-seed-podo-buy-2', userId: 'u-market-d', fundId: 'f-podo', type: 'buy', originalAmount: 50000, remaining: 50000, status: 'open', createdAt: day(-0.6) },
     ],
     coupons: [
       { id: 'c-1', userId: 'u-investor', restaurantId: 'r-podo', fundId: 'f-podo', title: '포도상점 응원 쿠폰', discount: 25, maxDiscountWon: 12250, type: 'fund', status: 'available', expiresAt: day(90), createdAt: day(-10) },
@@ -222,6 +253,32 @@ export function createSeed(ownerHash: string, investorHash: string): Database {
       { id: 'c-market-6', userId: 'u-market-b', restaurantId: 'r-sunmandu', fundId: 'f-sunmandu', title: '선만두 30% 쿠폰', discount: 30, maxDiscountWon: 8100, type: 'dividend', status: 'listed', expiresAt: day(81), createdAt: day(-5) },
       { id: 'c-market-7', userId: 'u-market-a', restaurantId: 'r-huaxiang', fundId: 'f-huaxiang', title: '화향면관 26% 쿠폰', discount: 26, maxDiscountWon: 7280, type: 'fund', status: 'available', expiresAt: day(70), createdAt: day(-6) },
       { id: 'c-market-8', userId: 'u-market-b', restaurantId: 'r-sobok', fundId: 'f-sobok', title: '소복소복 21% 쿠폰', discount: 21, maxDiscountWon: 4830, type: 'fund', status: 'available', expiresAt: day(64), createdAt: day(-11) },
+      // 아래 쿠폰들은 교환 규칙(할인율 10%p 미만 차이·액면가 2.5배 이내·만료 7일 이상)의
+      // 통과 사례와 탈락 사례가 둘 다 나오도록 업종·지역·할인율·액면가를 흩어 놓았다.
+      { id: 'c-mc-1', userId: 'u-market-c', restaurantId: 'r-mokhwa', fundId: 'f-mokhwa', title: '목화다방 26% 쿠폰', discount: 26, maxDiscountWon: 3120, type: 'fund', status: 'listed', expiresAt: day(58), createdAt: day(-9) },
+      { id: 'c-mc-2', userId: 'u-market-c', restaurantId: 'r-jejudam', fundId: 'f-jejudam', title: '제주담 국수 24% 쿠폰', discount: 24, maxDiscountWon: 5760, type: 'fund', status: 'available', expiresAt: day(77), createdAt: day(-14) },
+      { id: 'c-mc-3', userId: 'u-market-c', restaurantId: 'r-podo', fundId: 'f-podo', title: '포도상점 30% 배당 쿠폰', discount: 30, maxDiscountWon: 14700, type: 'dividend', status: 'available', expiresAt: day(52), createdAt: day(-6) },
+      { id: 'c-mc-4', userId: 'u-market-c', restaurantId: 'r-nokturn', fundId: 'f-nokturn', title: '녹턴 키친 23% 쿠폰', discount: 23, maxDiscountWon: 9200, type: 'fund', status: 'offered', expiresAt: day(63), createdAt: day(-12) },
+      { id: 'c-md-1', userId: 'u-market-d', restaurantId: 'r-nokturn', fundId: 'f-nokturn', title: '녹턴 키친 28% 쿠폰', discount: 28, maxDiscountWon: 11760, type: 'fund', status: 'listed', expiresAt: day(61), createdAt: day(-7) },
+      { id: 'c-md-2', userId: 'u-market-d', restaurantId: 'r-oven', fundId: 'f-oven', title: '오후의 오븐 22% 쿠폰', discount: 22, maxDiscountWon: 7920, type: 'fund', status: 'available', expiresAt: day(45), createdAt: day(-16) },
+      { id: 'c-md-3', userId: 'u-market-d', restaurantId: 'r-sobok', fundId: 'f-sobok', title: '소복소복 24% 쿠폰', discount: 24, maxDiscountWon: 4560, type: 'fund', status: 'offered', expiresAt: day(69), createdAt: day(-5) },
+      { id: 'c-me-1', userId: 'u-market-e', restaurantId: 'r-bada', fundId: 'f-bada', title: '바다의 식탁 25% 배당 쿠폰', discount: 25, maxDiscountWon: 14500, type: 'dividend', status: 'listed', expiresAt: day(54), createdAt: day(-10) },
+      { id: 'c-me-2', userId: 'u-market-e', restaurantId: 'r-greenbowl', fundId: 'f-greenbowl', title: '그린볼 클럽 20% 쿠폰', discount: 20, maxDiscountWon: 3800, type: 'fund', status: 'available', expiresAt: day(83), createdAt: day(-13) },
+      { id: 'c-me-3', userId: 'u-market-e', restaurantId: 'r-oven', fundId: 'f-oven', title: '오후의 오븐 26% 쿠폰', discount: 26, maxDiscountWon: 9360, type: 'fund', status: 'offered', expiresAt: day(49), createdAt: day(-8) },
+      { id: 'c-mf-1', userId: 'u-market-f', restaurantId: 'r-sobok', fundId: 'f-sobok', title: '소복소복 12% 쿠폰', discount: 12, maxDiscountWon: 2280, type: 'fund', status: 'available', expiresAt: day(88), createdAt: day(-4) },
+      { id: 'c-mf-2', userId: 'u-market-f', restaurantId: 'r-mealmill', fundId: 'f-mealmill', title: '밀밀키친 35% 쿠폰', discount: 35, maxDiscountWon: 11200, type: 'fund', status: 'listed', expiresAt: day(71), createdAt: day(-3) },
+      { id: 'c-mg-1', userId: 'u-market-g', restaurantId: 'r-sunmandu', fundId: 'f-sunmandu', title: '선만두 29% 배당 쿠폰', discount: 29, maxDiscountWon: 7830, type: 'dividend', status: 'listed', expiresAt: day(66), createdAt: day(-11) },
+      { id: 'c-mg-2', userId: 'u-market-g', restaurantId: 'r-dotori', fundId: 'f-dotori', title: '도토리분식 31% 쿠폰', discount: 31, maxDiscountWon: 4960, type: 'fund', status: 'listed', expiresAt: day(43), createdAt: day(-15) },
+      { id: 'c-mg-3', userId: 'u-market-g', restaurantId: 'r-jejudam', fundId: 'f-jejudam', title: '제주담 국수 27% 쿠폰', discount: 27, maxDiscountWon: 6480, type: 'fund', status: 'available', expiresAt: day(74), createdAt: day(-9) },
+      { id: 'c-mg-4', userId: 'u-market-g', restaurantId: 'r-huaxiang', fundId: 'f-huaxiang', title: '화향면관 15% 쿠폰', discount: 15, maxDiscountWon: 4200, type: 'fund', status: 'available', expiresAt: day(36), createdAt: day(-19) },
+      { id: 'c-mh-1', userId: 'u-market-h', restaurantId: 'r-podo', fundId: 'f-podo', title: '포도상점 28% 쿠폰', discount: 28, maxDiscountWon: 11000, type: 'fund', status: 'offered', expiresAt: day(57), createdAt: day(-6) },
+      { id: 'c-mh-2', userId: 'u-market-h', restaurantId: 'r-mokhwa', fundId: 'f-mokhwa', title: '목화다방 19% 쿠폰', discount: 19, maxDiscountWon: 2280, type: 'fund', status: 'available', expiresAt: day(80), createdAt: day(-2) },
+      // 아래 4장은 각 매물에 실제로 성립하는 상대가 최소 1명은 있게 맞춘 '짝' 쿠폰이다.
+      // (없으면 교환장에 매물은 보이는데 아무도 교환할 수 없는 화면이 된다.)
+      { id: 'c-mh-3', userId: 'u-market-h', restaurantId: 'r-oven', fundId: 'f-oven', title: '오후의 오븐 25% 쿠폰', discount: 25, maxDiscountWon: 6300, type: 'fund', status: 'available', expiresAt: day(59), createdAt: day(-7) },
+      { id: 'c-mg-5', userId: 'u-market-g', restaurantId: 'r-oven', fundId: 'f-oven', title: '오후의 오븐 30% 배당 쿠폰', discount: 30, maxDiscountWon: 10800, type: 'dividend', status: 'available', expiresAt: day(47), createdAt: day(-12) },
+      { id: 'c-mf-3', userId: 'u-market-f', restaurantId: 'r-mealmill', fundId: 'f-mealmill', title: '밀밀키친 27% 쿠폰', discount: 27, maxDiscountWon: 8640, type: 'fund', status: 'available', expiresAt: day(68), createdAt: day(-5) },
+      { id: 'c-me-4', userId: 'u-market-e', restaurantId: 'r-dotori', fundId: 'f-dotori', title: '도토리분식 27% 쿠폰', discount: 27, maxDiscountWon: 4320, type: 'fund', status: 'available', expiresAt: day(62), createdAt: day(-10) },
     ],
     couponListings: [
       { id: 'cl-1', userId: 'u-owner', couponId: 'c-market-1', wantedCategories: ['한식', '분식'], wantedRegions: ['서울'], minDiscount: 0, autoAccept: true, note: '망원동 근처면 더 좋아요!', status: 'open', createdAt: day(-2), expiresAt: day(28) },
@@ -230,8 +287,19 @@ export function createSeed(ownerHash: string, investorHash: string): Database {
       { id: 'cl-4', userId: 'u-market-a', couponId: 'c-market-4', wantedCategories: [], wantedRegions: ['수원', '서울'], minDiscount: 25, autoAccept: false, note: '액면가 비슷한 쿠폰이면 뭐든 좋아요.', status: 'open', createdAt: day(-1), expiresAt: day(29) },
       { id: 'cl-5', userId: 'u-market-b', couponId: 'c-market-5', wantedCategories: ['세계음식', '중식'], wantedRegions: [], minDiscount: 0, autoAccept: true, note: '', status: 'open', createdAt: day(-5), expiresAt: day(25) },
       { id: 'cl-6', userId: 'u-market-b', couponId: 'c-market-6', wantedCategories: [], wantedRegions: [], minDiscount: 0, autoAccept: true, note: '아무 쿠폰이나 환영합니다.', status: 'open', createdAt: day(-2.5), expiresAt: day(27.5) },
+      { id: 'cl-7', userId: 'u-market-c', couponId: 'c-mc-1', wantedCategories: ['한식', '일식'], wantedRegions: ['서울', '부산'], minDiscount: 20, autoAccept: false, note: '점심에 쓸 밥집 쿠폰이면 좋겠어요.', status: 'open', createdAt: day(-3.5), expiresAt: day(26.5) },
+      { id: 'cl-8', userId: 'u-market-d', couponId: 'c-md-1', wantedCategories: ['카페', '베이커리'], wantedRegions: [], minDiscount: 0, autoAccept: false, note: '디저트 쪽으로 바꾸고 싶어요.', status: 'open', createdAt: day(-2.8), expiresAt: day(27.2) },
+      { id: 'cl-9', userId: 'u-market-e', couponId: 'c-me-1', wantedCategories: ['세계음식', '양식'], wantedRegions: [], minDiscount: 20, autoAccept: false, note: '주말 저녁에 쓸 곳을 찾고 있어요.', status: 'open', createdAt: day(-1.6), expiresAt: day(28.4) },
+      { id: 'cl-10', userId: 'u-market-f', couponId: 'c-mf-2', wantedCategories: [], wantedRegions: [], minDiscount: 30, autoAccept: true, note: '30% 이상이면 업종은 상관없어요.', status: 'open', createdAt: day(-1.2), expiresAt: day(28.8) },
+      { id: 'cl-11', userId: 'u-market-g', couponId: 'c-mg-1', wantedCategories: ['한식', '분식'], wantedRegions: ['서울', '수원'], minDiscount: 25, autoAccept: false, note: '', status: 'open', createdAt: day(-4.5), expiresAt: day(25.5) },
+      { id: 'cl-12', userId: 'u-market-g', couponId: 'c-mg-2', wantedCategories: ['주점', '일식'], wantedRegions: [], minDiscount: 0, autoAccept: true, note: '저녁 술자리용으로 바꾸려고요.', status: 'open', createdAt: day(-3.2), expiresAt: day(26.8) },
     ],
-    couponOffers: [],
+    couponOffers: [
+      { id: 'co-1', listingId: 'cl-7', offerUserId: 'u-market-d', offerCouponId: 'c-md-3', message: '소복소복 24% 쿠폰이에요. 망원동이라 점심에 딱이에요!', status: 'pending', createdAt: day(-1.4) },
+      { id: 'co-2', listingId: 'cl-8', offerUserId: 'u-market-e', offerCouponId: 'c-me-3', message: '오후의 오븐 26% 쿠폰 어떠세요?', status: 'pending', createdAt: day(-1.1) },
+      { id: 'co-3', listingId: 'cl-12', offerUserId: 'u-market-h', offerCouponId: 'c-mh-1', message: '포도상점 전통주 쿠폰입니다.', status: 'pending', createdAt: day(-0.8) },
+      { id: 'co-4', listingId: 'cl-9', offerUserId: 'u-market-c', offerCouponId: 'c-mc-4', message: '녹턴 키친 생면 파스타 쿠폰이에요.', status: 'pending', createdAt: day(-0.5) },
+    ],
     couponTrades: [],
     notifications: [],
     applications: [],

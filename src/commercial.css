@@ -10,10 +10,10 @@
 .commercial-verdict.watch{background:#fff4e6;color:#a86a00}
 .commercial-verdict b{display:block;font-size:17px;font-family:'Jua',sans-serif}
 .commercial-verdict small{font-size:11px;opacity:.85}
-.commercial-match-note{margin:14px 0 0;background:#faf8f3;border-radius:12px;padding:11px 14px;font-size:12px;color:#5c655f}
+.commercial-match-note{margin:14px 0 0;background:var(--surface-soft);border-radius:12px;padding:11px 14px;font-size:12px;color:var(--ink-soft)}
 
 .commercial-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:18px 0}
-.commercial-grid article{background:#faf8f3;border-radius:16px;padding:15px}
+.commercial-grid article{background:var(--surface-soft);border-radius:16px;padding:15px}
 .commercial-grid svg{width:17px;color:var(--coral);margin-bottom:7px}
 .commercial-grid span{display:block;font-size:11px;font-weight:700;color:var(--muted)}
 .commercial-grid b{display:block;margin:3px 0;font-size:19px;font-family:'Jua',sans-serif;color:var(--navy)}
@@ -24,20 +24,20 @@
 .commercial-detail{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;padding-top:18px;border-top:1px solid var(--line)}
 .commercial-detail h4{margin:0 0 9px;font-size:13px}
 .commercial-detail ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
-.commercial-detail li{font-size:12px;color:#5c655f;line-height:1.6}
+.commercial-detail li{font-size:12px;color:var(--ink-soft);line-height:1.6}
 .commercial-customer{margin:9px 0 0;font-size:12px;color:var(--muted)}
 .age-bars{display:flex;align-items:flex-end;gap:7px;height:78px}
 .age-bars>div{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%}
 .age-bars i{display:block;width:100%;min-height:4px;border-radius:5px 5px 0 0;background:linear-gradient(180deg,var(--coral),#ffb59f)}
-.age-bars span{font-size:10px;color:var(--muted);margin-top:4px}
-.age-bars small{font-size:9px;color:#9aa39d}
+.age-bars span{font-size:11px;color:var(--muted);margin-top:4px}
+.age-bars small{font-size:11px;color:var(--muted)}
 
 .commercial-investor-view{margin-top:18px;padding-top:16px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:9px}
 .commercial-investor-view p{margin:0;font-size:13px;line-height:1.7;color:#3d4642}
 .commercial-investor-view b{display:inline-flex;align-items:center;gap:4px;margin-right:8px;padding:3px 10px;border-radius:99px;background:var(--mint);color:#12604a;font-size:11px}
 .commercial-investor-view .caution b{background:#fff4e6;color:#a86a00}
 
-.commercial-missing{display:flex;align-items:center;gap:13px;background:#faf8f3;border:1px dashed var(--line);border-radius:18px;padding:18px;margin-bottom:20px}
+.commercial-missing{display:flex;align-items:center;gap:13px;background:var(--surface-soft);border:1px dashed var(--line);border-radius:18px;padding:18px;margin-bottom:20px}
 .commercial-missing svg{width:22px;color:var(--muted);flex-shrink:0}
 .commercial-missing b{display:block;font-size:14px}
 .commercial-missing p{margin:4px 0 0;font-size:12px;color:var(--muted);line-height:1.6}
@@ -46,22 +46,22 @@
 .contextual-alerts h3{display:flex;align-items:center;gap:7px;margin:0 0 10px;font-size:14px;color:#a8500f}
 .contextual-alerts svg{width:16px}
 .contextual-alerts ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px}
-.contextual-alerts li{font-size:12.5px;color:#5c4b3d;line-height:1.65}
+.contextual-alerts li{font-size:12px;color:#5c4b3d;line-height:1.65}
 
 /* ── 상권: 식당 상세 요약 ─────────────────────────────────── */
-.commercial-compact{background:#faf8f3;border:1px solid var(--line);border-radius:18px;padding:16px;margin-bottom:16px}
+.commercial-compact{background:var(--surface-soft);border:1px solid var(--line);border-radius:18px;padding:16px;margin-bottom:16px}
 .commercial-compact-head{display:flex;align-items:center;gap:10px;margin-bottom:12px}
 .commercial-compact-head svg{width:18px;color:var(--coral)}
-.commercial-compact-head small{display:block;font-size:10px;font-weight:700;color:var(--muted)}
+.commercial-compact-head small{display:block;font-size:11px;font-weight:700;color:var(--muted)}
 .commercial-compact-head b{font-size:14px}
 .commercial-compact-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
 .commercial-compact-grid>div{background:white;border-radius:12px;padding:11px}
-.commercial-compact-grid span{display:block;font-size:10px;font-weight:700;color:var(--muted)}
+.commercial-compact-grid span{display:block;font-size:11px;font-weight:700;color:var(--muted)}
 .commercial-compact-grid b{display:block;margin:2px 0;font-size:15px;font-family:'Jua',sans-serif;color:var(--navy)}
-.commercial-compact-grid em{font-style:normal;font-size:10px;color:var(--muted)}
+.commercial-compact-grid em{font-style:normal;font-size:11px;color:var(--muted)}
 .commercial-compact-grid em.up{color:var(--green)}
 .commercial-compact-grid em.down{color:var(--coral-dark)}
-.commercial-compact-note{margin:11px 0 0;font-size:11.5px;color:#5c655f;line-height:1.6}
+.commercial-compact-note{margin:11px 0 0;font-size:12px;color:var(--ink-soft);line-height:1.6}
 
 /* ── 사업자·재무 교차검증 리포트 ──────────────────────────── */
 .verification-report{display:flex;flex-direction:column;gap:16px;margin:20px 0}
@@ -70,16 +70,16 @@
 .verify-head svg.ok{color:var(--green)}
 .verify-head svg.warn{color:var(--coral-dark)}
 .verify-head b{display:block;font-size:14px}
-.verify-head small{font-size:11.5px;color:var(--muted);line-height:1.5}
+.verify-head small{font-size:12px;color:var(--muted);line-height:1.5}
 
 .business-verify,.financial-verify{background:white;border:1px solid var(--line);border-radius:18px;padding:18px}
 .verify-checks{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:7px}
-.verify-checks li{display:flex;align-items:center;gap:5px;border-radius:99px;padding:6px 12px;font-size:11.5px;font-weight:700}
+.verify-checks li{display:flex;align-items:center;gap:5px;border-radius:99px;padding:6px 12px;font-size:12px;font-weight:700}
 .verify-checks li.ok{background:var(--mint);color:#12604a}
 .verify-checks li.fail{background:#ffeceb;color:var(--coral-dark)}
 
 .verify-steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
-.verify-steps li{display:flex;gap:11px;border-radius:14px;padding:11px 13px;background:#faf8f3}
+.verify-steps li{display:flex;gap:11px;border-radius:14px;padding:11px 13px;background:var(--surface-soft)}
 .verify-steps li.passed{background:var(--mint)}
 .verify-steps li.review{background:#fff8f2}
 .verify-steps li.failed{background:#ffeceb}
@@ -90,8 +90,8 @@
 .verify-steps li.failed .verify-mark svg{color:var(--coral-dark)}
 .verify-steps li.not_compared .verify-mark svg{color:var(--muted)}
 .verify-steps b{display:flex;align-items:center;gap:8px;font-size:13px}
-.verify-steps em{font-style:normal;font-size:10px;font-weight:700;color:var(--muted);border:1px solid currentColor;border-radius:99px;padding:1px 7px}
-.verify-steps p{margin:3px 0 0;font-size:11.5px;color:#5c655f;line-height:1.6}
+.verify-steps em{font-style:normal;font-size:11px;font-weight:700;color:var(--muted);border:1px solid currentColor;border-radius:99px;padding:1px 7px}
+.verify-steps p{margin:3px 0 0;font-size:12px;color:var(--ink-soft);line-height:1.6}
 
 .verify-table{width:100%;border-collapse:collapse;margin-top:14px;font-size:12px}
 .verify-table th{text-align:left;padding:8px 10px;color:var(--muted);font-size:11px;border-bottom:1px solid var(--line)}
@@ -106,7 +106,7 @@
 .verify-alert.fail b{color:var(--coral-dark)}
 .verify-alert.warn b{color:#a86a00}
 .verify-alert ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:4px}
-.verify-alert li{font-size:11.5px;line-height:1.6;color:#5c4b3d}
+.verify-alert li{font-size:12px;line-height:1.6;color:#5c4b3d}
 .verify-disclaimer{margin:13px 0 0;font-size:11px;color:var(--muted);text-align:center;line-height:1.6}
 
 @media(max-width:860px){

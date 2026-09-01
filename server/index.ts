@@ -18,7 +18,7 @@ import {
 } from './credit.ts'
 import { DEMO_NOTICE, demoId, demoNotification, sandboxFor, type DemoSandbox } from './demo.ts'
 import {
-  answerOwnerStatusQuestion, answerSupportQuestion, isOwnerStatusQuestion, isSupportQuestion,
+  answerOwnerStatusQuestion, answerSupportQuestion, defaultSupportPrograms, isOwnerStatusQuestion, isSupportQuestion,
   knowledgeAsOf, matchSupportPrograms, ownerSituation, ownerSituationGraph, supportProgramNodes,
 } from './knowledge.ts'
 import { COMMERCIAL_NOTE, COMMERCIAL_SOURCE, commercialInsight, findCommercialArea } from './commercial.ts'
@@ -238,11 +238,12 @@ function migrateDatabase(current: Database, template: Database) {
   }
   for (const coupon of template.coupons) if (!current.coupons.some((item) => item.id === coupon.id)) current.coupons.push(coupon)
   for (const listing of template.couponListings) if (!current.couponListings.some((item) => item.id === listing.id)) current.couponListings.push(listing)
+  for (const offer of template.couponOffers) if (!current.couponOffers.some((item) => item.id === offer.id)) current.couponOffers.push(offer)
   for (const listing of current.couponListings) migrateListing(listing)
   for (const review of seedReviews) if (!current.reviews.some((item) => item.id === review.id)) current.reviews.push(review)
   current.articles = seedArticles
   current.etfs = template.etfs
-  current.schemaVersion = 4
+  current.schemaVersion = 5
   return current
 }
 
@@ -277,7 +278,7 @@ async function loadDatabase() {
   if (snapshot) {
     db = snapshot.data
     stateVersion = snapshot.version
-    if ((db.schemaVersion || 0) < 4) {
+    if ((db.schemaVersion || 0) < 5) {
       const ownerHash = db.users?.find((user) => user.id === 'u-owner')?.passwordHash || await hashPassword('demo1234!')
       const investorHash = db.users?.find((user) => user.id === 'u-investor')?.passwordHash || await hashPassword('demo1234!')
       db = migrateDatabase(db, createSeed(ownerHash, investorHash))
@@ -2513,7 +2514,8 @@ const applicationStatusLabel: Record<string, string> = {
 function isOwnerLedgerQuestion(question: string) {
   const text = question.replace(/\s/g, '')
   return isAccountStatusQuestion(question)
-    || /(모금|모집|투자자|쿠폰|매출|부담|배당|정산).*(몇|얼마|현황|상태|됐)/.test(text)
+    // "목표금액이랑 모인 금액 얼마야?"처럼 목표·모금액을 직접 묻는 문장도 운영 원장 질문이다.
+    || /(모금|모집|모인|모였|목표|펀드|펀딩|투자자|쿠폰|매출|부담|배당|정산).*(몇|얼마|현황|상태|됐|남았)/.test(text)
     || /몇(명|곳)/.test(text)
 }
 
@@ -2730,7 +2732,10 @@ app.post('/api/ai/chat', async (req: AuthedRequest, res) => {
     if (graphRestaurant) knowledgeGraph.edges.push({ from: `restaurant:${graphRestaurant.id}`, relation: 'GRADED_AS', to: 'credit:grade' })
   }
 
+  // 제도 이름을 모른 채 "정부 지원 뭐 있어?"라고 물으면 키워드 매칭이 비는데,
+  // 그대로 두면 "제공할 수 없다"고 답해버린다. 지원제도 질문이면 대표 제도라도 근거로 붙인다.
   const matchedPrograms = matchSupportPrograms(question, 3)
+  if (!matchedPrograms.length && isSupportQuestion(question)) matchedPrograms.push(...defaultSupportPrograms(3))
   if (matchedPrograms.length) knowledgeGraph.nodes.push(...supportProgramNodes(matchedPrograms))
 
   const retrievedGraph = retrieveKnowledgeSubgraph(knowledgeGraph, question)
@@ -2770,10 +2775,13 @@ app.post('/api/ai/chat', async (req: AuthedRequest, res) => {
   // "내 쿠폰 교환장에 어떻게 올려?"는 현황 집계가 아니라 클릭 순서를 원하는 질문이다.
   // 방법을 묻는 문장이면 원장 요약보다 화면 안내가 먼저다.
   const howToIntent = /(어떻게|어디서|어디에|어디로|어디야|방법|하려면|려면)/.test(ownerAsk)
+  // "제안한 쿠폰 다른 데 쓸 수 있어?"는 내 쿠폰 장수를 묻는 게 아니라 교환 규칙을 묻는 질문이다.
+  // 규칙을 물었는데 원장 집계를 읽어주면 질문에 답하지 못한 것이 된다.
+  const ruleIntent = /(제한|조건|규칙|기준|공식|되나요|되나\?|수있|가능한가|가능해|잠기|에스크로|며칠|얼마나쌓|몇%|몇퍼센트)/.test(ownerAsk)
   const rawLedgerAnswer = ownerRole
     ? (!reviewIntent && opsIntent ? (accountAnswer || statusAnswer) : (statusAnswer || accountAnswer))
     : (accountAnswer || statusAnswer)
-  const ledgerAnswer = howToIntent && wantsNavigation && navigationAnswer ? '' : rawLedgerAnswer
+  const ledgerAnswer = (howToIntent && wantsNavigation && navigationAnswer) || ruleIntent ? '' : rawLedgerAnswer
   const localAnswer = ledgerAnswer || currentPageAnswer || ((wantsNavigation && navigationAnswer) ? navigationAnswer : (supportAnswer || graphAnswer || fallback))
   // 개인 원장 값은 외부 생성형 서비스로 보내지 않고 서버 원장에서 집계한 답을 그대로 돌려준다.
   if (ledgerAnswer) return res.json({

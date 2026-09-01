@@ -8,7 +8,7 @@
 .credit-panel{background:var(--paper);border:1px solid var(--line);border-radius:26px;padding:26px;display:grid;gap:20px;box-shadow:var(--shadow);margin-bottom:22px}
 .credit-head{display:flex;gap:18px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap}
 .credit-head h2{font-family:'Jua',sans-serif;font-size:22px;margin:6px 0 6px}
-.credit-head p{margin:0;color:var(--muted);font-size:13.5px;max-width:52ch}
+.credit-head p{margin:0;color:var(--muted);font-size:13px;max-width:52ch}
 
 .credit-grade{display:grid;place-items:center;min-width:112px;padding:14px 20px;border-radius:20px;background:var(--mint);color:var(--green);text-align:center}
 .credit-grade b{font-family:'Jua',sans-serif;font-size:38px;line-height:1}
@@ -21,7 +21,7 @@
 
 .credit-meters{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
 .credit-meters>div{background:var(--cream);border-radius:18px;padding:16px 18px;display:grid;gap:7px}
-.credit-meters span{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:var(--muted)}
+.credit-meters span{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--muted)}
 .credit-meters span svg{width:15px;height:15px}
 .credit-meters b{font-family:'Jua',sans-serif;font-size:24px}
 .credit-meters small{color:var(--muted);font-size:12px;line-height:1.55}
@@ -30,8 +30,8 @@
 .credit-groups article{background:var(--cream);border-radius:16px;padding:14px 16px;display:grid;gap:7px}
 .credit-groups article>div{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
 .credit-groups b{font-size:14px}
-.credit-groups article>div span{font-size:11.5px;color:var(--muted);font-weight:700}
-.credit-groups small{font-size:11.5px;color:var(--muted)}
+.credit-groups article>div span{font-size:12px;color:var(--muted);font-weight:700}
+.credit-groups small{font-size:12px;color:var(--muted)}
 .credit-panel .progress-track{height:8px;border-radius:99px;background:#eceae2;overflow:hidden}
 .credit-panel .progress-track i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--coral),var(--yellow))}
 .credit-panel .progress-track i.unknown{background:repeating-linear-gradient(45deg,#dcd9d0,#dcd9d0 5px,#eceae2 5px,#eceae2 10px);width:100%!important}
@@ -49,18 +49,18 @@
 .credit-overrides,.credit-missing{border-radius:18px;padding:15px 18px;display:grid;gap:5px}
 .credit-overrides{background:#fff5e0;border:1px solid #f1d9a4}
 .credit-missing{background:var(--cream);border:1px dashed var(--line)}
-.credit-overrides b,.credit-missing b{font-size:13.5px}
-.credit-overrides p,.credit-missing p{margin:0;font-size:12.5px;color:var(--muted);line-height:1.65}
-.credit-missing small{font-size:11.5px;color:var(--muted)}
+.credit-overrides b,.credit-missing b{font-size:13px}
+.credit-overrides p,.credit-missing p{margin:0;font-size:12px;color:var(--muted);line-height:1.65}
+.credit-missing small{font-size:12px;color:var(--muted)}
 
 .credit-toggle{display:flex;align-items:center;justify-content:space-between;width:100%;background:var(--cream);border:1px solid var(--line);border-radius:14px;padding:12px 16px;font-size:13px;font-weight:700;color:var(--ink)}
 .credit-toggle svg{width:17px;height:17px;transition:transform .18s ease}
 .credit-toggle svg.rotated{transform:rotate(180deg)}
 
 .credit-table{border:1px solid var(--line);border-radius:16px;overflow:hidden}
-.credit-row{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1.2fr) 72px 68px;gap:8px;padding:10px 14px;font-size:12.5px;border-bottom:1px solid var(--line);align-items:center}
+.credit-row{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1.2fr) 72px 68px;gap:8px;padding:10px 14px;font-size:12px;border-bottom:1px solid var(--line);align-items:center}
 .credit-row:last-child{border-bottom:none}
-.credit-row-head{background:var(--cream);font-weight:700;color:var(--muted);font-size:11.5px}
+.credit-row-head{background:var(--cream);font-weight:700;color:var(--muted);font-size:12px}
 .credit-row span:nth-child(n+2){text-align:right;font-variant-numeric:tabular-nums}
 .credit-row.missing{color:var(--muted);background:#fbfaf7}
 
@@ -68,8 +68,8 @@
 .credit-references li{border:1px solid var(--line);border-radius:16px;padding:14px 16px;display:grid;gap:4px}
 .credit-references b{display:flex;align-items:center;gap:6px;font-size:13px}
 .credit-references b svg{width:15px;height:15px;color:var(--coral)}
-.credit-references em{font-size:12.5px;color:var(--muted);font-style:normal}
-.credit-references p{margin:0;font-size:12.5px;line-height:1.6}
+.credit-references em{font-size:12px;color:var(--muted);font-style:normal}
+.credit-references p{margin:0;font-size:12px;line-height:1.6}
 .credit-references p.excluded{color:var(--coral-dark)}
 .credit-references a{font-size:12px;font-weight:700;color:var(--green);text-decoration:underline}
 
@@ -78,21 +78,21 @@
 @media (max-width:640px){
   .credit-panel{padding:20px;border-radius:22px}
   .credit-grade{width:100%}
-  .credit-row{grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) 58px 54px;font-size:11.5px;padding:9px 11px}
+  .credit-row{grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) 58px 54px;font-size:12px;padding:9px 11px}
 }
 
 /* ── 검증 데이터룸: 모델 공개 패널 ─────────────────────────────── */
-.credit-model-lead{margin:0 0 16px;font-size:13.5px;color:var(--muted);line-height:1.75}
+.credit-model-lead{margin:0 0 16px;font-size:13px;color:var(--muted);line-height:1.75}
 .credit-model-industries{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:10px}
-.credit-model-industries button{padding:7px 14px;border:1px solid var(--line);border-radius:99px;background:var(--cream);font-size:12.5px;font-weight:700;color:var(--muted)}
+.credit-model-industries button{padding:7px 14px;border:1px solid var(--line);border-radius:99px;background:var(--cream);font-size:12px;font-weight:700;color:var(--muted)}
 .credit-model-industries button.active{background:var(--navy);border-color:var(--navy);color:#fff}
-.credit-model-industry-note{margin:0 0 16px;font-size:12.5px;color:var(--muted);line-height:1.7}
+.credit-model-industry-note{margin:0 0 16px;font-size:12px;color:var(--muted);line-height:1.7}
 .credit-model-groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px}
 .credit-model-groups article{background:var(--cream);border-radius:16px;padding:13px 15px;display:grid;gap:6px}
 .credit-model-groups article>div{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
-.credit-model-groups b{font-size:13.5px}
+.credit-model-groups b{font-size:13px}
 .credit-model-groups article>div span{font-family:'Jua',sans-serif;font-size:17px;color:var(--coral-dark)}
-.credit-model-groups small{font-size:11.5px;color:var(--muted)}
+.credit-model-groups small{font-size:12px;color:var(--muted)}
 .credit-model .progress-track{height:7px;border-radius:99px;background:#eceae2;overflow:hidden}
 .credit-model .progress-track i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--coral),var(--yellow))}
 .credit-model-bands{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
@@ -102,8 +102,8 @@
 .credit-model-overrides b{display:flex;align-items:center;gap:6px;font-size:13px;margin-bottom:7px}
 .credit-model-overrides b svg{width:15px;height:15px;color:#a5700d}
 .credit-model-overrides ul{margin:0;padding-left:18px}
-.credit-model-overrides li{font-size:12.5px;color:var(--muted);line-height:1.7}
+.credit-model-overrides li{font-size:12px;color:var(--muted);line-height:1.7}
 .credit-model-detail{display:grid;gap:18px;margin-top:14px}
-.credit-model-detail h4{margin:0 0 8px;font-size:13.5px}
+.credit-model-detail h4{margin:0 0 8px;font-size:13px}
 .credit-row.three{grid-template-columns:minmax(0,1.6fr) minmax(0,1fr) 66px}
-.credit-model-footnote{margin:6px 0 0;font-size:11.5px;color:var(--muted);line-height:1.6}
+.credit-model-footnote{margin:6px 0 0;font-size:12px;color:var(--muted);line-height:1.6}
