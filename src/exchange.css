@@ -1,0 +1,169 @@
+/* 쿠폰 교환장 · 지갑 · 알림 · 매장 확인 창구 스타일 */
+
+/* ── 교환장 상단 요약 & 규칙 ─────────────────────────────── */
+.market-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+.market-stats>div{background:white;border:1px solid var(--line);border-radius:16px;padding:14px 16px;text-align:center}
+.market-stats b{display:block;font-size:23px;font-family:'Jua',sans-serif;color:var(--navy)}
+.market-stats span{font-size:11px;font-weight:700;color:var(--muted)}
+
+.exchange-rules{list-style:none;display:flex;flex-wrap:wrap;gap:8px;padding:0;margin:0 0 18px}
+.exchange-rules li{display:flex;align-items:center;gap:6px;background:var(--mint);color:#12604a;border-radius:99px;padding:8px 14px;font-size:12px;font-weight:700}
+.exchange-rules svg{width:14px;height:14px}
+
+/* ── 탭 & 필터 ───────────────────────────────────────────── */
+.market-tabs{display:flex;gap:8px;margin-bottom:16px}
+.market-tabs button{position:relative;display:flex;align-items:center;gap:7px;border:1px solid var(--line);background:white;border-radius:14px;padding:12px 18px;font-size:13px;font-weight:800;color:#606963}
+.market-tabs button.active{background:var(--navy);border-color:var(--navy);color:white}
+.market-tabs svg{width:16px;height:16px}
+.tab-badge{position:absolute;top:-6px;right:-6px;min-width:19px;height:19px;padding:0 5px;border-radius:99px;background:var(--coral);color:white;font-size:11px;font-weight:800;font-style:normal;display:grid;place-items:center}
+
+.market-filters{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+.market-filters label{display:flex;align-items:center;gap:7px;background:white;border:1px solid var(--line);border-radius:12px;padding:0 12px;color:var(--muted)}
+.market-filters input,.market-filters select{border:0;background:transparent;outline:none;padding:11px 0;font-size:13px;font-weight:700;color:var(--ink)}
+.market-filters .filter-search{flex:1;min-width:180px}
+.market-filters .filter-search input{width:100%}
+.filter-toggle{display:flex;align-items:center;gap:7px;border:1px solid var(--line);background:white;border-radius:12px;padding:11px 15px;font-size:13px;font-weight:800;color:#606963}
+.filter-toggle.on{background:var(--coral);border-color:var(--coral);color:white}
+
+/* ── 매물 카드 ───────────────────────────────────────────── */
+.listing-flags{display:flex;flex-wrap:wrap;gap:6px}
+.mode-badge{border-radius:99px;padding:5px 11px;font-size:10px;font-weight:800}
+.mode-badge.instant{background:#fff1ec;color:var(--coral-dark)}
+.mode-badge.approval{background:#eef2f7;color:#4a5a6a}
+.match-badge{border-radius:99px;padding:5px 11px;font-size:10px;font-weight:800;background:var(--mint);color:#12604a}
+.listing-card.enhanced.matchable{border-color:rgba(255,105,72,.45);box-shadow:0 12px 30px rgba(255,105,72,.11)}
+.listing-note{margin:0;font-size:12px;color:#5c655f;background:#faf8f3;border-radius:10px;padding:9px 12px;line-height:1.6}
+.listing-offers-count{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:800;color:var(--coral-dark)}
+.swap-wants em{font-style:normal;color:var(--coral-dark);font-weight:800}
+.coupon-ticket.compact{padding:10px 12px}
+.coupon-ticket.compact b{font-size:20px}
+
+.market-empty{grid-column:1/-1;text-align:center;padding:44px 20px;background:white;border:1px dashed var(--line);border-radius:20px}
+.market-empty span{font-size:38px}
+.market-empty b{display:block;margin:10px 0 4px;font-size:16px}
+.market-empty p{margin:0;color:var(--muted);font-size:13px}
+
+/* ── 제안·등록 작성 창 ───────────────────────────────────── */
+.offer-composer{position:relative;background:white;border-radius:24px;padding:26px;width:min(520px,100%);max-height:88vh;overflow:auto;box-shadow:var(--shadow)}
+.offer-composer header h2{margin:8px 0 6px;font-size:22px}
+.offer-composer header p{margin:0;font-size:13px;color:var(--muted)}
+.offer-target{display:flex;align-items:center;gap:12px;margin:18px 0 14px;padding:12px;background:#faf8f3;border-radius:16px}
+.offer-target .coupon-ticket{flex:1;margin:0}
+.offer-target>svg{width:20px;color:var(--coral)}
+.offer-target>span{font-size:12px;font-weight:800;color:var(--muted)}
+
+.offer-picker{display:flex;flex-direction:column;gap:8px;max-height:280px;overflow:auto}
+.offer-option{display:flex;align-items:center;gap:12px;text-align:left;border:1px solid var(--line);background:white;border-radius:14px;padding:12px 14px}
+.offer-option.picked{border-color:var(--coral);background:#fff6f3}
+.offer-option.blocked{opacity:.55;cursor:not-allowed}
+.offer-option>div{flex:1;min-width:0}
+.offer-option b{display:block;font-size:13px}
+.offer-option small{font-size:11px;color:var(--muted)}
+.offer-option em{display:block;margin-top:3px;font-style:normal;font-size:11px;font-weight:700;color:var(--coral-dark)}
+.offer-option svg{width:18px;color:var(--coral)}
+.offer-emoji{display:grid;place-items:center;width:38px;height:38px;border-radius:12px;background:#faf8f3;font-size:19px;flex-shrink:0}
+.offer-dot{width:16px;height:16px;border-radius:99px;border:2px solid var(--line)}
+.offer-empty{font-size:13px;color:var(--muted);text-align:center;padding:22px}
+.offer-message{display:block;margin:16px 0}
+.offer-message span{display:block;font-size:12px;font-weight:800;color:var(--muted);margin-bottom:6px}
+.offer-message input{width:100%;border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:13px;outline:none}
+.offer-message input:focus{border-color:var(--coral)}
+.offer-note{margin:10px 0 0;font-size:11px;color:var(--muted);line-height:1.6;text-align:center}
+
+.composer-field{margin:16px 0}
+.composer-field>span{display:block;font-size:12px;font-weight:800;margin-bottom:8px}
+.composer-field>span small{font-weight:600;color:var(--muted);margin-left:5px}
+.composer-field>span b{color:var(--coral-dark)}
+.composer-field input[type=range]{width:100%;accent-color:var(--coral)}
+.composer-hint{display:block;margin-top:6px;font-size:11px;color:var(--muted);line-height:1.6}
+.chip-row button.on{background:var(--coral);color:white;border-color:var(--coral)}
+.mode-choice{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.mode-choice button{border:1px solid var(--line);background:white;border-radius:14px;padding:12px;text-align:left}
+.mode-choice button.on{border-color:var(--coral);background:#fff6f3}
+.mode-choice b{display:block;font-size:13px}
+.mode-choice small{font-size:11px;color:var(--muted)}
+
+/* ── 내 교환 탭 ─────────────────────────────────────────── */
+.my-exchange{display:flex;flex-direction:column;gap:28px}
+.my-exchange .muted{color:var(--muted);font-size:13px}
+.exchange-row{display:grid;grid-template-columns:220px 1fr auto;gap:16px;align-items:start;background:white;border:1px solid var(--line);border-radius:18px;padding:16px;margin-bottom:12px}
+.exchange-offers{display:flex;flex-direction:column;gap:8px}
+.offer-row{display:flex;align-items:center;gap:12px;border:1px solid var(--line);border-radius:14px;padding:11px 13px;background:#fdfcfa}
+.offer-row.stale{opacity:.6}
+.offer-row>div{flex:1;min-width:0}
+.offer-row b{display:block;font-size:13px}
+.offer-row small{font-size:11px;color:var(--muted)}
+.offer-row em{display:block;margin-top:3px;font-style:normal;font-size:11px;color:#5c655f}
+.offer-row em.warn{color:var(--coral-dark);font-weight:700}
+.offer-actions{display:flex;gap:6px;flex-shrink:0}
+.button.ghost{background:white;color:#606963;border:1px solid var(--line);box-shadow:none}
+.sent-offers{display:flex;flex-direction:column;gap:8px}
+.trade-history{display:flex;flex-direction:column;gap:8px}
+.trade-record{background:white;border:1px solid var(--line);border-radius:14px;padding:12px 15px}
+.trade-record small{font-size:11px;color:var(--muted)}
+.trade-record>div{display:flex;align-items:center;gap:9px;margin-top:5px;font-size:13px;font-weight:700;flex-wrap:wrap}
+.trade-record .gave{color:var(--muted);text-decoration:line-through}
+.trade-record .got{color:var(--green)}
+
+/* ── 지갑 ───────────────────────────────────────────────── */
+.wallet-banner{display:flex;align-items:center;gap:11px;background:#fff1ec;border:1px solid rgba(255,105,72,.3);border-radius:16px;padding:13px 16px;margin-bottom:14px;font-size:13px;font-weight:700;color:var(--coral-dark)}
+.wallet-banner>span{flex:1}
+.wallet-banner svg{width:18px}
+.my-coupon.expiring{border-color:rgba(255,200,87,.7)}
+.my-coupon .coupon-warn{display:flex;align-items:center;gap:5px;margin:5px 0 0;font-size:11px;font-weight:700;color:#a86a00}
+.coupon-actions{display:flex;flex-direction:column;gap:6px;flex-shrink:0}
+.coupon-actions button{display:flex;align-items:center;justify-content:center;gap:5px;border:0;border-radius:11px;padding:10px 14px;background:var(--coral);color:white;font-size:12px;font-weight:800;white-space:nowrap}
+.coupon-actions button.ghost{background:white;color:#606963;border:1px solid var(--line)}
+.coupon-actions button:disabled{opacity:.45;cursor:not-allowed}
+.redeem-code{display:flex;flex-direction:column;align-items:center;gap:3px;background:var(--navy);color:white;border-radius:14px;padding:12px 16px;flex-shrink:0}
+.redeem-code svg{width:19px;opacity:.75}
+.redeem-code b{font-family:'Jua',sans-serif;font-size:22px;letter-spacing:2px}
+.redeem-code small{font-size:10px;opacity:.75;text-align:center;line-height:1.5}
+.coupon-archive{margin-top:14px}
+.archive-toggle{display:flex;align-items:center;gap:5px;background:none;border:0;font-size:12px;font-weight:800;color:var(--muted)}
+.archive-toggle .flip{transform:rotate(90deg)}
+.archive-list{display:flex;flex-direction:column;gap:6px;margin-top:9px}
+.archive-list>div{display:flex;align-items:center;gap:9px;background:#faf8f3;border-radius:12px;padding:10px 13px;font-size:12px}
+.archive-list b{flex:1}
+.archive-list small{color:var(--muted)}
+
+/* ── 알림 ───────────────────────────────────────────────── */
+.notification-wrap{position:relative}
+.bell-dot{position:absolute;top:2px;right:2px;min-width:16px;height:16px;padding:0 4px;border-radius:99px;background:var(--coral);color:white;font-size:9px;font-weight:800;font-style:normal;display:grid;place-items:center}
+.notification-panel{position:absolute;top:calc(100% + 10px);right:0;width:320px;background:white;border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);z-index:60;overflow:hidden}
+.notification-panel header{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid var(--line)}
+.notification-panel header span{font-size:11px;color:var(--muted)}
+.notification-list{max-height:340px;overflow:auto}
+.notification-list button{display:block;width:100%;text-align:left;border:0;background:white;padding:12px 16px;border-bottom:1px solid var(--line)}
+.notification-list button.unread{background:#fff8f6}
+.notification-list b{display:block;font-size:13px}
+.notification-list p{margin:3px 0 0;font-size:12px;color:var(--muted);line-height:1.55}
+.notification-list small{font-size:10px;color:#9aa39d}
+.notification-empty{display:flex;flex-direction:column;align-items:center;gap:7px;padding:30px;color:var(--muted)}
+.notification-empty p{margin:0;font-size:12px}
+
+/* ── 매장 쿠폰 확인 ─────────────────────────────────────── */
+.coupon-verify{background:white;border:1px solid var(--line);border-radius:22px;padding:22px;margin-top:18px}
+.verify-guide{font-size:13px;color:var(--muted);line-height:1.7}
+.verify-form{display:flex;gap:9px;flex-wrap:wrap}
+.verify-form label{flex:1;min-width:200px;display:flex;align-items:center;gap:9px;border:1px solid var(--line);border-radius:14px;padding:0 14px;color:var(--muted)}
+.verify-form input{flex:1;border:0;outline:none;padding:14px 0;font-family:'Jua',sans-serif;font-size:19px;letter-spacing:3px}
+.verify-log{list-style:none;padding:0;margin:16px 0 0;display:flex;flex-direction:column;gap:7px}
+.verify-log li{display:flex;align-items:center;gap:11px;background:var(--mint);border-radius:13px;padding:11px 14px}
+.verify-log svg{width:19px;color:var(--green)}
+.verify-log b{display:block;font-size:13px}
+.verify-log small{font-size:11px;color:#4c6b60}
+
+.notfound-actions{display:flex;gap:9px;justify-content:center;margin-top:18px}
+
+@media(max-width:860px){
+  .market-stats{grid-template-columns:repeat(2,1fr)}
+  .exchange-row{grid-template-columns:1fr}
+  .notification-panel{width:min(320px,calc(100vw - 32px))}
+}
+@media(max-width:560px){
+  .market-tabs button{flex:1;justify-content:center;padding:12px 10px}
+  .mode-choice{grid-template-columns:1fr}
+  .offer-composer{padding:20px;border-radius:20px}
+  .coupon-actions{flex-direction:row}
+}

@@ -37,11 +37,14 @@ if (!ai.answer.includes('소복소복')) throw new Error('AI assistant failed')
 checks.push('AI restaurant answer')
 
 const owner = await request('/api/auth/login', { method: 'POST', body: JSON.stringify({ email: 'owner@meoktu.demo', password: 'demo1234!' }) })
-const review = await request('/api/applications', { method: 'POST', body: JSON.stringify({ restaurantName: '테스트키친', connectedSources: ['business', 'license', 'identity', 'pos', 'account', 'card', 'delivery', 'tax', 'customer', 'lease', 'debt', 'staff'], uploadedDocuments: { business: 'business.pdf', license: 'license.pdf', pos: 'pos.csv', account: 'account.csv', card: 'card.csv', delivery: 'delivery.csv', tax: 'tax.pdf', customer: 'customer.csv', lease: 'lease.pdf', debt: 'debt.pdf', staff: 'staff.csv' }, identityVerified: true, privacyConsent: true, creditConsent: true, fundPurpose: '주방 설비 교체', businessPlan: '조리 시간을 단축해 좌석 회전율과 고객 만족도를 높입니다.', requestedLimit: 30000000 }) }, owner.token)
+const review = await request('/api/applications', { method: 'POST', body: JSON.stringify({ restaurantName: '테스트키친', businessNumber: '1234567891', ownerName: '김소담', licenseNumber: '제2024-000123호', connectedSources: ['business', 'license', 'identity', 'pos', 'account', 'card', 'delivery', 'tax', 'customer', 'lease', 'debt', 'staff'], uploadedDocuments: { business: 'business.pdf', license: 'license.pdf', pos: 'pos.csv', account: 'account.csv', card: 'card.csv', delivery: 'delivery.csv', tax: 'tax.pdf', customer: 'customer.csv', lease: 'lease.pdf', debt: 'debt.pdf', staff: 'staff.csv' }, identityVerified: true, privacyConsent: true, creditConsent: true, fundPurpose: '주방 설비 교체', businessPlan: '조리 시간을 단축해 좌석 회전율과 고객 만족도를 높입니다.', requestedLimit: 30000000 }) }, owner.token)
 if (!['approved', 'conditional'].includes(review.application.status)) throw new Error('review failed')
 checks.push(`source-data review (${review.application.status}, ${review.application.score})`)
 
 const html = await fetch(base).then((response) => response.text())
 if (!html.includes('<title>먹투')) throw new Error('production client missing')
-checks.push('production client served')
+// 새로고침·북마크로 들어오는 깊은 링크도 SPA를 받아야 한다.
+const deepLink = await fetch(`${base}/market`)
+if (!deepLink.ok || !(await deepLink.text()).includes('<title>먹투')) throw new Error('SPA deep link fallback missing')
+checks.push('production client served + deep link')
 console.log(`PASS: ${checks.join(' | ')}`)

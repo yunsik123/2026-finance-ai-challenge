@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { BadgeCheck, BarChart3, Check, Clock3, HandCoins, LockKeyhole, ShieldCheck, Star, Ticket, TrendingUp, X } from 'lucide-react'
 import { api } from './lib/api.ts'
-import type { MeState, Restaurant, SalesPoint } from './types.ts'
+import CommercialAreaPanel from './CommercialAreaPanel.tsx'
+import type { CommercialAreaView, MeState, Restaurant, SalesPoint } from './types.ts'
 
 const won = (value: number) => `${Math.round(value).toLocaleString('ko-KR')}원`
 const compactWon = (value: number) => value >= 100000000 ? `${(value / 100000000).toFixed(1)}억원` : `${Math.round(value / 10000).toLocaleString()}만원`
@@ -59,6 +60,16 @@ export default function FundDetailModal({ restaurant: r, me, onClose, onLogin, r
   const [amount, setAmount] = useState(50000)
   const [tab, setTab] = useState<'invest' | 'withdraw'>('invest')
   const [busy, setBusy] = useState(false)
+  // 상권 분석은 이 모달을 열 때만 필요하므로 별도로 가져온다.
+  const [area, setArea] = useState<CommercialAreaView | undefined>()
+  useEffect(() => {
+    let live = true
+    setArea(undefined)
+    api<{ assessment: { commercialArea?: CommercialAreaView } }>(`/api/trust/${r.id}`)
+      .then((result) => { if (live) setArea(result.assessment.commercialArea) })
+      .catch(() => undefined)
+    return () => { live = false }
+  }, [r.id])
   const [lastResult, setLastResult] = useState<{ message: string; matched?: number; queued?: number } | null>(null)
   const [rating, setRating] = useState(5)
   const [reviewText, setReviewText] = useState('')
@@ -116,6 +127,7 @@ export default function FundDetailModal({ restaurant: r, me, onClose, onLogin, r
       <main className="fund-detail-scroll">
         <div className="fund-hero enhanced" style={{ background: `linear-gradient(145deg, ${r.color}28, ${r.color}70)` }}><span>{r.emoji}</span><div><small>{r.neighborhood} · {r.category}</small><h2>{r.name}</h2><p>{r.tagline}</p><div className="hero-rating"><Star fill="currentColor" /> {r.rating.toFixed(1)} <span>방문 리뷰 {r.reviewCount.toLocaleString()}개</span></div></div></div>
         <div className="fund-detail-content">
+          {area && <CommercialAreaPanel area={area} category={r.category} compact />}
           {(position || openOrder) && <section className="my-investment-panel">
             <div className="my-investment-title"><span><Check /> 내 투자 현황</span><b>{position?.early ? '최초 투자자 · 계속 우대' : '일반 투자자'}</b></div>
             <div className="my-investment-grid"><div><span>현재 투자금</span><strong>{won(position?.amount || 0)}</strong></div><div><span>쌓인 쿠폰 할인율</span><strong>{(position?.couponProgress || 0).toFixed(1)}%</strong></div><div><span>실제 매출 보너스</span><strong>+{effectiveSalesBonus.toFixed(1)}%</strong></div></div>

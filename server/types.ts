@@ -14,6 +14,18 @@ export interface User {
   createdAt: string
 }
 
+export interface DataConnection {
+  id: string
+  userId: string
+  sourceId: 'pos' | 'account' | 'card' | 'delivery' | 'tax' | 'debt'
+  provider: string
+  status: 'active' | 'revoked'
+  consentScope: string
+  recordCount: number
+  connectedAt: string
+  lastSyncedAt: string
+}
+
 export interface Restaurant {
   id: string
   ownerId?: string
@@ -94,6 +106,8 @@ export interface Order {
   createdAt: string
 }
 
+export type CouponStatus = 'available' | 'listed' | 'offered' | 'redeeming' | 'used' | 'expired'
+
 export interface Coupon {
   id: string
   userId: string
@@ -103,18 +117,72 @@ export interface Coupon {
   discount: number
   maxDiscountWon: number
   type: 'fund' | 'dividend' | 'etf'
-  status: 'available' | 'listed' | 'used'
+  status: CouponStatus
   expiresAt: string
   createdAt: string
+  /** 교환으로 넘어온 쿠폰이면 직전 소유자. 이력 화면에서 "누구와 바꿨는지"를 보여준다. */
+  acquiredFromUserId?: string
+  acquiredAt?: string
+  /** 사장님 확인을 기다리는 사용 요청. */
+  redeemCode?: string
+  redeemRequestedAt?: string
+  usedAt?: string
+  usedAtRestaurantId?: string
 }
 
 export interface CouponListing {
   id: string
   userId: string
   couponId: string
-  wantedCategory: string
-  wantedRegion: string
-  status: 'open' | 'completed' | 'cancelled'
+  /** 빈 배열이면 "상관없음". 레거시 wantedCategory/wantedRegion은 마이그레이션 때 여기로 들어온다. */
+  wantedCategories: string[]
+  wantedRegions: string[]
+  minDiscount: number
+  /** true면 조건을 만족하는 상대가 승인 없이 즉시 교환할 수 있다. */
+  autoAccept: boolean
+  note: string
+  status: 'open' | 'completed' | 'cancelled' | 'expired'
+  createdAt: string
+  expiresAt: string
+  completedAt?: string
+  completedWithUserId?: string
+}
+
+export interface CouponOffer {
+  id: string
+  listingId: string
+  offerUserId: string
+  offerCouponId: string
+  message: string
+  status: 'pending' | 'accepted' | 'declined' | 'withdrawn' | 'expired'
+  createdAt: string
+  resolvedAt?: string
+}
+
+export interface CouponTrade {
+  id: string
+  listingId: string
+  offerId?: string
+  mode: 'instant' | 'offer'
+  listerUserId: string
+  listerCouponId: string
+  listerGaveDiscount: number
+  listerGaveValueWon: number
+  takerUserId: string
+  takerCouponId: string
+  takerGaveDiscount: number
+  takerGaveValueWon: number
+  createdAt: string
+}
+
+export interface Notification {
+  id: string
+  userId: string
+  type: string
+  title: string
+  body: string
+  link?: string
+  read: boolean
   createdAt: string
 }
 
@@ -226,6 +294,9 @@ export interface Database {
   orders: Order[]
   coupons: Coupon[]
   couponListings: CouponListing[]
+  couponOffers: CouponOffer[]
+  couponTrades: CouponTrade[]
+  notifications: Notification[]
   applications: Application[]
   reviews: Review[]
   visitVerifications: VisitVerification[]
@@ -233,6 +304,7 @@ export interface Database {
   favorites: Favorite[]
   auditEvents: AuditEvent[]
   ocrAnalyses: OcrAnalysis[]
+  dataConnections: DataConnection[]
   articles: Article[]
   etfs: EtfFund[]
 }

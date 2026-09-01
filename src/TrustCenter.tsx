@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { ArrowRight, BarChart3, Check, Database, FileSearch, GitBranch, ShieldCheck } from 'lucide-react'
+import { ArrowRight, BarChart3, Check, Database, FileSearch, GitBranch, MapPin, ShieldCheck, TriangleAlert } from 'lucide-react'
 import { api } from './lib/api.ts'
+import CommercialAreaPanel from './CommercialAreaPanel.tsx'
 import type { KnowledgeGraph, PublicState, Restaurant, TrustAssessment } from './types.ts'
 
 const labels = { low: '낮은 보완 위험', review: '추가 확인 필요', high: '집중 확인 필요' }
@@ -25,6 +26,13 @@ export default function TrustCenter({ state, onSelect }: { state: PublicState; o
         <article className={`trust-score ${data.assessment.riskLevel}`}><small>투명 위험 예비점수</small><strong>{data.assessment.score}<span>/100</span></strong><b>{data.assessment.grade} · {labels[data.assessment.riskLevel]}</b><p>채무불이행 확률이 아닌 설명 가능한 사전 점검 지표입니다.</p></article>
         <article className="trust-summary"><div><span>데이터 신뢰도</span><b>{data.assessment.confidence}%</b></div><div className="progress-track"><i style={{ width: `${data.assessment.confidence}%` }} /></div><ul><li><Check /> 모델 기준점 {data.assessment.methodology.baseline}점</li><li><Check /> 구성요소별 가중합 공개</li><li><FileSearch /> {data.assessment.missing.join(', ')}</li></ul></article>
       </section>
+      {data.assessment.commercialArea
+        ? <CommercialAreaPanel area={data.assessment.commercialArea} category={restaurant?.category} />
+        : <section className="commercial-missing"><MapPin /><div><b>이 동네는 상권 원천데이터가 아직 연동되지 않았어요</b><p>상권 지표 없이 식당 자체 수치만으로 '상권 회복력'을 추정했기 때문에 데이터 신뢰도를 낮춰 표시합니다.</p></div></section>}
+      {data.assessment.contextualAlerts?.length > 0 && <section className="contextual-alerts">
+        <h3><TriangleAlert /> 점수에 반영하지 않고 따로 알리는 맥락</h3>
+        <ul>{data.assessment.contextualAlerts.map((alert) => <li key={alert}>{alert}</li>)}</ul>
+      </section>}
       <section className="trust-section"><div className="trust-section-head"><div><span className="eyebrow">WHY THIS SCORE</span><h2>점수 구성요소와 기여도</h2></div><BarChart3 /></div><div className="component-grid">{data.assessment.contributions.map((item) => <article key={item.label}><div><span>{item.label}</span><b>{item.componentScore}</b></div><div className="component-track"><i style={{ width: `${item.componentScore}%` }} /></div><p>가중치 {Math.round(item.weight * 100)}% <strong className={item.contribution >= 0 ? 'positive' : 'negative'}>{item.contribution >= 0 ? '+' : ''}{item.contribution}점</strong></p></article>)}</div><p className="method-note"><ShieldCheck /> {data.assessment.methodology.modelVersion} · 학습된 부도확률 모델이 아니며, 운영자 원본 확인을 대체하지 않습니다.</p></section>
       <section className="trust-section"><div className="trust-section-head"><div><span className="eyebrow">PROCESS GRAPH</span><h2>투자자 확인 절차</h2></div><GitBranch /></div><div className="process-graph">{data.graph.nodes.filter((node) => node.type === 'GuideStep').map((node, index, nodes) => <div className="process-node" key={node.id}><span>{String(node.properties.order).padStart(2, '0')}</span><div><b>{node.label}</b><p>{node.properties.instruction}</p></div>{index < nodes.length - 1 && <ArrowRight />}</div>)}</div></section>
     </>}

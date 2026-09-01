@@ -75,7 +75,7 @@ const owner = await request('/api/auth/signup', {
 const application = await request('/api/applications', {
   method: 'POST',
   body: JSON.stringify({
-    restaurantName: '원천데이터 테스트 키친',
+    businessNumber: '1234567891', ownerName: '김소담', licenseNumber: '제2024-000123호', restaurantName: '원천데이터 테스트 키친',
     ownerName: '심사테스터',
     address: '서울시 마포구 연남동',
     connectedSources: ['business', 'license', 'identity', 'pos', 'account', 'card', 'delivery', 'tax', 'customer', 'lease', 'debt', 'staff'],

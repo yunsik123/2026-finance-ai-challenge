@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const base = 'http://localhost:8787'
-const suites = ['smoke.ts', 'enhancements.ts', 'integration-new.ts', 'coupon-cancel.ts']
+const suites = ['smoke.ts', 'enhancements.ts', 'integration-new.ts', 'coupon-cancel.ts', 'coupon-exchange.ts', 'merged-modules.ts', 'demo-and-data.ts']
 
 const healthy = async () => {
   try {

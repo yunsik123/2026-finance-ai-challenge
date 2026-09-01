@@ -4,7 +4,12 @@ export interface SalesPoint { month: string; sales: number; growthRate: number; 
 export interface MenuHighlight { name: string; price: number; description: string }
 export interface Review { id: string; restaurantId: string; userId: string; userName: string; rating: number; content: string; visitVerified: boolean; createdAt: string }
 
-export interface User { id: string; email: string; name: string; role: Role; cash: number; createdAt: string }
+export interface User { id: string; email: string; name: string; role: Role; cash: number; createdAt: string; sessionMode?: 'account' | 'demo' }
+
+export interface DataConnection {
+  id: string; sourceId: 'pos' | 'account' | 'card' | 'delivery' | 'tax' | 'debt'; provider: string
+  status: 'active' | 'revoked'; consentScope: string; recordCount: number; connectedAt: string; lastSyncedAt: string
+}
 
 export interface Fund {
   id: string; restaurantId: string; round: number; status: 'funding' | 'trading' | 'closed'; goal: number; raised: number
@@ -27,7 +32,15 @@ export interface PublicState {
   funds: Fund[]
   etfs: Array<{ id: string; name: string; emoji: string; region: string; category: string; restaurantIds: string[]; minimum: number; maxDiscount: number; growth: number; members: number; description: string }>
   articles: Array<{ id: string; eyebrow: string; title: string; summary: string; content: string; tags: string[]; icon: string; publishedAt: string; sourceName?: string; sourceUrl?: string; dataNote?: string }>
-  listings: Array<{ id: string; userId: string; couponId: string; wantedCategory: string; wantedRegion: string; userName?: string; coupon?: Coupon; restaurant?: Restaurant }>
+  listings: Listing[]
+  exchange: {
+    rules: ExchangeRules
+    categories: string[]
+    regions: string[]
+    openListings: number
+    completedTrades: number
+    pendingOffers: number
+  }
   stats: { funded: number; restaurants: number; supporters: number; couponUsed: number }
 }
 
@@ -36,9 +49,50 @@ export interface Position {
   fund: Fund; restaurant: Restaurant
 }
 
+export type CouponStatus = 'available' | 'listed' | 'offered' | 'redeeming' | 'used' | 'expired'
+
 export interface Coupon {
-  id: string; restaurantId: string; fundId?: string; title: string; discount: number; maxDiscountWon: number
-  type: 'fund' | 'dividend' | 'etf'; status: 'available' | 'listed' | 'used'; expiresAt: string; restaurant?: Restaurant
+  id: string; userId?: string; restaurantId: string; fundId?: string; title: string; discount: number; maxDiscountWon: number
+  type: 'fund' | 'dividend' | 'etf'; status: CouponStatus; expiresAt: string; createdAt?: string; restaurant?: Restaurant
+  daysLeft?: number; tradable?: boolean; blockers?: string[]
+  acquiredFromUserId?: string; acquiredAt?: string
+  redeemCode?: string; redeemRequestedAt?: string; usedAt?: string
+}
+
+export interface ExchangeRules {
+  maxDiscountGap: number; maxValueRatio: number; minDaysLeft: number; listingTtlDays: number; offerTtlDays: number
+  maxOpenListingsPerUser: number; maxPendingOffersPerUser: number; maxOffersPerListing: number; redeemHoldMinutes: number
+}
+
+export interface Listing {
+  id: string; userId: string; couponId: string
+  wantedCategories: string[]; wantedRegions: string[]; minDiscount: number; autoAccept: boolean; note: string
+  status: 'open' | 'completed' | 'cancelled' | 'expired'; createdAt: string; expiresAt: string
+  userName?: string; coupon?: Coupon; restaurant?: Restaurant
+  offerCount: number; myOfferId?: string; matchableCouponIds: string[]; mine: boolean
+}
+
+export interface Offer {
+  id: string; listingId: string; offerUserId: string; offerCouponId: string; message: string
+  status: 'pending' | 'accepted' | 'declined' | 'withdrawn' | 'expired'; createdAt: string; resolvedAt?: string
+  coupon?: Coupon; fromUserName?: string; toUserName?: string; listing?: Listing
+  stillValid?: boolean; issues?: Array<{ code: string; message: string }>
+}
+
+export interface TradeRecord {
+  id: string; createdAt: string; mode: 'instant' | 'offer'; counterpartyName: string
+  gave?: Coupon; got?: Coupon
+}
+
+export interface MarketMine {
+  listings: Array<Listing & { offers: Offer[] }>
+  sentOffers: Offer[]
+  trades: TradeRecord[]
+  rules: ExchangeRules
+}
+
+export interface AppNotification {
+  id: string; type: string; title: string; body: string; link?: string; read: boolean; createdAt: string
 }
 
 export interface MeState {
@@ -51,6 +105,11 @@ export interface MeState {
   walletTransactions: Array<{ id: string; type: 'demo_topup'; amount: number; createdAt: string }>
   favoriteRestaurantIds: string[]
   ocrAnalyses: OcrAnalysis[]
+  dataConnections: DataConnection[]
+  notifications: AppNotification[]
+  unreadNotifications: number
+  exchange: { openListings: number; offersReceived: number; offersSent: number; trades: number }
+  rules: ExchangeRules
 }
 
 export interface OcrResult {
@@ -64,17 +123,47 @@ export interface OcrAnalysis {
   model: string; status: 'ai_extracted' | 'manual_review'; createdAt: string
 }
 
+export interface CommercialAreaView {
+  areaCode: string; areaName: string; region: string; summary: string
+  matchLevel: 'exact' | 'nearby'
+  dailyFootTraffic: number; footTrafficGrowth: number; competitorDensity: number; closureRate: number
+  localSalesGrowth: number; averageTicketSize: number; rentGrowthRate: number; primaryCustomer: string
+  insight: { competition: string; stability: string; opportunity: string; caution: string; gentrification: string }
+  footTraffic: { dailyAverage: number; growthRate: number; peakTimes: string[]; weekdayRatio: number; weekendRatio: number; ageDistribution?: Record<string, number>; genderRatio?: { male: number; female: number } }
+  marketDynamics: { totalStores: number; foodBeverageRatio: number; categoryCompetitorCount?: Record<string, number>; competitorDensity: number; closureRate: number; averageLifespanYears: number }
+  spending: { averageTicketSize: number; localSalesGrowth: number; externalConsumerRatio: number; peakSpendingDay: string }
+  realEstate: { averageRentPerPyung: number; rentGrowthRate: number; gentrificationRisk: string }
+  demographics: { workerPopulation: number; residentPopulation: number; primaryCustomerProfile: string; transitAccessibility: string }
+}
+
 export interface TrustAssessment {
   score: number; grade: string; riskLevel: 'low' | 'review' | 'high'; confidence: number
   components: Record<string, number>
   contributions: Array<{ label: string; componentScore: number; weight: number; contribution: number }>
   missing: string[]
+  contextualAlerts: string[]
+  commercialArea?: CommercialAreaView
   methodology: { type: string; baseline: number; calibratedProbability: boolean; modelVersion: string }
 }
 
+export type VerificationStepStatus = 'passed' | 'review' | 'failed' | 'not_compared'
+
+export interface FinancialOrchestration {
+  version: string
+  steps: Array<{ code: string; label: string; status: VerificationStepStatus; detail: string }>
+  comparisons: Array<{ label: string; claimed: number | null; observed: number | null; source: string; differenceRate: number | null; status: VerificationStepStatus }>
+  missingDocuments: string[]; mismatches: string[]; warnings: string[]
+  documentCount: number; averageConfidence: number; readyForAdminReview: boolean
+  recommendedStatus: string
+}
+
+export interface BusinessVerification {
+  provider: string; verified: boolean; checks: Record<string, boolean>; checkedAt: string; message: string
+}
+
 export interface KnowledgeGraph {
-  role: Role; generatedAt: string
-  nodes: Array<{ id: string; type: string; label: string; properties: Record<string, string | number | boolean> }>
+  role: Role; generatedAt: string; graphVersion?: string
+  nodes: Array<{ id: string; type: string; label: string; properties: Record<string, string | number | boolean>; source?: string }>
   edges: Array<{ from: string; relation: string; to: string }>
 }
 
@@ -82,5 +171,12 @@ export interface ApplicationResult {
   id: string; restaurantName: string; status: 'approved' | 'conditional' | 'manual_review' | 'rejected'
   requestedLimit: number; approvedLimit: number; score: number; strengths: string[]; checks: string[]; improvements: string[]
   explanation: string; submittedAt: string
-  data?: { derivedMetrics?: Record<string, number | string | null>; dataConfidence?: number; connectedSources?: string[] }
+  data?: {
+    derivedMetrics?: Record<string, number | string | null>
+    dataConfidence?: number
+    connectedSources?: string[]
+    sourceProvenance?: { ownerUploaded?: string[]; partnerConnected?: string[]; identityVerified?: boolean }
+    businessVerification?: BusinessVerification
+    financialVerification?: FinancialOrchestration
+  }
 }

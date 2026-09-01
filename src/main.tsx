@@ -5,6 +5,8 @@ import App from './App.tsx'
 import './styles.css'
 import './modal-fix.css'
 import './enhancements.css'
+import './exchange.css'
+import './commercial.css'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
