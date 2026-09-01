@@ -1,21 +1,37 @@
 {
-  "name": "moa-small-business-funding",
+  "name": "meoktu",
+  "version": "0.1.0",
   "private": true,
-  "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview",
-    "db:apply": "node scripts/apply_supabase.mjs",
-    "test": "node --check src/app.js && node --check src/supabase-cloud.js && node --check src/submission-status.js && node --check api/ai.js && node --check api/health.js && node --check scripts/apply_supabase.mjs && node --check scripts/verify_live_scenarios.mjs && node --check scripts/verify_financial_graph.mjs && node --test tests/*.test.mjs",
-    "check": "npm test && npm run build"
-  },
-  "devDependencies": {
-    "vite": "^7.1.3"
+    "dev": "concurrently -k -n SERVER,WEB -c green,cyan \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:server": "tsx watch server/index.ts",
+    "dev:web": "vite --host 0.0.0.0",
+    "build": "tsc -b && vite build",
+    "start": "tsx server/index.ts",
+    "check": "tsc -b --pretty false",
+    "test:integration": "tsx tests/smoke.ts && tsx tests/enhancements.ts && tsx tests/integration-new.ts && tsx tests/coupon-cancel.ts"
   },
   "dependencies": {
-    "leaflet": "^1.9.4",
-    "qrcode": "^1.5.4"
+    "@vitejs/plugin-react": "latest",
+    "concurrently": "latest",
+    "cors": "latest",
+    "express": "latest",
+    "lucide-react": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "react-router-dom": "latest",
+    "socket.io": "latest",
+    "socket.io-client": "latest",
+    "tsx": "latest",
+    "typescript": "latest",
+    "vite": "latest"
+  },
+  "devDependencies": {
+    "@types/cors": "latest",
+    "@types/express": "latest",
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest"
   }
 }

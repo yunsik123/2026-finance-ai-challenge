@@ -1,0 +1,6 @@
+/* Grid children must be allowed to shrink before overflow can create a scroll area. */
+@media(min-width:781px){
+  .fund-modal{height:min(92vh,820px);max-height:none;min-height:0}
+  .fund-modal-scroll,.order-panel{min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+}
+.fund-modal-scroll{-webkit-overflow-scrolling:touch}
