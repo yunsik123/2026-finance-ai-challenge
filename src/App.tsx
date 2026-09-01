@@ -14,6 +14,7 @@ import NotificationBell from './NotificationBell.tsx'
 import FundDetailModal from './FundDetailModal.tsx'
 import InsightPage from './InsightPage.tsx'
 import OwnerCenter from './OwnerCenter.tsx'
+import AdminCenter from './AdminCenter.tsx'
 import WalletTopup from './WalletTopup.tsx'
 import TrustCenter from './TrustCenter.tsx'
 import SupportPage from './SupportPage.tsx'
@@ -74,10 +75,11 @@ function App() {
     return true
   }
 
-  const onAuth = async (token: string) => {
+  const onAuth = async (token: string, destination?: string) => {
     setToken(token)
     setAuthOpen(false)
     await refresh()
+    if (destination) navigate(destination)
     notify('반가워요! 먹투에 로그인했어요.')
   }
 
@@ -115,6 +117,7 @@ function App() {
           <Route path="/insight" element={<InsightPage state={state} onSelect={setSelected} notify={notify} />} />
           <Route path="/trust" element={<TrustCenter state={state} onSelect={setSelected} />} />
           <Route path="/owner" element={<OwnerCenter me={me} onLogin={() => setAuthOpen(true)} refresh={refresh} notify={notify} />} />
+          <Route path="/admin" element={<AdminCenter me={me} onLogin={() => setAuthOpen(true)} notify={notify} />} />
           <Route path="/my" element={<MyPage me={me} state={state} restaurants={state.restaurants} requireLogin={requireLogin} onSelect={setSelected} transact={transact} refresh={refresh} notify={notify} />} />
           <Route path="/support" element={<SupportPage me={me} state={state} onLogin={() => setAuthOpen(true)} notify={notify} />} />
           <Route path="*" element={<NotFound />} />
@@ -138,11 +141,11 @@ function Header({ user, notifications, unread, refresh, onLogin, onLogout }: { u
     <div className="header-inner">
       <NavLink to="/" className="logo"><span className="brand-mark">묵</span><span>먹투<small>먹는 투자의 시작</small></span></NavLink>
       <nav className={menuOpen ? 'desktop-nav open' : 'desktop-nav'}>
-        <NavLink to="/discover">식당 발견</NavLink><NavLink to="/market">거래장</NavLink><NavLink to="/insight">AI 인사이트</NavLink><NavLink to="/trust">검증 데이터룸</NavLink><NavLink to="/owner">사장님 센터</NavLink>
+        <NavLink to="/discover">식당 발견</NavLink><NavLink to="/market">거래장</NavLink><NavLink to="/insight">AI 인사이트</NavLink><NavLink to="/trust">검증 데이터룸</NavLink><NavLink to="/owner">사장님 센터</NavLink>{user?.role === 'admin' && <NavLink to="/admin">운영센터</NavLink>}
       </nav>
       <div className="header-actions">
         {user ? <NotificationBell notifications={notifications} unread={unread} refresh={refresh} /> : <button className="icon-button hide-mobile" aria-label="알림" onClick={onLogin}><Bell size={20} /></button>}
-        {user ? <div className="user-menu"><NavLink to={user.sessionMode === 'demo' && user.role === 'owner' ? '/owner' : '/my'} className="avatar">{user.name.slice(0, 1)}</NavLink><div className="user-copy hide-mobile"><b>{user.name}</b><span>{user.sessionMode === 'demo' ? `체험 모드 · ${user.role === 'owner' ? '사장님' : compactWon(user.cash)}` : user.role === 'owner' ? '사장님' : compactWon(user.cash)}</span></div><button className="icon-button hide-mobile" onClick={onLogout} aria-label="로그아웃"><LogOut size={18} /></button></div> : <button className="button small" onClick={onLogin}>로그인</button>}
+        {user ? <div className="user-menu"><NavLink to={user.role === 'admin' ? '/admin' : user.role === 'owner' ? '/owner' : '/my'} className="avatar">{user.name.slice(0, 1)}</NavLink><div className="user-copy hide-mobile"><b>{user.name}</b><span>{user.role === 'admin' ? '관리자' : user.sessionMode === 'demo' ? `체험 모드 · ${user.role === 'owner' ? '사장님' : compactWon(user.cash)}` : user.role === 'owner' ? '사장님' : compactWon(user.cash)}</span></div><button className="icon-button hide-mobile" onClick={onLogout} aria-label="로그아웃"><LogOut size={18} /></button></div> : <button className="button small" onClick={onLogin}>로그인</button>}
         <button className="icon-button mobile-menu" onClick={() => setMenuOpen(!menuOpen)} aria-label="메뉴">{menuOpen ? <X /> : <Menu />}</button>
       </div>
     </div>
@@ -243,13 +246,13 @@ function NotFound() {
 
 function Empty({ icon, title, text }: { icon: string; title: string; text: string }) { return <div className="empty"><span>{icon}</span><b>{title}</b><p>{text}</p></div> }
 
-function AuthModal({ onClose, onAuth, notify }: { onClose: () => void; onAuth: (token: string) => Promise<void>; notify: (m: string) => void }) {
+function AuthModal({ onClose, onAuth, notify }: { onClose: () => void; onAuth: (token: string, destination?: string) => Promise<void>; notify: (m: string) => void }) {
   const [mode, setMode] = useState<'login' | 'signup'>('login')
   const [role, setRole] = useState<Role>('investor')
   const [busy, setBusy] = useState(false)
   const submit = async (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const form = new FormData(event.currentTarget); setBusy(true); try { const result = await api<{ token?: string; requiresEmailConfirmation?: boolean; message?: string }>(`/api/auth/${mode}`, { method: 'POST', body: JSON.stringify({ email: form.get('email'), password: form.get('password'), name: form.get('name'), role }) }); if (result.token) await onAuth(result.token); else if (result.requiresEmailConfirmation) notify(result.message || '이메일 인증 후 로그인해주세요.'); else throw new Error('로그인 토큰을 받지 못했어요.') } catch (e) { notify((e as Error).message) } finally { setBusy(false) } }
-  const demo = async (type: Role) => { setBusy(true); try { const result = await api<{ token: string }>('/api/auth/demo', { method: 'POST', body: JSON.stringify({ role: type }) }); await onAuth(result.token) } catch (e) { notify((e as Error).message) } finally { setBusy(false) } }
-  return <div className="modal-backdrop" onMouseDown={onClose}><div className="auth-modal" onMouseDown={(e) => e.stopPropagation()}><button className="modal-close" onClick={onClose}><X /></button><div className="auth-brand"><span className="brand-mark">묵</span><div><b>먹투에 오신 걸 환영해요</b><p>맛있는 성장을 함께 시작해볼까요?</p></div></div><div className="auth-tabs"><button className={mode === 'login' ? 'active' : ''} onClick={() => setMode('login')}>로그인</button><button className={mode === 'signup' ? 'active' : ''} onClick={() => setMode('signup')}>회원가입</button></div><form onSubmit={submit}>{mode === 'signup' && <><div className="role-picker"><button type="button" className={role === 'investor' ? 'active' : ''} onClick={() => setRole('investor')}><UserRound /><span><b>투자자</b><small>맛집을 응원하고 혜택 받기</small></span></button><button type="button" className={role === 'owner' ? 'active' : ''} onClick={() => setRole('owner')}><Store /><span><b>소상공인</b><small>단골에게 펀딩 받기</small></span></button></div><Field label="이름"><input name="name" required placeholder="이름을 입력해주세요" /></Field></>}<Field label="이메일"><input name="email" type="email" required placeholder="hello@meoktu.kr" /></Field><Field label="비밀번호"><input name="password" type="password" required minLength={8} placeholder="8자 이상 입력해주세요" /></Field><button className="button full large" disabled={busy}>{busy ? '잠시만요...' : mode === 'login' ? '로그인' : '먹투 시작하기'}</button></form>{mode === 'login' && <><div className="divider"><span>저장 없이 기능 둘러보기</span></div><div className="demo-buttons"><button onClick={() => demo('investor')}>😋 투자자로 체험하기</button><button onClick={() => demo('owner')}>👩‍🍳 사장님으로 체험하기</button></div><p className="demo-limit-note">체험 모드에서는 30만원 체험머니로 투자·쿠폰 발급·교환·리뷰까지, 사장님은 기관 연결·자료 업로드·심사·신용등급까지 전부 눌러볼 수 있어요. 체험 기록은 나에게만 보이고 저장되지 않습니다.</p></>}<p className="auth-legal">계속하면 먹투의 이용약관과 개인정보처리방침에 동의하게 됩니다.</p></div></div>
+  const demo = async (type: Role) => { setBusy(true); try { const email = type === 'admin' ? 'admin@meoktu.demo' : type === 'owner' ? 'owner@meoktu.demo' : 'investor@meoktu.demo'; const result = await api<{ token: string }>('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password: 'demo1234!' }) }); await onAuth(result.token, type === 'admin' ? '/admin' : type === 'owner' ? '/owner' : '/my') } catch (e) { notify((e as Error).message) } finally { setBusy(false) } }
+  return <div className="modal-backdrop" onMouseDown={onClose}><div className="auth-modal" onMouseDown={(e) => e.stopPropagation()}><button className="modal-close" onClick={onClose}><X /></button><div className="auth-brand"><span className="brand-mark">묵</span><div><b>먹투에 오신 걸 환영해요</b><p>맛있는 성장을 함께 시작해볼까요?</p></div></div><div className="auth-tabs"><button className={mode === 'login' ? 'active' : ''} onClick={() => setMode('login')}>로그인</button><button className={mode === 'signup' ? 'active' : ''} onClick={() => setMode('signup')}>회원가입</button></div><form onSubmit={submit}><div className="auth-role-heading"><b>{mode === 'login' ? '어떤 계정으로 로그인할까요?' : '어떤 계정으로 시작할까요?'}</b><small>{mode === 'login' ? '회원가입할 때 선택한 유형을 골라주세요.' : '가입 후에도 마이페이지에서 바로 확인할 수 있어요.'}</small></div><div className="role-picker"><button type="button" aria-pressed={role === 'investor'} className={role === 'investor' ? 'active' : ''} onClick={() => setRole('investor')}><UserRound /><span><b>투자자</b><small>맛집을 응원하고 혜택 받기</small></span></button><button type="button" aria-pressed={role === 'owner'} className={role === 'owner' ? 'active' : ''} onClick={() => setRole('owner')}><Store /><span><b>사장님</b><small>단골에게 펀딩 받기</small></span></button></div>{mode === 'signup' && <Field label="이름"><input name="name" required placeholder="이름을 입력해주세요" /></Field>}<Field label="이메일"><input name="email" type="email" required placeholder="hello@meoktu.kr" /></Field><Field label="비밀번호"><input name="password" type="password" required minLength={8} placeholder="8자 이상 입력해주세요" /></Field><button className="button full large" disabled={busy}>{busy ? '잠시만요...' : mode === 'login' ? `${role === 'owner' ? '사장님' : '투자자'}로 로그인` : '먹투 시작하기'}</button></form>{mode === 'login' && <><div className="divider"><span>또는 데모로 바로 보기</span></div><div className="demo-buttons"><button disabled={busy} onClick={() => demo('investor')}>😋 투자자 데모</button><button disabled={busy} onClick={() => demo('owner')}>👩‍🍳 사장님 데모</button><button disabled={busy} onClick={() => demo('admin')}>🛡️ 관리자 데모</button></div><p className="demo-limit-note">버튼을 누르면 입력 없이 해당 역할의 데모 계정으로 로그인하고 전용 화면으로 바로 이동합니다.</p></>}<p className="auth-legal">계속하면 먹투의 이용약관과 개인정보처리방침에 동의하게 됩니다.</p></div></div>
 }
 
 function Footer() { return <footer><div className="footer-inner"><div><div className="logo footer-logo"><span className="brand-mark">묵</span><span>먹투<small>먹는 투자의 시작</small></span></div><p>좋아하는 식당의 내일을<br />오늘의 단골과 함께 만듭니다.</p></div><div className="footer-links"><div><b>서비스</b><NavLink to="/discover">식당 발견</NavLink><NavLink to="/market">거래장</NavLink><NavLink to="/insight">AI 인사이트</NavLink><NavLink to="/trust">검증 데이터룸</NavLink></div><div><b>사장님</b><NavLink to="/owner">펀딩 심사</NavLink><NavLink to="/owner">자료 제출 가이드</NavLink><NavLink to="/owner">쿠폰 손익 관리</NavLink></div><div><b>도움말</b><NavLink to="/support">1:1 문의</NavLink><NavLink to="/insight">AI 상담</NavLink><NavLink to="/trust">위험 고지와 검증 근거</NavLink></div></div></div><div className="footer-bottom"><span>© 2026 먹투. MVP Demo.</span><p>식당·투자·거래 수치는 가상이며, 일부 상권 설명은 출처가 표시된 공공자료를 사용합니다. 금융상품 판매 서비스가 아닙니다.</p></div></footer> }

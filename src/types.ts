@@ -1,10 +1,10 @@
-export type Role = 'investor' | 'owner'
+export type Role = 'investor' | 'owner' | 'admin'
 
 export interface SalesPoint { month: string; sales: number; growthRate: number; bonusRate: number }
 export interface MenuHighlight { name: string; price: number; description: string }
 export interface Review { id: string; restaurantId: string; userId: string; userName: string; rating: number; content: string; visitVerified: boolean; createdAt: string }
 
-export interface User { id: string; email: string; name: string; role: Role; cash: number; createdAt: string; sessionMode?: 'account' | 'demo' }
+export interface User { id: string; email: string; name: string; role: Role; cash: number; accountStatus?: 'active' | 'suspended'; createdAt: string; sessionMode?: 'account' | 'demo' }
 
 export interface DataConnection {
   id: string; sourceId: 'pos' | 'account' | 'card' | 'delivery' | 'tax' | 'debt'; provider: string

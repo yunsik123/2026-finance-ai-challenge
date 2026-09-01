@@ -186,6 +186,7 @@ export function createSeed(ownerHash: string, investorHash: string): Database {
   return {
     schemaVersion: 4,
     users: [
+      { id: 'u-admin', email: 'admin@meoktu.demo', name: '먹투 운영팀', role: 'admin', passwordHash: ownerHash, cash: 0, accountStatus: 'active', createdAt: day(-500) },
       { id: 'u-owner', email: 'owner@meoktu.demo', name: '김소담', role: 'owner', passwordHash: ownerHash, cash: 0, createdAt: day(-400) },
       { id: 'u-investor', email: 'investor@meoktu.demo', name: '박한입', role: 'investor', passwordHash: investorHash, cash: 1640000, createdAt: day(-160) },
       { id: 'u-market-a', email: 'market-a@meoktu.demo', name: '동네단골A', role: 'investor', passwordHash: investorHash, cash: 920000, createdAt: day(-210) },

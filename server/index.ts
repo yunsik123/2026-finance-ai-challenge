@@ -260,6 +260,15 @@ function normalizeDatabase() {
   db.auditEvents ??= []
   db.ocrAnalyses ??= []
   db.supportRequests ??= []
+  const sharedDemoHash = db.users.find((user) => user.id === 'u-owner')?.passwordHash
+    || db.users.find((user) => user.id === 'u-investor')?.passwordHash
+  if (sharedDemoHash && !db.users.some((user) => user.id === 'u-admin' || user.email === 'admin@meoktu.demo')) {
+    db.users.unshift({
+      id: 'u-admin', email: 'admin@meoktu.demo', name: '먹투 운영팀', role: 'admin',
+      passwordHash: sharedDemoHash, cash: 0, accountStatus: 'active', createdAt: now(),
+    })
+  }
+  for (const user of db.users) user.accountStatus ??= 'active'
 }
 
 async function loadDatabase() {
@@ -1165,12 +1174,19 @@ app.post('/api/auth/demo', (req, res) => {
 })
 
 app.post('/api/auth/login', async (req, res) => {
-  const { email, password } = req.body as { email?: string; password?: string }
+  const { email, password, role } = req.body as { email?: string; password?: string; role?: Role }
+  if (role && role !== 'owner' && role !== 'investor') return res.status(400).json({ error: '로그인 유형을 다시 선택해주세요.' })
   const user = db.users.find((u) => u.email.toLowerCase() === String(email).toLowerCase())
-  if (user && password && !user.passwordHash.startsWith('supabase:') && await verifyPassword(password, user.passwordHash)) return res.json({ token: tokenFor(user), user: publicUser(user), provider: 'local-demo' })
+  if (user?.accountStatus === 'suspended') return res.status(403).json({ error: '이용이 일시 정지된 계정이에요.' })
+  if (user && password && !user.passwordHash.startsWith('supabase:') && await verifyPassword(password, user.passwordHash)) {
+    if (role && user.role !== role) return res.status(403).json({ error: `이 계정은 ${user.role === 'owner' ? '사장님' : user.role === 'investor' ? '투자자' : '관리자'} 유형으로 가입되어 있어요. 로그인 유형을 바꿔주세요.` })
+    return res.json({ token: tokenFor(user), user: publicUser(user), provider: 'local-demo' })
+  }
   if (supabaseAuthConfigured && email && password) {
     try {
       const session = await supabaseRequest('token?grant_type=password', { method: 'POST', body: JSON.stringify({ email: String(email).toLowerCase(), password }) })
+      const profileRole = db.users.find((item) => item.email === String(email).toLowerCase())?.role || session.user?.user_metadata?.role
+      if (role && profileRole && profileRole !== role) return res.status(403).json({ error: `이 계정은 ${profileRole === 'owner' ? '사장님' : profileRole === 'investor' ? '투자자' : '관리자'} 유형으로 가입되어 있어요. 로그인 유형을 바꿔주세요.` })
       return res.json({ token: session.access_token, user: session.user, provider: 'supabase' })
     } catch { /* return the common authentication error below */ }
   }
@@ -1207,6 +1223,32 @@ app.get('/api/me', auth(), async (req: AuthedRequest, res) => {
   const dataConnections = db.dataConnections.filter((item) => item.userId === user.id && item.status === 'active')
     .map(({ userId: _, ...item }) => item)
   res.json({ user: publicUser(user), positions, orders, coupons, applications, visitVerifications, walletTransactions, favoriteRestaurantIds, ocrAnalyses, dataConnections, notifications, unreadNotifications: notifications.filter((item) => !item.read).length, exchange, rules: EXCHANGE_RULES })
+})
+
+app.get('/api/admin/dashboard', auth('admin'), (_req, res) => {
+  const applications = [...db.applications]
+    .filter((application) => application.status === 'manual_review')
+    .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))
+  res.json({
+    stats: {
+      users: db.users.filter((user) => user.role !== 'admin').length,
+      owners: db.users.filter((user) => user.role === 'owner').length,
+      pendingApplications: applications.length,
+      activeFunds: db.funds.filter((fund) => fund.status !== 'closed').length,
+      funded: db.funds.reduce((sum, fund) => sum + fund.raised, 0),
+    },
+    users: db.users
+      .filter((user) => user.role !== 'admin')
+      .map((user) => ({
+        ...publicUser(user),
+        positions: db.positions.filter((position) => position.userId === user.id && position.amount > 0).length,
+        applications: db.applications.filter((application) => application.userId === user.id).length,
+      })),
+    applications: applications.map((application) => {
+      const owner = db.users.find((user) => user.id === application.userId)
+      return { ...application, owner: owner ? publicUser(owner) : undefined }
+    }),
+  })
 })
 
 app.put('/api/favorites/:restaurantId', auth(), async (req: AuthedRequest, res) => {

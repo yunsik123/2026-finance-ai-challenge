@@ -1,4 +1,4 @@
-export type Role = 'investor' | 'owner'
+export type Role = 'investor' | 'owner' | 'admin'
 export type FundStatus = 'funding' | 'trading' | 'closed'
 
 export interface SalesPoint { month: string; sales: number; growthRate: number; bonusRate: number }
@@ -11,6 +11,7 @@ export interface User {
   role: Role
   passwordHash: string
   cash: number
+  accountStatus?: 'active' | 'suspended'
   createdAt: string
 }
 
