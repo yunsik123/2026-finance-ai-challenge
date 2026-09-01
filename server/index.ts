@@ -11,6 +11,7 @@ import { Server } from 'socket.io'
 import { articles as seedArticles, createSeed, funds as seedFunds, restaurants as seedRestaurants, reviews as seedReviews } from './seed.ts'
 import type { Application, Coupon, CouponListing, CouponOffer, CouponTrade, DataConnection, Database, Fund, Notification, Order, Position, Review, Role, User } from './types.ts'
 import { answerGraphProcessQuestion, assessRestaurant, buildKnowledgeGraph, normalizeOcrBoxes, retrieveKnowledgeSubgraph } from './trust.ts'
+import { answerNavigationQuestion, isNavigationQuestion, matchUiTasks, navigationBrief } from './sitemap.ts'
 import { COMMERCIAL_NOTE, COMMERCIAL_SOURCE, commercialInsight, findCommercialArea } from './commercial.ts'
 import { orchestrateFinancialVerification, verifyBusiness } from './verification.ts'
 import { checkSwap, couponUsable, daysLeft, EXCHANGE_RULES, normalizePreferences, sweepExpired } from './exchange.ts'
@@ -1722,8 +1723,12 @@ app.post('/api/ai/chat', async (req: AuthedRequest, res) => {
   const caller = (await userFromAuthorization(req.headers.authorization).catch(() => undefined))?.id
     || String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'anonymous').split(',')[0].trim()
   if (!rateLimit(`ai:${caller}`, 20, 60_000)) return res.status(429).json({ error: 'AI 상담 요청이 너무 많아요. 잠시 후 다시 시도해주세요.' })
-  const role: Role = req.body.role === 'owner' ? 'owner' : 'investor'
   const normalizedQuestion = question.replace(/\s/g, '').toLocaleLowerCase('ko')
+  // 화면 안내 질문은 묻는 내용에 맞는 역할 그래프를 써야 한다.
+  // 투자자로 로그인한 사람이 "펀드 등록은 어디서 해?"라고 물으면 사장님 절차를 봐야 답이 된다.
+  const askedRole: Role = req.body.role === 'owner' ? 'owner' : 'investor'
+  const ownerIntent = /(펀딩|펀드)(등록|신청|개설|모집)|사장님|소상공인|자료업로드|서류제출|심사접수|매출공개|영업신고|사업자등록/.test(normalizedQuestion)
+  const role: Role = ownerIntent ? 'owner' : askedRole
   const requestedRestaurant = typeof req.body.restaurantId === 'string' ? db.restaurants.find((item) => item.id === req.body.restaurantId) : undefined
   const mentionedRestaurant = db.restaurants.find((item) => normalizedQuestion.includes(item.name.replace(/\s/g, '').toLocaleLowerCase('ko')))
   const graphRestaurant = mentionedRestaurant || requestedRestaurant
@@ -1744,12 +1749,18 @@ app.post('/api/ai/chat', async (req: AuthedRequest, res) => {
     },
   })
   const retrievedGraph = retrieveKnowledgeSubgraph(knowledgeGraph, question)
+  // 화면 지도는 별도로 뽑는다. 절차 노드에 밀려서 빠지면 "어디로 가야 해요" 질문이 다시 망가진다.
+  const navigation = navigationBrief(question)
+  const navigationAnswer = answerNavigationQuestion(question)
+  const wantsNavigation = isNavigationQuestion(question) || matchUiTasks(question, 1).length > 0
   const graphAnswer = answerGraphProcessQuestion(question, retrievedGraph)
   const fallback = localAiAnswer(question)
+  // 화면 위치를 묻는 질문이면 절차 설명보다 클릭 경로를 먼저 준다.
+  const localAnswer = (wantsNavigation && navigationAnswer) ? navigationAnswer : (graphAnswer || fallback)
   const apiUrl = aiApiUrl
   const apiKey = aiApiKey
   if (!apiUrl || !apiKey) return res.json({
-    answer: graphAnswer || fallback,
+    answer: localAnswer,
     mode: 'graph-rag-local',
     provider: 'local-knowledge-graph',
     sources: retrievedGraph.sources,
@@ -1801,15 +1812,28 @@ app.post('/api/ai/chat', async (req: AuthedRequest, res) => {
         messages: [
           {
             role: 'system',
-            content: `너는 먹투 웹사이트의 친절하고 신중한 한국어 생성형 AI 상담원이다.
+            content: `너는 먹투 웹사이트의 친절하고 신중한 한국어 생성형 AI 상담원이다. 실제로 웹사이트를 함께 보며 안내하는 직원처럼 말한다.
+
+[화면 안내 규칙 — 가장 중요]
+- "어디로 가야 해요", "어디서 하나요", "어떻게 신청해요" 같은 질문은 **화면 위치 질문**이다. 반드시 아래 '화면 지도'의 menuPath와 steps를 그대로 활용해 "상단 메뉴의 OO을 클릭하세요"처럼 눌러야 할 메뉴와 버튼 이름으로 답한다.
+- GraphRAG의 GuideStep 노드(예: '사업체·대표자 등록', '데이터 출처 선택', 'AI OCR 교차검증')는 **심사 절차의 이름**이지 화면에 있는 메뉴나 버튼이 아니다. 이것을 "OO 단계로 가셔야 합니다"처럼 이동할 장소인 것처럼 안내하면 안 된다. 절차를 설명할 때는 "심사는 이런 순서로 진행돼요"라고 절차임을 밝힌다.
+- 화면 지도에 없는 메뉴, 버튼, 페이지 이름을 지어내지 않는다.
+- 먹투에는 고객센터, 상담 전화번호, 이메일 문의 창구가 없다. "고객센터에 문의하세요" 같은 안내를 하지 말고, 대신 이 AI 상담창이나 해당 화면을 안내한다.
+- 사장님(소상공인) 기능은 소상공인 계정 로그인이 필요하다는 점을 필요할 때 알려준다.
+
+[내용 규칙]
 - 제공된 가상 식당 데이터와 먹투 이용 규칙 안에서만 답한다.
 - 데이터에 없는 사실을 지어내지 말고, 모르면 모른다고 말한다.
 - sales.visibility가 owner_private이면 정확한 매출액이나 월별 이력을 추측하거나 공개하지 않는다.
 - 식당 비교 시 성장률뿐 아니라 재방문율, 운영 이력, 상권 위험, 쿠폰의 실제 사용 가능성을 함께 설명한다.
-- 투자 권유, 수익 보장, 원금 보장으로 오해될 표현을 쓰지 않는다.
+- 투자 권유, 수익 보장, 원금 보장으로 오해될 표현을 쓰지 않는다. "투자할 만한 가치가 높다", "지금이 기회다" 같은 판단은 하지 말고, 판단 재료(성장률·재방문율·운영 이력·상권 위험)를 보여주고 결정은 사용자에게 맡긴다.
 - 투자금은 예금이 아니며 모금 종료 뒤에는 반대 주문이 있어야 1,000원 단위로 회수된다는 점을 필요할 때 명확히 알린다.
-- 아래 GraphRAG 검색 결과를 우선 근거로 사용하고, 그래프에 없는 절차를 지어내지 않는다.
-- 답변은 읽기 쉬운 3~7문장으로 작성한다.
+- 아래 GraphRAG 검색 결과를 우선 근거로 사용하되, 노드 텍스트를 그대로 복사하지 말고 사람이 이해할 문장으로 풀어서 설명한다.
+
+[형식]
+- 답변은 읽기 쉬운 3~7문장. 클릭 순서를 안내할 때만 번호 목록을 쓴다.
+
+화면 지도(UI 내비게이션): ${JSON.stringify(navigation)}
 
 GraphRAG 검색 결과: ${JSON.stringify(retrievedGraph)}
 
@@ -1826,7 +1850,7 @@ GraphRAG 검색 결과: ${JSON.stringify(retrievedGraph)}
     res.json({ answer, mode: 'graph-rag-generative', provider: 'openai', model, sources: retrievedGraph.sources, retrieval: { strategy: 'symbolic-keyword-plus-one-hop', graphVersion: retrievedGraph.graphVersion } })
   } catch (error) {
     console.error('OpenAI API request failed:', error instanceof Error ? error.message : error)
-    res.json({ answer: graphAnswer || fallback, mode: 'graph-rag-fallback', provider: 'local-knowledge-graph', sources: retrievedGraph.sources, retrieval: { strategy: 'symbolic-keyword-plus-one-hop', graphVersion: retrievedGraph.graphVersion } })
+    res.json({ answer: localAnswer, mode: 'graph-rag-fallback', provider: 'local-knowledge-graph', sources: retrievedGraph.sources, retrieval: { strategy: 'symbolic-keyword-plus-one-hop', graphVersion: retrievedGraph.graphVersion } })
   }
 })
 

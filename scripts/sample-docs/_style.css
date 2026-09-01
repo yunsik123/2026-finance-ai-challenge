@@ -1,0 +1,24 @@
+/* 문서형 샘플 공통 스타일. 실제 공문서로 오인되지 않도록 워터마크와 경고를 항상 남긴다. */
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap');
+*{box-sizing:border-box}
+body{margin:0;width:1024px;height:1448px;font-family:'Noto Sans KR',sans-serif;color:#16233a;background:#eef2f8;position:relative;overflow:hidden}
+.sheet{position:absolute;inset:36px;background:#fff;border:3px solid #1b3b6f;border-radius:6px;padding:44px 52px;display:flex;flex-direction:column}
+.tag{position:absolute;top:22px;left:52px;border:2px solid #1b3b6f;border-radius:999px;padding:8px 18px;font-size:15px;font-weight:900;color:#1b3b6f;background:#fff}
+.tag small{display:block;font-size:11px;font-weight:700;letter-spacing:.08em}
+.stop{position:absolute;top:22px;right:52px;border:2px solid #e03131;border-radius:12px;padding:8px 18px;text-align:center;color:#e03131;background:#fff5f5}
+.stop b{font-size:15px;font-weight:900}
+.stop small{display:block;font-size:11px;font-weight:700}
+h1{margin:26px 0 6px;text-align:center;font-size:46px;font-weight:900;letter-spacing:-.02em}
+.subtitle{text-align:center;font-size:16px;color:#5a6b86;font-weight:700;margin-bottom:22px}
+.banner{background:#e03131;color:#fff;border-radius:8px;padding:14px;text-align:center;font-size:26px;font-weight:900;letter-spacing:.04em;margin-bottom:10px}
+.banner-note{text-align:center;font-size:15px;color:#5a6b86;font-weight:700;margin-bottom:26px}
+table{width:100%;border-collapse:collapse;font-size:22px}
+th,td{border:1.5px solid #c8d4e6;padding:16px 18px;text-align:left}
+th{width:34%;background:#eaf2fb;font-weight:700;color:#1b3b6f}
+td{font-weight:900}
+.note{margin-top:auto;border:2px dashed #e03131;border-radius:10px;background:#fff5f5;padding:18px 22px;text-align:center}
+.note b{display:block;font-size:24px;color:#e03131;font-weight:900;margin-bottom:6px}
+.note span{font-size:15px;color:#7a4141;font-weight:700}
+.foot{text-align:center;font-size:12px;letter-spacing:.35em;color:#9aabc4;font-weight:700;margin-top:16px}
+.watermark{position:absolute;inset:0;pointer-events:none;display:grid;grid-template-columns:repeat(3,1fr);align-content:space-around;justify-items:center;opacity:.16}
+.watermark span{transform:rotate(-28deg);font-size:38px;font-weight:900;color:#e03131;white-space:nowrap}

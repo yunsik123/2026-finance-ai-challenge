@@ -12,12 +12,12 @@ export default function FloatingAiChat({ role }: { role: Role }) {
   const [asking, setAsking] = useState(false)
   const [mode, setMode] = useState('graph-rag-local')
   const [messages, setMessages] = useState<Message[]>([
-    { role: 'ai', text: '안녕하세요! 먹투 AI예요. 식당 데이터뿐 아니라 투자·심사 절차 지식그래프를 검색해서 근거와 함께 답해드릴게요.' },
+    { role: 'ai', text: '안녕하세요! 먹투 AI예요. 식당 데이터와 투자·심사 절차는 물론, “어느 메뉴로 가야 하는지”까지 화면 지도를 검색해서 안내해드려요.' },
   ])
   const scrollRef = useRef<HTMLDivElement>(null)
   const suggestions = role === 'owner'
-    ? ['펀딩 신청에 필요한 자료는?', 'OCR 검증 뒤 절차 알려줘', '모집 심사는 어떻게 진행돼?']
-    : ['투자금은 어떻게 회수해?', '안전성은 어떻게 확인해?', '소복소복 분석해줘']
+    ? ['펀드 등록은 어디서 해?', '샘플 자료는 어디서 받아?', '펀딩 신청에 필요한 자료는?']
+    : ['쿠폰 교환은 어디서 해?', '투자금은 어떻게 회수해?', '소복소복 분석해줘']
 
   useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }) }, [messages, asking, open])
 

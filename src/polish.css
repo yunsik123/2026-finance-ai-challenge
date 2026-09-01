@@ -1,0 +1,177 @@
+/*
+ * 먹투 디자인 결 맞춤 패스.
+ *
+ * 거래장·AI 인사이트·검증 데이터룸·사장님 센터는 기능이 늘면서 화면 요소가
+ * 먼저 붙고 디자인이 나중에 따라왔다. 그래서 먹투 MVP의 결(크림 배경 · 코랄 강조 ·
+ * 네이비 서피스 · Jua 헤드라인 · 넉넉한 라운드)과 어긋난 자리가 생겼다.
+ * 이 파일은 그 어긋남만 골라서 되돌린다. 새 규칙을 만들지 않고
+ * styles.css 에 이미 있는 토큰과 패턴을 그대로 가져다 쓴다.
+ */
+
+/* ── 1. 짧은 페이지의 빈 공간 ─────────────────────────────────────────
+   교환장처럼 카드가 2~3장뿐인 화면은 푸터가 화면 중간에 떠서 미완성처럼 보였다.
+   본문이 남는 높이를 먹고 푸터는 항상 아래에 붙게 한다. */
+.app-shell{display:flex;flex-direction:column;min-height:100vh}
+.app-shell>main{flex:1 0 auto;display:flex;flex-direction:column}
+.app-shell>main>*{flex:1 0 auto}
+
+/* ── 2. 거래장 ───────────────────────────────────────────────────── */
+/* 흰 상자 4개로 흩어져 있던 요약을 먹투 시그니처인 네이비 배너 하나로 모은다.
+   (홈·교환장에서 쓰던 .coupon-market-guide 의 결) */
+.market-stats{
+  grid-template-columns:repeat(4,1fr);gap:0;margin-bottom:16px;
+  background:#172a24;border-radius:22px;padding:20px 8px;
+  box-shadow:0 20px 46px rgba(23,42,36,.2)
+}
+.market-stats>div{
+  background:transparent;border:0;border-right:1px solid rgba(255,255,255,.14);
+  border-radius:0;padding:6px 16px
+}
+.market-stats>div:last-child{border-right:0}
+.market-stats b{font-family:'Jua',sans-serif;font-size:36px;color:#ff9a7f;line-height:1.15}
+.market-stats span{font-size:12px;font-weight:700;color:rgba(255,255,255,.7)}
+
+/* 규칙 칩: 식당 발견의 태그 칩과 같은 크기·라운드로 맞춘다. */
+.exchange-rules{gap:7px;margin:0 0 20px}
+.exchange-rules li{padding:9px 15px;font-size:12px;background:#eef6f1;color:#12604a}
+.exchange-rules svg{width:15px;height:15px;color:var(--green)}
+
+/* 탭·필터: .chip-row / .search-box 규격(높이 52, 라운드 14)에 맞춘다. */
+.market-tabs{gap:9px;margin-bottom:18px}
+.market-tabs button{padding:14px 20px;border-radius:14px;font-size:13.5px}
+.market-tabs button.active{box-shadow:0 10px 24px rgba(22,60,52,.18)}
+.market-filters{gap:9px;margin-bottom:20px}
+.market-filters label{height:52px;border-radius:14px;padding:0 15px}
+.market-filters input,.market-filters select{font-size:13.5px}
+.filter-toggle{height:52px;border-radius:14px;font-size:13px}
+
+/* 매물 카드: 8~9px로 눌려 있던 글자를 읽을 수 있는 크기로 올린다. */
+.listing-card.enhanced{padding:18px;gap:13px;border-radius:20px}
+.listing-card.enhanced .coupon-ticket{padding:16px;border-radius:16px}
+.coupon-ticket small{font-size:11px;font-weight:700}
+.coupon-ticket p{font-size:11px;color:#8d6d59;margin-top:2px}
+.coupon-ticket b{font-size:30px}
+.swap-wants span{font-size:11px}
+.swap-wants b{font-size:13px}
+.listing-meta{font-size:11px;align-items:baseline}
+.listing-meta span{font-weight:700;color:#59615c}
+.listing-note{font-size:12.5px}
+.my-listing-badge,.mode-badge,.match-badge{font-size:11px;padding:6px 12px}
+.listing-offers-count{font-size:12px}
+
+/* 매물이 적을 때 화면이 비어 보이지 않게, 내 쿠폰을 올리도록 안내하는 카드. */
+.listing-cta{
+  display:flex;flex-direction:column;justify-content:center;gap:8px;
+  min-height:260px;padding:26px;text-align:center;
+  background:#fffaf3;border:1.5px dashed #e2ded2;border-radius:20px
+}
+.listing-cta>span{font-size:34px}
+.listing-cta b{font-size:15px}
+.listing-cta p{margin:0;font-size:12px;color:var(--muted);line-height:1.7}
+.listing-cta a{
+  margin-top:6px;align-self:center;display:inline-flex;align-items:center;gap:6px;
+  padding:11px 18px;border-radius:12px;background:var(--coral);color:#fff;
+  font-size:13px;font-weight:800;box-shadow:0 8px 20px rgba(255,105,72,.2)
+}
+.listing-cta a svg{width:16px}
+
+/* 제안 목록·거래 이력의 잔글씨도 함께 올린다. */
+.offer-row small,.trade-record small{font-size:11.5px}
+.offer-row b{font-size:13px}
+
+/* ── 3. AI 인사이트 ──────────────────────────────────────────────── */
+/* 대화창이 짧아 오른쪽 컬럼만 일찍 끝나 보였다. 화면 높이에 맞춰 조금 늘리되,
+   빈 말풍선 영역이 과하게 남지 않도록 상한을 둔다. */
+.chat-messages{height:clamp(340px,calc(100vh - 470px),460px)}
+.chat-bubble{font-size:12.5px;line-height:1.75}
+/* 추천 질문이 가로로 잘려 있었다. 줄바꿈해서 전부 보이게 한다. */
+.suggestions{flex-wrap:wrap;overflow-x:visible;gap:6px;padding:12px 12px 6px}
+.suggestions button{white-space:normal;font-size:11.5px;padding:8px 12px}
+.chat-input{padding:6px 6px 6px 13px}
+.chat-input input{font-size:13px}
+.ai-disclaimer{font-size:11px}
+
+/* ── 4. 검증 데이터룸 ────────────────────────────────────────────── */
+/* 카드 라운드·그림자를 다른 화면(.ai-picks/.chat-panel)과 같은 값으로 맞춘다. */
+.trust-score-grid>article,.trust-section,.commercial-panel,.commercial-missing,.contextual-alerts{
+  border-radius:20px
+}
+.contextual-alerts li{font-size:12.5px;line-height:1.8}
+.method-note{font-size:11.5px}
+
+/* ── 5. 사장님 센터 ──────────────────────────────────────────────── */
+/* 로그인 전 화면: 4,000px짜리 흐린 폼이 통째로 깔려서 안내문이 화면 밖에 있었다.
+   폼은 미리보기 높이로 자르고, 안내 카드를 실제로 보이는 자리에 놓는다. */
+.application-form.locked{max-height:560px;overflow:hidden;padding-bottom:0}
+.owner-lock-overlay{
+  background:linear-gradient(180deg,rgba(255,250,243,.86) 0%,rgba(255,250,243,.97) 55%);
+  backdrop-filter:blur(3px);justify-content:center;gap:4px
+}
+.owner-lock-overlay>svg{width:44px;height:44px;color:var(--green)}
+.owner-lock-overlay p{font-size:13px;max-width:460px}
+.owner-lock-overlay .button{margin-top:14px}
+
+/* 자료 제출 영역의 7~9px 글자를 읽을 수 있는 크기로 되돌린다. */
+.evidence-lane{padding:20px;border-radius:20px}
+.evidence-lane-heading b{font-size:14px}
+.evidence-lane-heading p{font-size:12px;line-height:1.7}
+.source-progress{padding:16px;border-radius:16px;gap:8px 16px}
+.source-progress span,.source-progress small{font-size:11.5px}
+.partner-connection-grid{gap:11px}
+.partner-connection-grid article{padding:14px;border-radius:15px}
+.partner-connection-grid b{font-size:13px}
+.partner-connection-grid span{font-size:11.5px;color:var(--muted)}
+.partner-connection-grid small{font-size:11px}
+.partner-connection-grid em{font-size:11px}
+.partner-connection-grid button{padding:9px 13px;border-radius:11px;font-size:11.5px}
+.document-upload-card{padding:16px;border-radius:17px;gap:12px}
+.document-copy>span{font-size:10px;padding:4px 9px}
+.document-copy>b{font-size:13.5px}
+.document-copy>p{font-size:12px;margin:6px 0}
+.document-copy>small{font-size:11px}
+.document-copy>strong{font-size:11.5px}
+.document-action{font-size:12px;padding-top:11px}
+.document-action svg{width:16px}
+.demo-mode-banner{border-radius:18px;padding:16px 18px}
+.demo-mode-banner b{font-size:13.5px}
+.demo-mode-banner p{font-size:12px}
+.source-provenance-result b{font-size:12.5px}
+.source-provenance-result span{font-size:11.5px}
+.mvp-source-note{font-size:11px;line-height:1.8}
+
+/* 샘플 자료 안내: 업로드 흐름의 출발점이라 눈에 먼저 들어와야 한다. */
+.sample-pack{
+  margin-top:14px;padding:18px;border-radius:18px;
+  background:linear-gradient(140deg,#fff4ee,#fffaf3);border:1.5px solid #ffd6c6
+}
+.sample-pack-head{display:grid;grid-template-columns:44px 1fr auto;gap:14px;align-items:center}
+.sample-pack-head>span{
+  width:44px;height:44px;border-radius:14px;display:grid;place-items:center;
+  background:var(--coral);color:#fff;box-shadow:0 8px 18px rgba(255,105,72,.26)
+}
+.sample-pack-head>span svg{width:22px}
+.sample-pack-head b{font-size:14px;display:block}
+.sample-pack-head p{margin:4px 0 0;font-size:12px;line-height:1.7;color:#6b6259}
+.sample-pack-head em{font-style:normal;font-weight:800;color:var(--coral-dark)}
+.sample-pack-head .button{white-space:nowrap;font-size:12.5px;padding:11px 16px}
+.sample-pack-head .button svg{width:16px}
+.sample-pack-hint{list-style:none;margin:14px 0 0;padding:14px 0 0;border-top:1px dashed #ffd0bd}
+.sample-pack-hint li{display:flex;gap:7px;align-items:flex-start;font-size:11.5px;line-height:1.75;color:#6b6259}
+.sample-pack-hint li+li{margin-top:5px}
+.sample-pack-hint svg{flex:0 0 auto;width:14px;height:14px;margin-top:3px;color:var(--green)}
+.sample-pack-hint b{color:var(--ink)}
+
+/* 카드 안 샘플 버튼: 8px 회색 글씨라 있는 줄도 모르고 지나쳤다. */
+.sample-download{
+  margin-top:10px;padding:8px 12px;border-radius:10px;font-size:11.5px;
+  background:#fff1ea;color:var(--coral-dark);border:1px solid #ffd6c6
+}
+.sample-download:hover{background:var(--coral);color:#fff;border-color:var(--coral)}
+.sample-download svg{width:14px}
+
+@media(max-width:860px){
+  .market-stats{grid-template-columns:1fr 1fr;padding:14px 6px;gap:10px 0}
+  .market-stats>div:nth-child(2n){border-right:0}
+  .sample-pack-head{grid-template-columns:40px 1fr}
+  .sample-pack-head .button{grid-column:1/-1;justify-content:center}
+}

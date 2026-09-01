@@ -1,5 +1,6 @@
 import type { Fund, Restaurant, Role } from './types.ts'
 import { commercialGraphProperties, commercialInsight, commercialResilience, findCommercialArea, type CommercialArea } from './commercial.ts'
+import { siteGraphEdges, siteGraphNodes } from './sitemap.ts'
 
 const clamp = (value: number, min = 0, max = 100) => Math.max(min, Math.min(max, value))
 const baseline = 60
@@ -152,6 +153,18 @@ export function buildKnowledgeGraph(role: Role, restaurant?: Restaurant, fund?: 
   const edges: GraphEdge[] = nodes.slice(0, -1).map((node, index) => ({ from: node.id, relation: 'NEXT', to: nodes[index + 1].id }))
   const stepId = (order: number) => `${prefix}:step:${Math.min(order, steps.length)}`
 
+  // 화면 지도(UI 내비게이션)를 같은 그래프에 붙인다.
+  // 이게 없으면 "어디로 가야 하나요"에 절차 단계 이름만 읽어주게 된다.
+  nodes.push(...siteGraphNodes() as GraphNode[])
+  edges.push(...siteGraphEdges())
+  const stepScreens = role === 'owner'
+    ? ['page:owner', 'page:owner', 'page:owner', 'page:owner', 'page:owner', 'page:owner', 'page:owner']
+    : ['page:discover', 'page:home', 'page:trust', 'page:home', 'page:discover', 'page:my', 'page:my']
+  steps.forEach((_, index) => {
+    const screen = stepScreens[index]
+    if (screen) edges.push({ from: stepId(index + 1), relation: 'HAPPENS_ON', to: screen })
+  })
+
   if (!restaurant) return { graphVersion: 'meoktu-role-graph-v2', role, generatedAt: new Date().toISOString(), nodes, edges }
 
   const businessId = `restaurant:${restaurant.id}`
@@ -292,8 +305,13 @@ export function answerGraphProcessQuestion(question: string, subgraph: ReturnTyp
   const steps = subgraph.nodes.filter((node) => node.type === 'GuideStep')
     .sort((a, b) => Number(a.properties.order) - Number(b.properties.order))
   if (!steps.length) return ''
-  const title = subgraph.role === 'owner' ? '사장님 모집·심사 절차에서 관련 단계를 찾았어요.' : '투자자 참여 절차에서 관련 단계를 찾았어요.'
-  return [title, ...steps.map((step) => `${step.properties.order}. ${step.label}: ${step.properties.instruction}`), '', '이 답변은 먹투 역할별 지식그래프에서 질문과 연결된 노드·관계를 검색해 만들었습니다.'].join('\n')
+  // 절차 단계는 '심사 기준'이지 화면 메뉴가 아니다. 화면 이름을 함께 밝혀 혼동을 막는다.
+  const screen = subgraph.nodes.find((node) => node.type === 'SitePage')
+  const title = subgraph.role === 'owner'
+    ? '사장님 펀딩 심사는 아래 단계로 진행돼요. (화면에 그대로 있는 메뉴 이름이 아니라 심사 절차의 이름이에요.)'
+    : '투자자 참여 절차는 아래 순서로 진행돼요. (화면 메뉴 이름이 아니라 확인 절차의 이름이에요.)'
+  const where = screen ? [``, `화면에서는 ${screen.properties.menuPath}에서 진행합니다.`] : []
+  return [title, ...steps.map((step) => `${step.properties.order}. ${step.label}: ${step.properties.instruction}`), ...where, '', '이 답변은 먹투 역할별 지식그래프에서 질문과 연결된 노드·관계를 검색해 만들었습니다.'].join('\n')
 }
 
 export function normalizeOcrBoxes(value: unknown) {

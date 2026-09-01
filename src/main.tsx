@@ -7,6 +7,7 @@ import './modal-fix.css'
 import './enhancements.css'
 import './exchange.css'
 import './commercial.css'
+import './polish.css'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

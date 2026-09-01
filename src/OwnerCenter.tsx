@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react'
-import { ArrowLeft, BadgeCheck, Banknote, Building2, Check, Database, Download, FileSpreadsheet, Landmark, Link2, LockKeyhole, PlugZap, ReceiptText, ShieldCheck, Store, UploadCloud, UserCheck, Users, type LucideIcon } from 'lucide-react'
+import { ArrowLeft, BadgeCheck, Banknote, Building2, Check, Database, Download, FileSpreadsheet, FolderDown, Landmark, Link2, LockKeyhole, PlugZap, ReceiptText, ShieldCheck, Store, UploadCloud, UserCheck, Users, type LucideIcon } from 'lucide-react'
 import { api } from './lib/api.ts'
 import OwnerDashboard from './OwnerDashboard.tsx'
 import CouponVerify from './CouponVerify.tsx'
@@ -22,16 +22,16 @@ type UploadOption = {
 
 const uploadOptions: UploadOption[] = [
   { id: 'business', icon: Building2, title: '사업자등록 자료', exact: '사업자등록증명 또는 사업자등록증 사본 1부', columns: '확인 항목: 상호, 대표자, 개업일, 사업장 주소, 업태·종목', accept: '.pdf,.jpg,.jpeg,.png', required: true, sampleUrl: '/samples/meoktu-business-sample.png', sampleLabel: 'OCR용 PNG 샘플' },
-  { id: 'license', icon: BadgeCheck, title: '영업신고 자료', exact: '일반·휴게음식점 영업신고증 사본 1부', columns: '확인 항목: 신고번호, 영업소 명칭·주소, 영업 종류, 대표자', accept: '.pdf,.jpg,.jpeg,.png', required: true },
+  { id: 'license', icon: BadgeCheck, title: '영업신고 자료', exact: '일반·휴게음식점 영업신고증 사본 1부', columns: '확인 항목: 신고번호, 영업소 명칭·주소, 영업 종류, 대표자', accept: '.pdf,.jpg,.jpeg,.png', required: true, sampleUrl: '/samples/meoktu-license-sample.png', sampleLabel: 'OCR용 PNG 샘플' },
   { id: 'pos', icon: FileSpreadsheet, title: 'POS 매출 원자료', exact: '최근 12개월 일별 주문·결제 내역 CSV 또는 XLSX', columns: '필수 열: 영업일, 결제시각, 주문금액, 결제수단, 메뉴·수량, 취소·환불액', accept: '.csv,.xlsx,.xls', required: true, sampleUrl: '/samples/meoktu-pos-sample.csv', sampleLabel: 'POS CSV 샘플' },
   { id: 'account', icon: Landmark, title: '사업용 계좌 거래내역', exact: '최근 12개월 입출금 거래내역 CSV·XLSX 또는 은행 발급 PDF', columns: '필수 항목: 거래일시, 입출금액, 잔액, 거래상대방·적요. 계좌번호는 뒤 4자리 외 마스킹 권장', accept: '.csv,.xlsx,.xls,.pdf', required: true, sampleUrl: '/samples/meoktu-account-sample.csv', sampleLabel: '계좌 CSV 샘플' },
   { id: 'card', icon: ReceiptText, title: '카드·VAN·PG 정산자료', exact: '최근 12개월 카드 승인내역과 입금 정산내역', columns: '필수 항목: 승인일, 승인금액, 취소금액, 수수료, 정산일, 실제 입금액', accept: '.csv,.xlsx,.xls,.pdf', sampleUrl: '/samples/meoktu-card-settlement-sample.csv', sampleLabel: '카드 CSV 샘플' },
-  { id: 'delivery', icon: Link2, title: '배달 플랫폼 자료', exact: '배민·쿠팡이츠·요기요 사장님 페이지의 최근 12개월 주문·정산 파일', columns: '권장 항목: 주문일, 주문금액, 수수료, 취소, 재주문, 평점. 이용하지 않으면 제출하지 않아도 됨', accept: '.csv,.xlsx,.xls,.pdf' },
-  { id: 'tax', icon: Database, title: '홈택스 신고자료', exact: '최근 2개 과세기간 부가가치세 과세표준증명 또는 부가세 신고서', columns: '확인 항목: 신고 매출, 카드·현금영수증 발행분, 과세기간. 재무제표가 있으면 함께 제출', accept: '.pdf,.jpg,.jpeg,.png' },
-  { id: 'customer', icon: Users, title: '재방문 산정자료', exact: '최근 12개월 POS 회원·예약·멤버십·배달 재주문 내역', columns: '고객 식별값은 해시·가명값만 허용. 이름, 전화번호, 주민번호 원문은 업로드 금지', accept: '.csv,.xlsx,.xls' },
-  { id: 'lease', icon: Store, title: '임대차계약서', exact: '현재 유효한 사업장 임대차계약서의 임대 조건 페이지', columns: '확인 항목: 보증금, 월세, 관리비, 계약기간·만료일. 주민번호 뒷자리는 반드시 마스킹', accept: '.pdf,.jpg,.jpeg,.png' },
-  { id: 'debt', icon: Banknote, title: '대출·상환 증빙', exact: '금융기관별 대출잔액증명서와 월별 원리금 상환 예정표', columns: '확인 항목: 잔액, 금리, 만기, 월 원리금. 계좌 거래내역의 실제 상환액과 교차검증', accept: '.pdf,.jpg,.jpeg,.png' },
-  { id: 'staff', icon: Users, title: '직원·급여 증빙', exact: '최근 12개월 월별 직원 수와 급여 총액 또는 4대보험 사업장 가입자 수 자료', columns: '개별 직원 이름·주민번호는 제거하고 월별 인원·급여 합계만 제출', accept: '.csv,.xlsx,.xls,.pdf' },
+  { id: 'delivery', icon: Link2, title: '배달 플랫폼 자료', exact: '배민·쿠팡이츠·요기요 사장님 페이지의 최근 12개월 주문·정산 파일', columns: '권장 항목: 주문일, 주문금액, 수수료, 취소, 재주문, 평점. 이용하지 않으면 제출하지 않아도 됨', accept: '.csv,.xlsx,.xls,.pdf', sampleUrl: '/samples/meoktu-delivery-sample.csv', sampleLabel: '배달 CSV 샘플' },
+  { id: 'tax', icon: Database, title: '홈택스 신고자료', exact: '최근 2개 과세기간 부가가치세 과세표준증명 또는 부가세 신고서', columns: '확인 항목: 신고 매출, 카드·현금영수증 발행분, 과세기간. 재무제표가 있으면 함께 제출', accept: '.pdf,.jpg,.jpeg,.png', sampleUrl: '/samples/meoktu-tax-sample.png', sampleLabel: 'OCR용 PNG 샘플' },
+  { id: 'customer', icon: Users, title: '재방문 산정자료', exact: '최근 12개월 POS 회원·예약·멤버십·배달 재주문 내역', columns: '고객 식별값은 해시·가명값만 허용. 이름, 전화번호, 주민번호 원문은 업로드 금지', accept: '.csv,.xlsx,.xls', sampleUrl: '/samples/meoktu-customer-sample.csv', sampleLabel: '재방문 CSV 샘플' },
+  { id: 'lease', icon: Store, title: '임대차계약서', exact: '현재 유효한 사업장 임대차계약서의 임대 조건 페이지', columns: '확인 항목: 보증금, 월세, 관리비, 계약기간·만료일. 주민번호 뒷자리는 반드시 마스킹', accept: '.pdf,.jpg,.jpeg,.png', sampleUrl: '/samples/meoktu-lease-sample.png', sampleLabel: 'OCR용 PNG 샘플' },
+  { id: 'debt', icon: Banknote, title: '대출·상환 증빙', exact: '금융기관별 대출잔액증명서와 월별 원리금 상환 예정표', columns: '확인 항목: 잔액, 금리, 만기, 월 원리금. 계좌 거래내역의 실제 상환액과 교차검증', accept: '.csv,.xlsx,.xls,.pdf,.jpg,.jpeg,.png', sampleUrl: '/samples/meoktu-debt-sample.csv', sampleLabel: '대출 CSV 샘플' },
+  { id: 'staff', icon: Users, title: '직원·급여 증빙', exact: '최근 12개월 월별 직원 수와 급여 총액 또는 4대보험 사업장 가입자 수 자료', columns: '개별 직원 이름·주민번호는 제거하고 월별 인원·급여 합계만 제출', accept: '.csv,.xlsx,.xls,.pdf', sampleUrl: '/samples/meoktu-staff-sample.csv', sampleLabel: '직원 CSV 샘플' },
 ]
 
 const partnerOptions = [
@@ -222,7 +222,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
 
             <div className="evidence-lane partner-lane"><div className="evidence-lane-heading"><PlugZap /><div><b>A. 제휴기관·마이데이터형 연결</b><p>실제 계정에서 동의 범위·제공기관·동기화 시각이 서버 원장에 저장됩니다. 현재 버튼은 기관 API 대신 시연 어댑터를 사용합니다.</p></div></div><div className="partner-connection-grid">{partnerOptions.map((option) => { const Icon = option.icon; const connection = activeConnections.find((item: any) => item.sourceId === option.id); return <article className={connection ? 'connected' : ''} key={option.id}><Icon /><div><b>{option.title}</b><span>{option.provider}</span><small>{option.scope}</small>{connection && <em><Check /> {connection.recordCount.toLocaleString()}건 · {new Date(connection.lastSyncedAt).toLocaleDateString('ko-KR')}</em>}</div><button type="button" disabled={Boolean(connection) || demoMode} onClick={() => connectPartner(option.id)}>{connection ? '연결됨' : demoMode ? '로그인 필요' : '동의하고 연결'}</button></article> })}</div></div>
 
-            <div className="evidence-lane upload-lane"><div className="evidence-lane-heading"><UploadCloud /><div><b>B. 소상공인 직접 업로드</b><p>사업자·영업신고·임대차처럼 직접 보유한 문서 또는 기관 연결이 어려울 때의 대체 파일입니다. CSV는 브라우저에서 열·행 수를 확인합니다.</p></div></div><div className="document-upload-grid">{uploadOptions.map((option) => <DocumentUploadCard key={option.id} option={option} fileName={uploadedFiles[option.id]} metadata={documentMetadata[option.id]} required={Boolean(option.required && !connectedIds.has(option.id))} onChange={(event) => selectFile(option.id, event)} />)}</div></div>
+            <div className="evidence-lane upload-lane"><div className="evidence-lane-heading"><UploadCloud /><div><b>B. 소상공인 직접 업로드</b><p>사업자·영업신고·임대차처럼 직접 보유한 문서 또는 기관 연결이 어려울 때의 대체 파일입니다. CSV는 브라우저에서 열·행 수를 확인합니다.</p></div></div><SamplePack /><div className="document-upload-grid">{uploadOptions.map((option) => <DocumentUploadCard key={option.id} option={option} fileName={uploadedFiles[option.id]} metadata={documentMetadata[option.id]} required={Boolean(option.required && !connectedIds.has(option.id))} onChange={(event) => selectFile(option.id, event)} />)}</div></div>
             {Object.entries(selectedFiles).some(([, file]) => /^image\/(png|jpeg|webp)$/.test(file.type)) && <div className="ocr-workbench"><div><Database /><div><b>AI OCR 원본 교차검증</b><p>이미지 문서의 사업자번호·날짜·금액을 구조화합니다. 판독 결과는 승인 결정이 아니며, 원본 이미지는 DB에 저장하지 않습니다.</p></div></div>{Object.entries(selectedFiles).filter(([, file]) => /^image\/(png|jpeg|webp)$/.test(file.type)).map(([sourceId, file]) => { const analysis = ocrResults[sourceId]; const result = analysis?.result; return <article key={sourceId}><div><b>{file.name}</b><span>{uploadOptions.find((option) => option.id === sourceId)?.title}</span></div>{analysis ? <div className="ocr-result"><strong>{analysis.status === 'ai_extracted' ? 'AI 구조화 완료' : '수동 검토 대기'}</strong><span>{result.documentType || '문서 종류 미확인'} · 신뢰도 {Math.round((result.confidence || 0) * 100)}%</span>{result.businessNumber && <small>사업자번호 {result.businessNumber}</small>}{result.total ? <small>판독 금액 {won(result.total)}</small> : null}{result.warnings?.map((warning) => <small className="warning" key={warning}>{warning}</small>)}</div> : <button type="button" disabled={Boolean(analyzingSource)} onClick={() => analyzeDocument(sourceId)}>{analyzingSource === sourceId ? 'AI가 문서를 읽는 중...' : 'AI 문서 판독'}</button>}</article> })}</div>}
             <p className="mvp-source-note">MVP는 직접 업로드 파일의 이름·크기·형식과 CSV 열·행 수를 검증해 심사 출처로 기록합니다. 이미지에서 ‘AI 문서 판독’을 누른 경우에만 서버 AI로 전송하며 원본 이미지는 저장하지 않습니다. 실제 기관 연결은 현재 모의 어댑터이고, 운영 전 기관 OAuth·전자서명·암호화 보관으로 교체해야 합니다.</p>
           </section>
@@ -246,6 +246,28 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
         </fieldset>
       </form>}
     </div>
+  </div>
+}
+
+/**
+ * 자료가 없어도 업로드 흐름을 그대로 체험할 수 있게 만든 샘플 묶음.
+ * 12개월치 가상 원자료가 서로 맞물려 있어서 교차검증 결과까지 확인할 수 있다.
+ */
+function SamplePack() {
+  return <div className="sample-pack">
+    <div className="sample-pack-head">
+      <span><FolderDown /></span>
+      <div>
+        <b>준비된 자료가 없어도 괜찮아요 · 샘플 자료 한 번에 받기</b>
+        <p>가상 식당 <em>샘플식당</em>의 12개월 원자료 12종입니다. 내려받아 그대로 올려보면 형식 검사·열·행 확인과 AI 문서 판독까지 전부 체험할 수 있어요.</p>
+      </div>
+      <a className="button small" href="/samples/meoktu-sample-pack.zip" download><Download /> 전체 묶음 받기 (ZIP)</a>
+    </div>
+    <ul className="sample-pack-hint">
+      <li><Check /> 1단계에는 <b>샘플식당 · 김소담 · 123-45-67891 · 서울특별시 마포구 망원동 12-3</b>을 그대로 입력하면 문서 판독값과 일치해요.</li>
+      <li><Check /> 각 자료 카드의 <b>샘플 다운로드</b> 버튼으로 필요한 파일만 따로 받을 수도 있어요.</li>
+      <li><Check /> PNG 문서에는 ‘실제 제출 불가’ 표시가 들어간 가상 문서만 담았습니다.</li>
+    </ul>
   </div>
 }
 

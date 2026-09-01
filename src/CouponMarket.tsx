@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { ArrowRight, ArrowLeftRight, Check, Clock3, Filter, Handshake, Inbox, RotateCcw, Search, Send, Ticket, TriangleAlert, X } from 'lucide-react'
+import { NavLink } from 'react-router-dom'
+import { ArrowRight, ArrowLeftRight, Check, Clock3, Filter, Handshake, Inbox, RotateCcw, Search, Send, Ticket, TriangleAlert, WalletCards, X } from 'lucide-react'
 import { api } from './lib/api.ts'
 import type { Coupon, ExchangeRules, Listing, MarketMine, MeState, PublicState } from './types.ts'
 
@@ -245,6 +246,13 @@ export default function CouponMarket({ state, me, requireLogin, refresh, notify 
         </article>
       })}
         {!listings.length && <div className="market-empty"><span>🎟️</span><b>조건에 맞는 매물이 없어요</b><p>필터를 넓혀보거나, 내 쿠폰을 먼저 교환장에 올려보세요.</p></div>}
+        {/* 매물이 적어도 화면이 비어 보이지 않게, 다음 행동을 바로 안내한다. */}
+        {listings.length > 0 && <article className="listing-cta">
+          <span>🎫</span>
+          <b>내 쿠폰도 교환장에 올려보세요</b>
+          <p>MY 먹투 쿠폰 지갑에서 원하는 업종·지역을 걸어 올리면<br />조건이 맞는 사람만 교환을 제안할 수 있어요.</p>
+          <NavLink to="/my"><WalletCards size={16} /> 쿠폰 지갑 열기</NavLink>
+        </article>}
       </div>
     </> : <div className="my-exchange">
       <section>
