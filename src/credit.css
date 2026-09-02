@@ -107,3 +107,12 @@
 .credit-model-detail h4{margin:0 0 8px;font-size:13px}
 .credit-row.three{grid-template-columns:minmax(0,1.6fr) minmax(0,1fr) 66px}
 .credit-model-footnote{margin:6px 0 0;font-size:12px;color:var(--muted);line-height:1.6}
+
+/* 잠정 등급: 자료가 절반에 못 미쳐 확정이라고 말할 수 없는 상태.
+   등급 숫자만 크게 보이면 확정 판정처럼 읽혀서, 배지와 점선으로 구분한다. */
+.credit-grade.provisional{position:relative;border-style:dashed}
+.credit-grade.provisional em{
+  position:absolute;top:-9px;left:50%;transform:translateX(-50%);
+  padding:2px 8px;border-radius:999px;font-style:normal;font-size:10px;font-weight:800;
+  white-space:nowrap;background:#6b6259;color:#fff
+}

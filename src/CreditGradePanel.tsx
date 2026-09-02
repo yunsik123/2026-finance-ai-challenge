@@ -29,7 +29,10 @@ export default function CreditGradePanel({ credit, combined }: { credit: CreditA
         <h2>{credit.industry} 업종 기준 신용등급</h2>
         <p>35개 지표 중 {credit.measuredCount}개를 산정했어요. {credit.industryNote}</p>
       </div>
-      <div className={`credit-grade ${gradeTone[credit.grade] || 'fair'}`}>
+      {/* 산정률이 절반에 못 미치면 확정 등급이라고 말할 수 없다.
+          등급만 크게 보이면 자료를 덜 낸 결과가 확정 판정처럼 읽힌다. */}
+      <div className={`credit-grade ${gradeTone[credit.grade] || 'fair'} ${credit.provisional ? 'provisional' : ''}`}>
+        {credit.provisional && <em>잠정</em>}
         <b>{credit.grade}</b>
         <span>{credit.score}점</span>
       </div>
@@ -40,7 +43,9 @@ export default function CreditGradePanel({ credit, combined }: { credit: CreditA
         <span><Gauge /> 지표 산정률</span>
         <b>{credit.coverage}%</b>
         <div className="progress-track"><i style={{ width: `${credit.coverage}%` }} /></div>
-        <small>산정하지 못한 지표는 감점하지 않고 가중치에서 뺐어요.</small>
+        <small>{credit.provisional
+          ? '산정하지 못한 지표는 감점하지 않지만, 절반에 못 미쳐 잠정 등급이에요. 자료를 채우면 다시 산정해요.'
+          : '산정하지 못한 지표는 감점하지 않고 가중치에서 뺐어요.'}</small>
       </div>
       {combined && <div>
         <span><Layers /> 종합 점수</span>

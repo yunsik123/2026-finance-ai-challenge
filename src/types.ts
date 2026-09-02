@@ -189,7 +189,11 @@ export interface CreditAssessment {
   industry: string
   industryNote: string
   score: number
+  /** 축소추정·산정률 상한을 적용하기 전의 원점수. */
+  rawScore?: number
   grade: 'A+' | 'A' | 'B+' | 'B' | 'C' | 'D'
+  /** 산정률이 절반에 못 미쳐 확정 등급이라고 부를 수 없는 경우. */
+  provisional?: boolean
   /** 측정된 지표의 가중치 합. 100이면 35개 전부 산정됨. */
   coverage: number
   measuredCount: number

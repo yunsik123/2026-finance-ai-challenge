@@ -182,23 +182,58 @@ export function assessCredit(input: CreditInput) {
   const rawScore = measuredWeight
     ? measured.reduce((sum, feature) => sum + feature.score! * feature.weight, 0) / measuredWeight
     : 50
-  let score = Number(rawScore.toFixed(1))
+
+  /**
+   * 자료가 적을수록 점수를 중앙(50)으로 당긴다.
+   *
+   * 미산정 지표를 가중치에서 빼고 재정규화하면 점수는 나오지만, 그 점수가
+   * 얼마나 믿을 만한지는 전혀 반영되지 않는다. 35개 중 10개만 본 63점과
+   * 30개를 본 63점이 같은 등급으로 나가는 게 예전 동작이었다.
+   *
+   * 표본이 적을수록 추정치를 모집단 평균 쪽으로 당기는 표준적인 축소추정이다.
+   * 한쪽으로만 깎는 게 아니라 양방향이라, 자료가 적다고 감점되지도 않고
+   * 반대로 좋은 지표 몇 개만 내고 상위 등급을 받아 가지도 못한다.
+   * 산정률 100%면 계수가 1이라 원점수가 그대로 나간다.
+   */
+  const SHRINK_K = 40
+  const shrink = Number((((coverage / (coverage + SHRINK_K)) / (100 / (100 + SHRINK_K)))).toFixed(3))
+  let score = Number((50 + (rawScore - 50) * shrink).toFixed(1))
 
   // 정책 오버라이드. 승재 시뮬레이터와 같은 규칙: 90일 이상 연체는 점수와 무관하게 D.
+  // 이건 '자료가 없다'가 아니라 '나쁜 자료가 있다'이므로 축소추정을 거치지 않는다.
   const overrides: string[] = []
   const maxDelinquency = input.max_delinquency_days as number | null | undefined
   if (typeof maxDelinquency === 'number' && maxDelinquency >= 90) {
     overrides.push('최대 연체일수가 90일 이상이라 점수와 관계없이 최하 등급으로 고정했습니다.')
   }
-  // 자료가 절반도 안 모이면 상위 등급을 주지 않는다. 논문 검토에서 정한 보수적 처리다.
-  if (coverage < 50 && score > 70) {
-    score = 70
-    overrides.push('측정된 지표의 가중치가 절반에 못 미쳐 상위 등급 판정을 보류하고 70점으로 제한했습니다.')
+  if (shrink < 1 && Math.abs(score - rawScore) >= 0.5) {
+    overrides.push(`산정률 ${coverage}%에 맞춰 원점수 ${rawScore.toFixed(1)}점을 ${score}점으로 조정했습니다. 측정하지 못한 지표가 많을수록 판정을 평균에 가깝게 둡니다.`)
+  }
+
+  /**
+   * 산정률 상한. 점수가 아무리 높아도 자료가 없으면 그 등급을 줄 수 없다.
+   *
+   * 상한은 위쪽으로만 건다. 자료가 없다는 것과 실적이 나쁘다는 것은 다른 문제라
+   * C 아래로는 내리지 않는다. 자료 부족을 최하 등급으로 표시하면
+   * 미산정을 감점하지 않는다는 원칙과 정면으로 어긋난다.
+   */
+  const gradeLadder = ['D', 'C', 'B', 'B+', 'A', 'A+'] as const
+  const coverageCap = coverage >= 75 ? 'A+' : coverage >= 60 ? 'A' : coverage >= 45 ? 'B+' : coverage >= 30 ? 'B' : 'C'
+
+  const scored = score >= 85 ? 'A+' : score >= 75 ? 'A' : score >= 65 ? 'B+' : score >= 55 ? 'B' : score >= 45 ? 'C' : 'D'
+  const capped = gradeLadder.indexOf(scored as typeof gradeLadder[number]) > gradeLadder.indexOf(coverageCap)
+  if (capped) {
+    overrides.push(`측정된 지표의 가중치가 ${coverage}%라 ${scored} 판정을 보류하고 ${coverageCap}까지만 부여했습니다. 부족한 자료를 채우면 다시 산정합니다.`)
   }
 
   const forcedD = overrides.some((item) => item.includes('최하 등급'))
-  const grade = forcedD ? 'D'
-    : score >= 85 ? 'A+' : score >= 75 ? 'A' : score >= 65 ? 'B+' : score >= 55 ? 'B' : score >= 45 ? 'C' : 'D'
+  const grade = forcedD ? 'D' : capped ? coverageCap : scored
+
+  /**
+   * 잠정 등급 여부. 산정률이 절반에 못 미치면 확정 등급이라고 말할 수 없다.
+   * combineAssessments 가 같은 기준으로 수동 심사를 요청하므로 두 값이 늘 함께 움직인다.
+   */
+  const provisional = coverage < 50
 
   // 그룹별 요약. 사장님 화면에서 5개 막대로 보여준다.
   const groups = (['신용·부채', '매출·거래', '현금흐름', '운영·상권', '고객·평판'] as FeatureGroup[]).map((group) => {
@@ -227,7 +262,11 @@ export function assessCredit(input: CreditInput) {
     industry,
     industryNote: profile.note,
     score,
+    /** 축소추정·상한을 적용하기 전의 원점수. 왜 등급이 조정됐는지 설명할 때 쓴다. */
+    rawScore: Number(rawScore.toFixed(1)),
     grade,
+    /** 산정률이 절반에 못 미쳐 확정 등급이라고 부를 수 없는 경우. */
+    provisional,
     coverage,
     /** 측정된 지표 개수 / 전체 35개. */
     measuredCount: measured.length,
@@ -245,7 +284,9 @@ export function assessCredit(input: CreditInput) {
       weightSum: 100,
       gradeBands: 'A+ 85 / A 75 / B+ 65 / B 55 / C 45 / D',
       calibratedProbability: false,
-      missingHandling: '미산정 지표는 감점하지 않고 가중치에서 제외한 뒤 나머지로 재정규화',
+      missingHandling: '미산정 지표는 감점하지 않고 가중치에서 제외한 뒤 나머지로 재정규화. 산정률이 낮을수록 점수를 평균(50)으로 축소하고, 산정률 상한까지만 등급을 부여',
+      coverageCap: `${coverageCap} (산정률 ${coverage}%)`,
+      shrinkFactor: shrink,
       disclaimer: '이 등급은 참고용 예비평가입니다. 금융기관의 공식 신용등급(SCB)이 아니며 부도확률을 계산하지 않습니다.',
     },
     references: creditReferences,

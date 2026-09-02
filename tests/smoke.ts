@@ -79,6 +79,21 @@ for (const [key, value] of Object.entries(metrics)) {
 }
 // 주소만으로도 상권 지표가 채워져야 한다(등록 전 신청자 포함).
 if (metrics.districtSalesGrowth === null) throw new Error('주소 기반 상권 매칭이 되지 않았습니다')
+
+// 산정률 정책: 자료가 적으면 좋은 지표 몇 개만으로 상위 등급을 받아갈 수 없어야 한다.
+const credit = review.application.data.creditAssessment
+if (credit.coverage >= 50 && credit.provisional) throw new Error('산정률이 충분한데 잠정 등급으로 표시됐습니다')
+if (typeof credit.rawScore !== 'number') throw new Error('원점수가 기록되지 않았습니다')
+// 축소추정은 점수를 평균(50) 쪽으로만 움직인다. 반대로 벌어지면 계수 부호가 잘못된 것이다.
+if (Math.abs(credit.score - 50) > Math.abs(credit.rawScore - 50) + 0.05) {
+  throw new Error(`축소추정이 점수를 평균에서 멀어지게 했습니다: ${credit.rawScore} → ${credit.score}`)
+}
+const ladder = ['D', 'C', 'B', 'B+', 'A', 'A+']
+const cap = String(credit.methodology.coverageCap || '').split(' ')[0]
+if (ladder.indexOf(credit.grade) > ladder.indexOf(cap)) {
+  throw new Error(`산정률 상한(${cap})을 넘는 등급이 나왔습니다: ${credit.grade}`)
+}
+checks.push(`credit policy (${credit.grade}, 원점수 ${credit.rawScore} → ${credit.score}, 상한 ${cap})`)
 checks.push(`source-data review (${review.application.status}, ${review.application.score}점, POS ${posEvidence.rows}행, 산정률 ${review.application.data.creditAssessment.coverage}%)`)
 
 // 같은 신청서인데 본문만 빼면 자동승인이 나오면 안 된다. 지어낸 값으로 채우지 않는다는 뜻이다.
