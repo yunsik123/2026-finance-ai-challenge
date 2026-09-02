@@ -18,7 +18,7 @@ const source = readFileSync(new URL('../server/index.ts', import.meta.url), 'utf
  *
  * 문자열까지 지우려다 한 번 크게 틀렸다. 작은따옴표 정규식이 줄바꿈을 넘어
  * 매칭되면서 코드 전체를 공백으로 만들어 버렸고, 검사는 아무것도 못 찾은 채
- * 통과했다. 위반을 일부러 심어 실패하는지 확인해서(음성 대조) 알아냈다.
+ * 통과했다. 위반을 일부러 심어 넣고 검사가 실제로 실패하는지 확인해서 알아냈다.
  * 문자열 안에 'saveDatabase(' 가 들어 있을 일은 없으므로 그냥 두는 편이 안전하다.
  */
 function stripComments(text: string) {
