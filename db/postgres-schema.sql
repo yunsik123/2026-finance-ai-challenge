@@ -1,3 +1,11 @@
+-- ⚠️ 이 파일은 대체되었습니다. 적용하지 마세요.
+--
+-- 운영 스키마는 db/schema.sql · db/policies.sql · db/functions.sql · db/import.sql 이고
+-- `npm run db:apply` 로 meoktu 스키마에 적용합니다.
+--
+-- 이 초안을 그대로 실행하면 public 에 profiles·coupons·favorites 같은 이름의 테이블을
+-- 새 스키마와 다른 구조로 만들어 버립니다. 설계 이력으로만 남겨 둡니다.
+
 -- 먹투 운영 DB 전환 초안 (PostgreSQL/Supabase)
 -- 현재 로컬 MVP는 data/db.json을 사용한다. 이 파일은 운영 전환 시 적용할 원장 구조이며
 -- service_role 키는 반드시 서버에서만 사용한다.
