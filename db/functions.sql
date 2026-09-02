@@ -792,3 +792,49 @@ begin
     execute format('revoke all on function meoktu.%s from anon, authenticated', f);
   end loop;
 end $$;
+
+
+/**
+ * 회수 정산 쿠폰 발급.
+ *
+ * 적립률 계산(accrue)은 서버 로직이라 그대로 두고, DB 에 남기는 부분만 여기서 한다.
+ * 예전에는 withdraw_investment RPC 뒤에 saveDatabase() 로 메모리 원장 전체를 다시 써서
+ * 쿠폰을 저장했다. 그런데 saveDatabase 는 버전 충돌이 나면 최신 버전을 다시 읽어
+ * 같은 스냅샷을 덮어쓰는 재시도 경로가 있어서, 그 사이 다른 인스턴스가 쓴 내용을
+ * 지워버릴 수 있었다. 쿠폰 한 장 때문에 원장 전체를 위험에 빠뜨리지 않도록
+ * 필요한 세 줄만 한 트랜잭션에서 바꾼다.
+ */
+create or replace function meoktu.issue_coupon(
+  p_user text, p_fund text, p_restaurant text, p_coupon_id text,
+  p_title text, p_discount numeric, p_max_discount_won bigint, p_expires_at timestamptz
+) returns jsonb language plpgsql security definer set search_path = meoktu, public as $$
+declare v_position meoktu.positions%rowtype;
+begin
+  select * into v_position from meoktu.positions
+   where user_id = p_user and fund_id = p_fund for update;
+  if not found then raise exception '투자 내역을 찾을 수 없어요.' using errcode = 'no_data_found'; end if;
+
+  insert into meoktu.coupons(id, user_id, restaurant_id, fund_id, title, discount,
+                             max_discount_won, type, status, expires_at)
+  values (p_coupon_id, p_user, p_restaurant, p_fund, p_title, p_discount,
+          greatest(p_max_discount_won, 0), 'fund', 'available', p_expires_at)
+  on conflict (id) do nothing;
+
+  -- 적립 진행률은 발급과 동시에 0 이 되어야 한다. 따로 저장하면 중복 발급이 가능해진다.
+  update meoktu.positions set coupon_progress = 0, updated_at = now() where id = v_position.id;
+
+  -- 펀드의 쿠폰 발행·사용 총액은 쿠폰 표에서 다시 센다(합계를 따로 더하면 어긋난다).
+  update meoktu.funds set
+    total_coupon_issued = coalesce((select sum(max_discount_won) from meoktu.coupons
+      where fund_id = p_fund), 0),
+    total_coupon_used = coalesce((select sum(max_discount_won) from meoktu.coupons
+      where fund_id = p_fund and status = 'used'), 0)
+   where id = p_fund;
+
+  perform meoktu.log_audit(p_user, 'coupon.issued', 'coupon', p_coupon_id,
+    format('%s%% 정산 쿠폰 발급', p_discount));
+  perform meoktu.bump_version();
+  return jsonb_build_object('couponId', p_coupon_id);
+end $$;
+revoke all on function meoktu.issue_coupon(text,text,text,text,text,numeric,bigint,timestamptz)
+  from anon, authenticated;

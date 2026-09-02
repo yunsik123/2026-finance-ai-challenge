@@ -1549,9 +1549,18 @@ app.post('/api/funds/:fundId/withdraw', auth('investor'), async (req: AuthedRequ
     try {
       const result = await runLedgerRpc<{ matched: number; queued: number; matches: unknown[] }>(
         'withdraw_investment', { p_user: user.id, p_fund: fund.id, p_amount: amount })
+      // 적립률 계산은 서버 로직이라 여기서 하고, DB 에 남기는 것은 전용 RPC 로 보낸다.
+      // saveDatabase() 로 원장 전체를 다시 쓰면 버전 충돌 재시도 경로가
+      // 그 사이 다른 인스턴스가 쓴 내용을 낡은 스냅샷으로 덮어쓸 수 있다.
       const settled = db.positions.find((p) => p.userId === user.id && p.fundId === fund.id)
       const coupon = result.matched > 0 && settled ? issueCoupon(settled) : undefined
-      if (coupon) await saveDatabase()
+      if (coupon) {
+        await runLedgerRpc('issue_coupon', {
+          p_user: coupon.userId, p_fund: fund.id, p_restaurant: coupon.restaurantId,
+          p_coupon_id: coupon.id, p_title: coupon.title, p_discount: coupon.discount,
+          p_max_discount_won: coupon.maxDiscountWon, p_expires_at: coupon.expiresAt,
+        })
+      }
       changed()
       const message = result.queued === 0 ? (fund.status === 'funding' ? `${result.matched.toLocaleString()}원을 바로 회수했어요.` : '신청한 금액을 모두 회수했어요.')
         : result.matched > 0 ? `${result.matched.toLocaleString()}원이 회수되고 나머지는 대기 중이에요.`
