@@ -12,6 +12,7 @@ import { articles as seedArticles, createSeed, funds as seedFunds, restaurants a
 import type { Application, Coupon, CouponListing, CouponOffer, CouponTrade, DataConnection, Database, Fund, FundStatus, Notification, Order, Position, Review, Role, SupportRequest, User } from './types.ts'
 import { answerGraphProcessQuestion, assessRestaurant, buildKnowledgeGraph, normalizeOcrBoxes, retrieveKnowledgeSubgraph } from './trust.ts'
 import { answerNavigationQuestion, isNavigationQuestion, matchUiTasks, navigationBrief, pageForRoute } from './sitemap.ts'
+import { deriveMetricsFromUploads, type RawUpload } from './metrics.ts'
 import {
   assessCredit, combineAssessments, creditModelVersion, creditReferences, deriveCreditInput,
   featureSpecs, industries, industryProfiles, toIndustry, type CreditAssessment,
@@ -24,7 +25,7 @@ import {
 import { COMMERCIAL_NOTE, COMMERCIAL_SOURCE, commercialInsight, findCommercialArea } from './commercial.ts'
 import { orchestrateFinancialVerification, verifyBusiness } from './verification.ts'
 import { checkSwap, couponUsable, daysLeft, EXCHANGE_RULES, normalizePreferences, sweepExpired } from './exchange.ts'
-import { FileStateStore, SupabaseStateStore, type StateStore } from './store.ts'
+import { FileStateStore, SupabaseStateStore, TableStateStore, type StateStore } from './store.ts'
 
 const scrypt = promisify(crypto.scrypt)
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -66,17 +67,24 @@ function accountSession(user: User) {
 // 저장소 선택: Supabase 서비스 키가 있고 STATE_STORE 를 끄지 않았다면 공유 원장을 쓴다.
 // 서버리스에서는 인스턴스마다 파일이 따로 생기므로 공유 원장이 없으면 여러 사람이 같이 쓸 수 없다.
 const stateStoreMode = String(process.env.STATE_STORE || '').trim().toLowerCase()
-if (stateStoreMode === 'supabase' && (!supabaseUrl || !supabaseServiceKey)) {
+// STATE_STORE=tables 는 meoktu 스키마의 정규화 테이블 24개에 저장한다(운영 목표 구조).
+// STATE_STORE=supabase 는 app_state.data JSONB 한 칸에 저장한다(이전 구조, 호환용).
+if ((stateStoreMode === 'supabase' || stateStoreMode === 'tables') && (!supabaseUrl || !supabaseServiceKey)) {
   const missing = [
     !supabaseUrl && 'SUPABASE_URL (or VITE_SUPABASE_URL)',
     !supabaseServiceKey && 'SUPABASE_SERVICE_ROLE_KEY',
   ].filter(Boolean).join(', ')
-  throw new Error(`STATE_STORE=supabase requires ${missing}`)
+  throw new Error(`STATE_STORE=${stateStoreMode} requires ${missing}`)
 }
-const useSharedState = stateStoreMode === 'supabase'
+const useSharedState = stateStoreMode === 'supabase' || stateStoreMode === 'tables'
   || (stateStoreMode !== 'file' && Boolean(supabaseUrl && supabaseServiceKey) && Boolean(process.env.VERCEL))
+// 정규화 테이블은 반드시 STATE_STORE=tables 로 명시해야 켜진다.
+// 미지정이면 예전대로 app_state 를 쓴다. 이미 떠 있는 배포가 meoktu 스키마를
+// 적용하기 전에 자동으로 갈아타면 기동 자체가 실패하기 때문이다(npm run db:migrate 선행 필요).
 const store: StateStore = useSharedState && supabaseUrl && supabaseServiceKey
-  ? new SupabaseStateStore(supabaseUrl, supabaseServiceKey, process.env.STATE_ROW_ID || 'meoktu')
+  ? (stateStoreMode === 'tables'
+      ? new TableStateStore(supabaseUrl, supabaseServiceKey)
+      : new SupabaseStateStore(supabaseUrl, supabaseServiceKey, process.env.STATE_ROW_ID || 'meoktu'))
   : new FileStateStore(dbPath)
 let stateVersion = 0
 let lockOwner: string | undefined
@@ -291,7 +299,7 @@ async function loadDatabase() {
     const investorHash = await hashPassword('demo1234!')
     db = createSeed(ownerHash, investorHash)
     normalizeDatabase()
-    if (store instanceof SupabaseStateStore) {
+    if (store instanceof SupabaseStateStore || store instanceof TableStateStore) {
       // 첫 기동에서만 심는다. 다른 인스턴스가 이미 심었으면 그쪽 값을 그대로 쓴다.
       const seeded = await store.seed(db)
       if (seeded) { db = seeded.data; stateVersion = seeded.version }
@@ -300,7 +308,7 @@ async function loadDatabase() {
     }
   }
   normalizeDatabase()
-  console.log(`원장 저장소: ${store.kind}${store.kind === 'supabase' ? ` (version ${stateVersion})` : ''}`)
+  console.log(`원장 저장소: ${store.kind}${store.kind === 'file' ? '' : ` (version ${stateVersion})`}`)
 }
 
 async function saveDatabase() {
@@ -320,9 +328,39 @@ async function saveDatabase() {
   stateVersion = retried
 }
 
+/**
+ * 거래를 Postgres 트랜잭션으로 실행한다.
+ *
+ * 정규화 테이블 모드에서만 쓴다. RPC 가 테이블을 직접 바꾸므로
+ * 호출 뒤에는 메모리 원장이 낡은 상태다. 반드시 다시 읽어야 하고,
+ * 이 경로에서는 saveDatabase() 를 부르면 안 된다.
+ * 낡은 메모리를 통째로 다시 써서 RPC 가 바꾼 내용을 지워버리기 때문이다.
+ */
+const ledgerRpcEnabled = store.kind === 'tables'
+
+async function runLedgerRpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
+  const result = await (store as TableStateStore).callRpc<T>(fn, args)
+  // 버전 비교를 건너뛰고 무조건 다시 읽는다. RPC 직후에는 반드시 달라져 있다.
+  const snapshot = await store.read()
+  if (snapshot) {
+    db = snapshot.data
+    stateVersion = snapshot.version
+    normalizeDatabase()
+  }
+  return result
+}
+
+/** RPC 가 raise exception 으로 돌려준 사장님용 문구만 꺼낸다. */
+function rpcMessage(error: unknown) {
+  const raw = (error as Error).message || ''
+  const match = raw.match(/"message":"([^"]+)"/) || raw.match(/ERROR:\s*[0-9A-Z]*:?\s*(.+)/)
+  const text = (match?.[1] || raw).replace(/\\n[\s\S]*$/, '').trim()
+  return text || '요청을 처리하지 못했어요. 잠시 후 다시 시도해주세요.'
+}
+
 /** 공유 원장에서 최신 상태를 따라잡는다. 버전만 먼저 확인해 불필요한 전체 조회를 줄인다. */
 async function refreshState(force = false) {
-  if (store.kind !== 'supabase') return
+  if (store.kind === 'file') return
   if (!force && Date.now() - lastVersionCheck < 1500) return
   lastVersionCheck = Date.now()
   const remote = await store.version()
@@ -721,7 +759,7 @@ app.use(express.json({ limit: '8mb' }))
  *   덕분에 인스턴스가 몇 개로 늘어나도 쿠폰·투자 원장이 갈라지지 않는다.
  */
 app.use('/api', async (req, res, next) => {
-  if (store.kind !== 'supabase') return next()
+  if (store.kind === 'file') return next()
   try {
     if (req.method === 'GET') {
       await refreshState()
@@ -1127,7 +1165,7 @@ app.get('/api/health', (_req, res) => res.json({
   time: now(),
   authProvider: supabaseAuthConfigured ? 'supabase-with-local-demo-fallback' : 'local-demo',
   stateStore: store.kind,
-  stateVersion: store.kind === 'supabase' ? stateVersion : undefined,
+  stateVersion: store.kind === 'file' ? undefined : stateVersion,
 }))
 app.get('/api/public', async (req: AuthedRequest, res) => {
   const viewer = await userFromAuthorization(req.headers.authorization).catch(() => undefined)
@@ -1434,6 +1472,14 @@ app.post('/api/restaurants/:restaurantId/reviews', auth('investor'), async (req:
 app.delete('/api/orders/:orderId', auth('investor'), async (req: AuthedRequest, res) => {
   const order = db.orders.find((item) => item.id === req.params.orderId && item.userId === req.user!.id && item.remaining > 0 && ['open', 'partial'].includes(item.status))
   if (!order) return res.status(404).json({ error: '취소할 수 있는 대기 주문이 없어요.' })
+  if (ledgerRpcEnabled) {
+    // 주문 마감·현금 환불·호가 재계산을 한 트랜잭션에서 처리한다.
+    try {
+      const result = await runLedgerRpc<{ refunded: number }>('cancel_order', { p_user: req.user!.id, p_order: order.id })
+      changed()
+      return res.json({ message: result.refunded ? `예약을 취소하고 ${result.refunded.toLocaleString()} 먹투머니를 돌려받았어요.` : '회수 대기 주문을 취소했어요.' })
+    } catch (error) { return res.status(400).json({ error: rpcMessage(error) }) }
+  }
   const refunded = order.type === 'buy' ? order.remaining : 0
   if (refunded) req.user!.cash += refunded
   order.remaining = 0
@@ -1448,6 +1494,20 @@ app.post('/api/funds/:fundId/invest', auth('investor'), async (req: AuthedReques
   const amount = round1000(req.body.amount)
   if (!fund || fund.status === 'closed') return res.status(404).json({ error: '투자 가능한 펀드를 찾을 수 없어요.' })
   if (amount < 1000) return res.status(400).json({ error: '투자는 1,000원 단위로 가능해요.' })
+  if (ledgerRpcEnabled) {
+    // 잔액 차감·포지션·모금액·FIFO 매칭을 Postgres 트랜잭션 하나로 처리한다.
+    // 검증도 그 안에서 다시 하므로 여기서 미리 거를 필요가 없다.
+    try {
+      const result = await runLedgerRpc<{ matched: number; queued: number; matches: unknown[] }>(
+        'invest', { p_user: user.id, p_fund: fund.id, p_amount: amount })
+      changed()
+      const message = result.queued === 0
+        ? (fund.status === 'funding' ? `${result.matched.toLocaleString()}원이 바로 투자됐어요.` : '예약한 금액이 모두 투자됐어요.')
+        : result.matched > 0 ? `${result.matched.toLocaleString()}원이 투자되고 나머지는 예약됐어요.`
+        : '매도자가 나타나면 1,000원부터 순서대로 투자돼요.'
+      return res.json({ message, matched: result.matched, queued: result.queued, matches: result.matches })
+    } catch (error) { return res.status(400).json({ error: rpcMessage(error) }) }
+  }
   if (user.cash < amount) return res.status(400).json({ error: '보유 머니가 부족해요.' })
   if (fund.status === 'trading' && db.orders.some((order) => order.userId === user.id && order.fundId === fund.id && order.type === 'sell' && order.remaining > 0)) return res.status(400).json({ error: '이 펀드의 회수 대기 주문을 먼저 취소하거나 체결해주세요.' })
   const position = getPosition(user.id, fund.id)
@@ -1483,6 +1543,22 @@ app.post('/api/funds/:fundId/withdraw', auth('investor'), async (req: AuthedRequ
   const amount = round1000(req.body.amount)
   if (!fund) return res.status(404).json({ error: '펀드를 찾을 수 없어요.' })
   if (amount < 1000) return res.status(400).json({ error: '회수는 1,000원 단위로 가능해요.' })
+  if (ledgerRpcEnabled) {
+    // 돈이 오가는 부분만 트랜잭션으로 처리하고, 쿠폰 정산은 적립률 계산이
+    // 서버에 있어 체결 결과를 받아 이어서 한다. 체결이 0원이면 쿠폰도 없다.
+    try {
+      const result = await runLedgerRpc<{ matched: number; queued: number; matches: unknown[] }>(
+        'withdraw_investment', { p_user: user.id, p_fund: fund.id, p_amount: amount })
+      const settled = db.positions.find((p) => p.userId === user.id && p.fundId === fund.id)
+      const coupon = result.matched > 0 && settled ? issueCoupon(settled) : undefined
+      if (coupon) await saveDatabase()
+      changed()
+      const message = result.queued === 0 ? (fund.status === 'funding' ? `${result.matched.toLocaleString()}원을 바로 회수했어요.` : '신청한 금액을 모두 회수했어요.')
+        : result.matched > 0 ? `${result.matched.toLocaleString()}원이 회수되고 나머지는 대기 중이에요.`
+        : '사는 사람이 나타나면 1,000원부터 순서대로 회수돼요.'
+      return res.json({ message, matched: result.matched, queued: result.queued, coupon, matches: result.matches })
+    } catch (error) { return res.status(400).json({ error: rpcMessage(error) }) }
+  }
   const position = db.positions.find((p) => p.userId === user.id && p.fundId === fund.id)
   if (!position) return res.status(400).json({ error: '보유한 투자금이 없어요.' })
   if (fund.status === 'trading' && db.orders.some((order) => order.userId === user.id && order.fundId === fund.id && order.type === 'buy' && order.remaining > 0)) return res.status(400).json({ error: '이 펀드의 투자 예약을 먼저 취소하거나 체결해주세요.' })
@@ -1749,6 +1825,19 @@ app.post('/api/coupons/:couponId/list', auth(), async (req: AuthedRequest, res) 
       status: 'open', createdAt: now(),
       expiresAt: new Date(Date.now() + EXCHANGE_RULES.listingTtlDays * 86400000).toISOString(),
     }
+    if (ledgerRpcEnabled) {
+      // 쿠폰 잠금·매물 생성·감사기록을 한 트랜잭션으로. 중복 등록은 부분 유니크 인덱스가 막는다.
+      try {
+        const created = await runLedgerRpc<{ listingId: string }>('list_coupon', {
+          p_user: me.id, p_coupon: coupon.id,
+          p_categories: listing.wantedCategories, p_regions: listing.wantedRegions,
+          p_min_discount: listing.minDiscount, p_auto_accept: listing.autoAccept, p_note: listing.note,
+        })
+        changed()
+        const saved = db.couponListings.find((item) => item.id === created.listingId)
+        return { status: 200, body: { message: '쿠폰 교환장에 등록했어요.', listing: saved && listingView(saved, me.id) } }
+      } catch (error) { return { status: 400, body: { error: rpcMessage(error) } } }
+    }
     coupon.status = 'listed'
     db.couponListings.push(listing)
     audit(me.id, 'coupon.list', 'listing', listing.id, `${coupon.title} 교환장 등록`)
@@ -1787,6 +1876,15 @@ app.delete('/api/listings/:listingId', auth(), async (req: AuthedRequest, res) =
     const listing = db.couponListings.find((item) => item.id === req.params.listingId && item.userId === me.id && item.status === 'open')
     const coupon = listing && db.coupons.find((item) => item.id === listing.couponId && item.userId === me.id)
     if (!listing || !coupon) return { status: 404, body: { error: '취소할 수 있는 교환 제안을 찾지 못했어요.' } }
+    if (ledgerRpcEnabled) {
+      // 매물 마감·쿠폰 반환·걸린 제안 에스크로 해제를 한 트랜잭션으로 처리한다.
+      try {
+        await runLedgerRpc('cancel_listing', { p_user: me.id, p_listing: listing.id })
+        changed()
+        const returned = db.coupons.find((item) => item.id === listing.couponId)
+        return { status: 200, body: { message: `${coupon.title} 교환을 취소하고 내 지갑으로 돌려받았어요.`, coupon: returned && couponView(returned) } }
+      } catch (error) { return { status: 400, body: { error: rpcMessage(error) } } }
+    }
     listing.status = 'cancelled'
     coupon.status = daysLeft(coupon.expiresAt) > 0 ? 'available' : 'expired'
     for (const offer of db.couponOffers) {
@@ -1821,6 +1919,18 @@ app.post('/api/listings/:listingId/swap', auth(), async (req: AuthedRequest, res
     }
     const check = checkSwap({ listing, wanted, offered, offeredRestaurant: restaurantOf(offered), offerUserId: me.id })
     if (!check.ok) return { status: 400, body: { error: check.issues[0].message, issues: check.issues } }
+    if (ledgerRpcEnabled) {
+      // 소유자 맞교환·매물 마감·남은 제안 정리·체결기록을 한 트랜잭션으로.
+      // 두 사람이 동시에 같은 매물을 가져가면 매물 행 잠금에서 한쪽만 통과한다.
+      try {
+        const done = await runLedgerRpc<{ tradeId: string }>('instant_swap', {
+          p_user: me.id, p_listing: listing.id, p_coupon: offered.id })
+        changed()
+        const settled = db.couponTrades.find((item) => item.id === done.tradeId)
+        const received = db.coupons.find((item) => item.id === wanted.id)
+        return { status: 200, body: { message: `${offered.title} → ${wanted.title} 교환이 완료됐어요!`, trade: settled, coupon: received && couponView(received) } }
+      } catch (error) { return { status: 400, body: { error: rpcMessage(error) } } }
+    }
     const trade = settleSwap(listing, wanted, offered, me.id, 'instant')
     await saveDatabase(); changed()
     return { status: 200, body: { message: `${offered.title} → ${wanted.title} 교환이 완료됐어요!`, trade, coupon: couponView(wanted) } }
@@ -1857,9 +1967,29 @@ app.post('/api/listings/:listingId/offers', auth(), async (req: AuthedRequest, r
 
     // 자동 수락 매물이면 제안 단계 없이 바로 체결한다.
     if (listing.autoAccept) {
+      if (ledgerRpcEnabled) {
+        try {
+          const done = await runLedgerRpc<{ tradeId: string }>('instant_swap', {
+            p_user: me.id, p_listing: listing.id, p_coupon: offered.id })
+          changed()
+          return { status: 200, body: { message: `${offered.title} → ${wanted.title} 교환이 바로 완료됐어요!`, trade: db.couponTrades.find((item) => item.id === done.tradeId), settled: true } }
+        } catch (error) { return { status: 400, body: { error: rpcMessage(error) } } }
+      }
       const trade = settleSwap(listing, wanted, offered, me.id, 'instant')
       await saveDatabase(); changed()
       return { status: 200, body: { message: `${offered.title} → ${wanted.title} 교환이 바로 완료됐어요!`, trade, settled: true } }
+    }
+
+    if (ledgerRpcEnabled) {
+      // 제안 생성과 동시에 쿠폰을 offered 로 잠근다(에스크로).
+      // 같은 쿠폰으로 두 곳에 제안하는 것은 coupon_offers_escrow_idx 가 DB 에서 막는다.
+      try {
+        const created = await runLedgerRpc<{ offerId: string }>('offer_coupon', {
+          p_user: me.id, p_listing: listing.id, p_coupon: offered.id,
+          p_message: String(req.body.message || '').slice(0, 140) })
+        changed()
+        return { status: 201, body: { message: '교환 제안을 보냈어요. 등록자가 수락하면 바로 교환돼요.', offer: db.couponOffers.find((item) => item.id === created.offerId), settled: false } }
+      } catch (error) { return { status: 400, body: { error: rpcMessage(error) } } }
     }
 
     const offer: CouponOffer = {
@@ -1884,6 +2014,14 @@ app.delete('/api/offers/:offerId', auth(), async (req: AuthedRequest, res) => {
     sweepExchange()
     const offer = db.couponOffers.find((item) => item.id === req.params.offerId && item.offerUserId === me.id && item.status === 'pending')
     if (!offer) return { status: 404, body: { error: '취소할 수 있는 제안을 찾지 못했어요.' } }
+    if (ledgerRpcEnabled) {
+      try {
+        await runLedgerRpc('resolve_offer', { p_user: me.id, p_offer: offer.id, p_action: 'withdrawn' })
+        changed()
+        const returned = db.coupons.find((item) => item.id === offer.offerCouponId)
+        return { status: 200, body: { message: '교환 제안을 취소하고 쿠폰을 돌려받았어요.', coupon: returned && couponView(returned) } }
+      } catch (error) { return { status: 400, body: { error: rpcMessage(error) } } }
+    }
     offer.status = 'withdrawn'
     offer.resolvedAt = now()
     const held = db.coupons.find((item) => item.id === offer.offerCouponId)
@@ -1919,6 +2057,13 @@ app.post('/api/offers/:offerId/accept', auth(), async (req: AuthedRequest, res) 
       await saveDatabase(); changed()
       return { status: 409, body: { error: `지금은 교환할 수 없어요. ${check.issues[0].message}`, issues: check.issues } }
     }
+    if (ledgerRpcEnabled) {
+      try {
+        const done = await runLedgerRpc<{ tradeId: string }>('accept_offer', { p_user: me.id, p_offer: offer.id })
+        changed()
+        return { status: 200, body: { message: `${userName(offer.offerUserId)}님과 교환을 완료했어요!`, trade: db.couponTrades.find((item) => item.id === done.tradeId) } }
+      } catch (error) { return { status: 400, body: { error: rpcMessage(error) } } }
+    }
     const trade = settleSwap(listing, wanted, offered, offer.offerUserId, 'offer', offer)
     await saveDatabase(); changed()
     return { status: 200, body: { message: `${userName(offer.offerUserId)}님과 교환을 완료했어요!`, trade } }
@@ -1934,6 +2079,13 @@ app.post('/api/offers/:offerId/decline', auth(), async (req: AuthedRequest, res)
     const offer = db.couponOffers.find((item) => item.id === req.params.offerId && item.status === 'pending')
     const listing = offer && db.couponListings.find((item) => item.id === offer.listingId && item.userId === me.id)
     if (!offer || !listing) return { status: 404, body: { error: '거절할 수 있는 제안을 찾지 못했어요.' } }
+    if (ledgerRpcEnabled) {
+      try {
+        await runLedgerRpc('resolve_offer', { p_user: me.id, p_offer: offer.id, p_action: 'declined' })
+        changed()
+        return { status: 200, body: { message: '제안을 거절했어요.' } }
+      } catch (error) { return { status: 400, body: { error: rpcMessage(error) } } }
+    }
     offer.status = 'declined'
     offer.resolvedAt = now()
     const held = db.coupons.find((item) => item.id === offer.offerCouponId)
@@ -2077,6 +2229,16 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
   const uploadedSources = declaredSources.filter((source) => allowedSources.includes(source) && source !== 'identity' && typeof uploadedDocuments[source] === 'string' && String(uploadedDocuments[source]).trim().length > 0)
   const partnerSources = db.dataConnections.filter((item) => item.userId === req.user!.id && item.status === 'active').map((item) => item.sourceId)
   const connectedSources = [...new Set([...(data.identityVerified === true ? ['identity'] : []), ...uploadedSources, ...partnerSources])]
+  // CSV 본문. 집계에만 쓰고 저장하지 않는다.
+  // 이미지·PDF 는 여기로 오지 않는다(문서는 AI 판독 경로가 따로 있다).
+  const rawBodies = data.documentContents && typeof data.documentContents === 'object' && !Array.isArray(data.documentContents)
+    ? data.documentContents as Record<string, unknown> : {}
+  const rawContents: Record<string, string> = Object.fromEntries(
+    uploadedSources
+      .filter((source) => typeof rawBodies[source] === 'string')
+      // 한 파일당 6MB. express 본문 상한(8MB) 안에서 POS 12개월치(약 0.6MB)를 넉넉히 담는다.
+      .map((source) => [source, String(rawBodies[source]).slice(0, 6 * 1024 * 1024)]),
+  )
   const documentMetadata = Object.fromEntries(uploadedSources.map((source) => {
     const raw = rawMetadata[source] || {}
     return [source, {
@@ -2110,23 +2272,51 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
   if (missingDocuments.length) return res.status(400).json({ error: '사업자등록·영업신고·POS·사업계좌 필수 자료를 각각 업로드해주세요.' })
   if (!String(data.fundPurpose || '').trim() || !String(data.businessPlan || '').trim()) return res.status(400).json({ error: '자금 사용계획과 사업계획을 작성해주세요.' })
 
-  const numericSeed = [...restaurantName].reduce((sum, character) => sum + character.charCodeAt(0), 0)
-  const monthlySales = 32000000 + (numericSeed % 1700) * 10000
-  const salesGrowth = Number((8.5 + (numericSeed % 83) / 10).toFixed(1))
-  const operatingCashflow = Math.round(monthlySales * (.105 + (numericSeed % 45) / 1000) / 10000) * 10000
-  const salesVolatility = Number((6.2 + (numericSeed % 54) / 10).toFixed(1))
-  const repeatRate = has('customer') || has('delivery') ? Number((31 + (numericSeed % 210) / 10).toFixed(1)) : null
-  const averageTicket = 12800 + (numericSeed % 95) * 100
-  const deliveryShare = has('delivery') ? Number((18 + (numericSeed % 190) / 10).toFixed(1)) : null
-  const rentRatio = has('lease') ? Number((6 + (numericSeed % 63) / 10).toFixed(1)) : null
-  const monthlyDebtPayment = has('debt') ? 900000 + (numericSeed % 19) * 100000 : null
-  const debtServiceRatio = monthlyDebtPayment ? Number((monthlyDebtPayment / Math.max(1, operatingCashflow) * 100).toFixed(1)) : null
-  const operatingYears = 2 + numericSeed % 7
-  const staffBefore = 2 + numericSeed % 3
-  const staffCurrent = staffBefore + (salesGrowth >= 12 ? 2 : 1)
-  const districtSalesGrowth = 4.1
-  const relativeGrowth = Number((salesGrowth - districtSalesGrowth).toFixed(1))
-  const reconciliationRate = has('pos') && has('account') && has('card') ? Number((94 + (numericSeed % 41) / 10).toFixed(1)) : has('pos') && has('account') ? 88.4 : 72.5
+  // ── 원자료 집계 ───────────────────────────────────────────────
+  //
+  // 예전에는 여기서 상호명 글자코드로 만든 난수를 지표로 썼다.
+  //   const numericSeed = [...restaurantName].reduce((s, c) => s + c.charCodeAt(0), 0)
+  //   const monthlySales = 32000000 + (numericSeed % 1700) * 10000
+  // 파일을 올려도 읽지 않았고 같은 상호면 늘 같은 매출이 나왔다.
+  // 그 값이 신용등급 35개 지표의 입력이었으니 등급이 자료와 무관했다.
+  //
+  // 이제 올라온 CSV 본문을 실제로 파싱해 계산한다. 읽어내지 못한 지표는
+  // 지어내지 않고 null(미산정)로 남기고, coverage 로 "무엇을 모르는지" 드러낸다.
+  // 원본 텍스트는 집계에만 쓰고 저장하지 않는다.
+  const rawUploads: RawUpload[] = uploadedSources
+    .map((source) => ({ source, text: rawContents[source] }))
+    .filter((item): item is { source: string; text: string } => typeof item.text === 'string' && item.text.length > 0)
+    .map((item) => ({ sourceId: item.source, name: String(uploadedDocuments[item.source]), text: item.text }))
+  const aggregated = deriveMetricsFromUploads(rawUploads)
+  const measured = aggregated.metrics
+  const asNumber = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? value : null)
+
+  const monthlySales = asNumber(measured.recent12MonthAverageSales)
+  const salesGrowth = asNumber(measured.recent12MonthSalesGrowth)
+  const operatingCashflow = asNumber(measured.estimatedMonthlyOperatingCashflow)
+  const salesVolatility = asNumber(measured.salesVolatility)
+  const repeatRate = asNumber(measured.repeatRate) ?? asNumber(measured.deliveryRepeatRatio)
+  const averageTicket = asNumber(measured.averageTicket)
+  const deliveryShare = asNumber(measured.deliverySalesShare)
+  const rentRatio = asNumber(measured.rentToSalesRatio)
+  const monthlyDebtPayment = asNumber(measured.monthlyDebtPayment)
+  const debtServiceRatio = asNumber(measured.debtServiceToCashflowRatio)
+  // 업력은 어느 CSV에도 없다. 사업자등록증 개업일이 붙기 전까지는 등록된 식당 값만 쓴다.
+  const knownRestaurant = db.restaurants.find((item) => item.name === restaurantName)
+  const operatingYears = asNumber(knownRestaurant?.openedYears)
+  const staffTrend = typeof measured.staffTrend === 'string' ? measured.staffTrend : null
+  // 상권 성장률은 주소로 매칭한 공개 상권자료에서 가져온다.
+  // 처음 신청하는 사장님은 db.restaurants 에 없으므로 이름 매칭만으로는 항상 미산정이 됐다.
+  // (시연의 '샘플식당'도 시드에 없어서 상권 지표가 늘 비어 있었다.)
+  // findCommercialArea 는 동네·지역 문자열만 보므로 입력한 주소를 그대로 넘겨 찾는다.
+  const address = String(data.address || '').trim()
+  const areaMatch = knownRestaurant
+    ? findCommercialArea(knownRestaurant)
+    : findCommercialArea({ neighborhood: address, region: address })
+  const districtSalesGrowth = asNumber(areaMatch?.area.spending.localSalesGrowth)
+  const relativeGrowth = salesGrowth !== null && districtSalesGrowth !== null
+    ? Number((salesGrowth - districtSalesGrowth).toFixed(1)) : null
+  const reconciliationRate = asNumber(measured.salesReconciliationRate)
 
   const sourceWeights: Record<string, number> = { business: 10, license: 8, identity: 8, pos: 15, account: 15, card: 10, delivery: 7, tax: 10, customer: 7, lease: 5, debt: 5, staff: 5 }
   const dataConfidence = Math.min(100, 18 + connectedSources.reduce((sum, source) => sum + (sourceWeights[source] || 0), 0))
@@ -2162,19 +2352,23 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
   })
 
   let score = 44
-  score += Math.min(17, salesGrowth * .75)
-  score += Math.min(8, Math.max(0, relativeGrowth) * .8)
+  // 미산정은 감점하지 않는다. 자료를 덜 낸 것과 나쁜 실적은 다른 문제라
+  // 감점 대신 dataConfidence 와 신용등급 coverage 로 드러낸다.
+  score += salesGrowth === null ? 0 : Math.min(17, Math.max(-10, salesGrowth * .75))
+  score += relativeGrowth === null ? 0 : Math.min(8, Math.max(0, relativeGrowth) * .8)
   score += repeatRate === null ? 0 : Math.min(8, repeatRate * .14)
   score += Math.min(10, dataConfidence * .1)
-  score += operatingYears >= 3 ? 5 : 2
-  score += reconciliationRate >= 94 ? 5 : reconciliationRate >= 85 ? 2 : -5
-  score += debtServiceRatio === null ? -1 : debtServiceRatio <= 45 ? 4 : debtServiceRatio <= 70 ? 0 : -8
+  score += operatingYears === null ? 0 : operatingYears >= 3 ? 5 : 2
+  score += reconciliationRate === null ? 0 : reconciliationRate >= 94 ? 5 : reconciliationRate >= 85 ? 2 : -5
+  score += debtServiceRatio === null ? 0 : debtServiceRatio <= 45 ? 4 : debtServiceRatio <= 70 ? 0 : -8
   // 교차검증 결과 반영: 불일치는 감점, 운영자 확인 준비 완료는 가점
   score += financialVerification.mismatches.length ? -12 : financialVerification.readyForAdminReview ? 4 : 0
   score += businessVerification.verified ? 0 : -6
   score = Math.max(0, Math.min(100, Math.round(score)))
 
-  const capacity = Math.round((monthlySales * .42 + Math.max(0, operatingCashflow) * 2.2) / 1000000) * 1000000
+  // 매출을 읽어내지 못하면 한도를 계산하지 않는다. 0으로 두고 수동 심사로 보낸다.
+  const capacity = monthlySales === null ? 0
+    : Math.round((monthlySales * .42 + Math.max(0, operatingCashflow ?? 0) * 2.2) / 1000000) * 1000000
   const approvedLimit = Math.max(5000000, Math.min(requestedLimit || capacity, capacity, 100000000))
   // 사업자 진위확인 실패나 문서 불일치는 점수와 무관하게 사람이 봐야 한다.
   const status: Application['status'] = !basicVerified || !coreOperations || !businessVerification.verified || financialVerification.mismatches.length
@@ -2183,11 +2377,21 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
       : score >= 58 ? 'conditional'
         : score >= 40 ? 'manual_review' : 'rejected'
 
+  // 계산해낸 값만 말한다. 읽지 못한 지표를 문장으로 지어내지 않는다.
+  const won = (value: number) => `${Math.round(value).toLocaleString('ko-KR')}원`
   const strengths = [
-    `POS·정산 원자료에서 최근 12개월 매출 성장률 ${salesGrowth}%가 자동 계산됐어요.`,
-    `상권 음식업 성장률 ${districtSalesGrowth}%보다 ${relativeGrowth}%p 높은 상대 성장 흐름을 보였어요.`,
-    repeatRate === null ? '재방문 식별 데이터는 없지만 불이익 대신 미산정으로 처리했어요.' : `합법적으로 식별 가능한 주문 데이터에서 재방문율 ${repeatRate}%가 계산됐어요.`,
-    `POS 매출과 실제 현금유입의 일치도는 ${reconciliationRate}%예요.`,
+    monthlySales === null
+      ? 'POS 원자료를 읽지 못해 매출 지표는 미산정으로 남겼어요. CSV 열 이름을 확인해주세요.'
+      : `POS 주문 ${(aggregated.evidence.find((item) => item.sourceId === 'pos')?.rows ?? 0).toLocaleString('ko-KR')}건을 직접 합산해 월평균 매출 ${won(monthlySales)}을 계산했어요.`,
+    salesGrowth === null ? '매출 성장률은 12개월치 자료가 모여야 계산할 수 있어요.'
+      : relativeGrowth === null ? `최근 12개월 매출 성장률은 ${salesGrowth}%예요. (상권 비교값은 주소 매칭 후 산정)`
+      : `매출 성장률 ${salesGrowth}%로 상권 성장률 ${districtSalesGrowth}%보다 ${relativeGrowth}%p ${relativeGrowth >= 0 ? '높아요' : '낮아요'}.`,
+    repeatRate === null ? '재방문 식별 데이터는 없지만 불이익 대신 미산정으로 처리했어요.'
+      : `가명 고객 자료에서 재방문율 ${repeatRate}%가 계산됐어요.`,
+    reconciliationRate === null ? 'POS와 계좌를 함께 올리면 매출 교차검증 일치도를 낼 수 있어요.'
+      : `POS 매출과 계좌 실제 입금의 일치도는 ${reconciliationRate}%예요.`,
+    operatingCashflow === null ? '사업용 계좌를 올리면 월 영업현금흐름을 직접 계산할 수 있어요.'
+      : `계좌 입출금에서 월 영업현금흐름 ${won(operatingCashflow)}을 계산했어요.`,
   ]
   const stepMark: Record<string, string> = { passed: '✅', review: '⚠️', failed: '❌', not_compared: '➖' }
   const checks = [
@@ -2206,11 +2410,23 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
     const failed = Object.entries(businessVerification.checks).filter(([, value]) => !value).map(([key]) => key.replace(/_/g, ' '))
     improvements.push(`사업자 진위확인에서 ${failed.join(', ')} 항목이 확인되지 않았어요.`)
   }
+  // 파일을 읽다 발견한 문제는 그대로 사장님에게 알린다.
+  improvements.push(...aggregated.warnings)
+  for (const source of uploadedSources) {
+    if (!/\.csv$/i.test(String(uploadedDocuments[source] || ''))) continue
+    if (rawContents[source]) continue
+    improvements.push(`${uploadedDocuments[source]} 본문을 받지 못해 지표를 계산하지 못했어요. 파일을 다시 선택해주세요.`)
+  }
   improvements.push(...financialVerification.mismatches)
   improvements.push(...financialVerification.warnings.slice(0, 3))
   if (!improvements.length) improvements.push('연결된 원천자료의 최신성을 유지하고 자금 사용 결과를 월별로 공개해주세요.')
 
   const derivedMetrics = {
+    // 원자료에서 계산해낸 값 전부. 신용평가 35개 지표가 여기서 입력을 가져가므로
+    // 집계 결과를 통째로 깔아두고, 아래에서 이름이 다른 것만 다시 맞춘다.
+    // (예전에는 여기 나열된 15개만 넘어가서, 대출 CSV를 올려도
+    //  총 대출잔액·금융기관 수·평균금리가 신용평가에 닿지 않고 미산정으로 남았다.)
+    ...measured,
     recent12MonthAverageSales: monthlySales,
     recent12MonthSalesGrowth: salesGrowth,
     estimatedMonthlyOperatingCashflow: operatingCashflow,
@@ -2221,12 +2437,31 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
     rentToSalesRatio: rentRatio,
     debtServiceToCashflowRatio: debtServiceRatio,
     operatingYears,
-    staffTrend: `${staffBefore}명 → ${staffCurrent}명`,
+    staffTrend,
     districtSalesGrowth,
     relativeSalesGrowth: relativeGrowth,
     salesReconciliationRate: reconciliationRate,
-    totalLoanBalance: debtDocumentTotal,
+    // 대출잔액은 CSV 집계를 우선하고, 표가 없을 때만 AI가 판독한 증빙 금액을 쓴다.
+    totalLoanBalance: asNumber(measured.totalLoanBalance) ?? debtDocumentTotal,
   }
+
+  /**
+   * 화면에 내보낼 지표만 추린다.
+   *
+   * 결과 화면은 derivedMetrics 를 그대로 순회하며 카드를 그린다.
+   * 그래서 집계 중간값(posOrderCount, cardApprovedTotal 등)과 파싱 근거 배열까지
+   * 사장님 화면에 라벨 없는 camelCase 로 찍혔고, 배열은 '[object Object]'로 나왔다.
+   * 클라이언트가 이름을 아는 지표만 남기고, 파싱 근거는 별도 필드로 옮긴다.
+   */
+  const displayMetricKeys = [
+    'recent12MonthAverageSales', 'recent12MonthSalesGrowth', 'estimatedMonthlyOperatingCashflow',
+    'salesVolatility', 'repeatRate', 'averageTicket', 'deliverySalesShare', 'rentToSalesRatio',
+    'debtServiceToCashflowRatio', 'operatingYears', 'staffTrend', 'districtSalesGrowth',
+    'relativeSalesGrowth', 'salesReconciliationRate',
+  ]
+  const displayMetrics = Object.fromEntries(
+    displayMetricKeys.map((key) => [key, (derivedMetrics as Record<string, unknown>)[key] ?? null]),
+  )
   // 35개 지표 · 6개 업종 신용등급. 5요소 상권 위험평가와 함께 낸다.
   // 자료가 없는 지표는 감점 대신 미산정으로 남고 coverage로 드러난다.
   const industry = toIndustry(String(data.industry || data.category || ''))
@@ -2268,7 +2503,12 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
   const application: Application = {
     id: id('application'), userId: req.user!.id, restaurantName, submittedAt: now(), status,
     requestedLimit, approvedLimit: status === 'rejected' ? 0 : approvedLimit, score,
-    data: { ...data, uploadedDocuments, documentMetadata, connectedSources, sourceProvenance, dataConfidence, derivedMetrics, businessVerification, financialVerification, creditAssessment, combinedAssessment: combined }, strengths, checks, improvements, explanation,
+    data: { ...data, uploadedDocuments, documentMetadata, connectedSources, sourceProvenance, dataConfidence,
+      // 화면은 이름을 아는 지표만 그린다. 집계 중간값이 라벨 없이 새어 나가지 않게 한다.
+      derivedMetrics: displayMetrics,
+      // 신용평가가 다시 읽어야 하는 전체 집계값과, 어느 파일 몇 행에서 나왔는지의 근거.
+      measuredMetrics: derivedMetrics, metricEvidence: aggregated.evidence,
+      businessVerification, financialVerification, creditAssessment, combinedAssessment: combined }, strengths, checks, improvements, explanation,
   }
   // 체험 세션은 같은 채점 로직을 쓰되 결과를 공유 원장이 아닌 체험 원장에 남긴다.
   if (req.user!.sessionMode === 'demo') {
@@ -2662,7 +2902,11 @@ app.post('/api/ai/management-credit-diagnosis', auth('owner'), async (req: Authe
 
   const fund = restaurant ? db.funds.find((item) => item.restaurantId === restaurant.id) : undefined
   const connections = db.dataConnections.filter((item) => item.userId === req.user!.id)
-  const derivedMetrics = (application?.data?.derivedMetrics as Record<string, unknown>) || {}
+  // 신용등급을 다시 계산할 때는 화면용으로 추린 값이 아니라 전체 집계값을 써야 한다.
+  // (예전 심사 기록에는 measuredMetrics 가 없으므로 derivedMetrics 로 되돌아간다.)
+  const derivedMetrics = (application?.data?.measuredMetrics
+    || application?.data?.derivedMetrics
+    || {}) as Record<string, unknown>
   const connectedSources = Array.isArray(application?.data?.connectedSources)
     ? (application!.data!.connectedSources as unknown[]).map(String)
     : connections.filter((item) => item.status === 'active').map((item) => item.sourceId as string)

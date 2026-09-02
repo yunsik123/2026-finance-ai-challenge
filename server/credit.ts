@@ -364,7 +364,10 @@ export function deriveCreditInput(source: DeriveSource): CreditInput {
     // 잔액은 계좌 원자료에서 나와야 한다. 매출에 계수를 곱해 만든 값은 잔액이 아니다.
     input.avg_cash_balance = num(derivedMetrics.averageCashBalance)
     input.min_cash_balance = num(derivedMetrics.minimumCashBalance)
-    input.net_cashflow_ratio = cashflow && monthlySales ? Number((cashflow / monthlySales * 100).toFixed(1)) : null
+    // 집계 단계에서 이미 계산·검증한 값을 쓴다.
+    // 거기서 POS와 계좌의 일치도가 낮으면 이 값을 아예 만들지 않으므로,
+    // 여기서 다시 나눠 계산하면 그 안전장치를 무력화하게 된다.
+    input.net_cashflow_ratio = num(derivedMetrics.netCashflowRatio)
   }
 
   // ── 운영·상권 ────────────────────────────────────────────────

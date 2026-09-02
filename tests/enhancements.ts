@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+const sample = (name: string) => readFileSync(new URL(`../public/samples/${name}`, import.meta.url), 'utf8')
 const base = process.env.MEOKTU_TEST_BASE || `http://localhost:${process.env.MEOKTU_TEST_PORT || 8787}`
 
 async function request(path: string, options: RequestInit = {}, token?: string) {
@@ -80,6 +82,13 @@ const application = await request('/api/applications', {
     address: '서울시 마포구 연남동',
     connectedSources: ['business', 'license', 'identity', 'pos', 'account', 'card', 'delivery', 'tax', 'customer', 'lease', 'debt', 'staff'],
     uploadedDocuments: { business: 'business.pdf', license: 'license.pdf', pos: 'pos.csv', account: 'account.csv', card: 'card.csv', delivery: 'delivery.csv', tax: 'tax.pdf', customer: 'customer.csv', lease: 'lease.pdf', debt: 'debt.pdf', staff: 'staff.csv' },
+    // 심사 지표는 이 본문을 실제로 합산해서 나온다. 파일 이름만으로는 아무 값도 계산되지 않는다.
+    documentContents: {
+      pos: sample('meoktu-pos-sample.csv'), account: sample('meoktu-account-sample.csv'),
+      card: sample('meoktu-card-settlement-sample.csv'), delivery: sample('meoktu-delivery-sample.csv'),
+      customer: sample('meoktu-customer-sample.csv'), debt: sample('meoktu-debt-sample.csv'),
+      staff: sample('meoktu-staff-sample.csv'),
+    },
     identityVerified: true,
     privacyConsent: true,
     creditConsent: true,
