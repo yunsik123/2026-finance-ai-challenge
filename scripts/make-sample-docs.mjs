@@ -17,6 +17,7 @@
  */
 import { spawn } from 'node:child_process'
 import fs from 'node:fs/promises'
+import { rebuildSamplePack } from './zip-samples.mjs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -108,19 +109,4 @@ await fs.rm(profile, { recursive: true, force: true })
 console.log('\n완료. 모든 문서에 “실제 제출 불가” 배너와 워터마크가 들어 있습니다.')
 console.log('CSV 자료는 node scripts/make-sample-data.mjs 로 따로 생성합니다.')
 
-// ── 묶음 zip 갱신 ────────────────────────────────────────────────
-// 사장님 센터의 "전체 묶음 받기(ZIP)" 버튼이 이 파일을 내려준다.
-// 문서를 새로 만들었으면 묶음도 같이 갱신해야 둘이 어긋나지 않는다.
-const zipName = 'meoktu-sample-pack.zip'
-try {
-  const entries = (await fs.readdir(out)).filter((name) => name !== zipName).sort()
-  await fs.rm(path.join(out, zipName), { force: true })
-  await new Promise((resolve, reject) => {
-    const child = spawn('zip', ['-q', '-X', zipName, ...entries], { cwd: out, stdio: 'ignore' })
-    child.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`zip exit ${code}`))))
-    child.on('error', reject)
-  })
-  console.log(`묶음 갱신: ${zipName} (${entries.length}개 파일)`)
-} catch (error) {
-  console.warn(`묶음 zip 갱신을 건너뜁니다: ${error.message}`)
-}
+await rebuildSamplePack(out)
