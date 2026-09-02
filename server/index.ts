@@ -2360,32 +2360,6 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
     connectedSources,
   })
 
-  let score = 44
-  // 미산정은 감점하지 않는다. 자료를 덜 낸 것과 나쁜 실적은 다른 문제라
-  // 감점 대신 dataConfidence 와 신용등급 coverage 로 드러낸다.
-  score += salesGrowth === null ? 0 : Math.min(17, Math.max(-10, salesGrowth * .75))
-  score += relativeGrowth === null ? 0 : Math.min(8, Math.max(0, relativeGrowth) * .8)
-  score += repeatRate === null ? 0 : Math.min(8, repeatRate * .14)
-  score += Math.min(10, dataConfidence * .1)
-  score += operatingYears === null ? 0 : operatingYears >= 3 ? 5 : 2
-  score += reconciliationRate === null ? 0 : reconciliationRate >= 94 ? 5 : reconciliationRate >= 85 ? 2 : -5
-  score += debtServiceRatio === null ? 0 : debtServiceRatio <= 45 ? 4 : debtServiceRatio <= 70 ? 0 : -8
-  // 교차검증 결과 반영: 불일치는 감점, 운영자 확인 준비 완료는 가점
-  score += financialVerification.mismatches.length ? -12 : financialVerification.readyForAdminReview ? 4 : 0
-  score += businessVerification.verified ? 0 : -6
-  score = Math.max(0, Math.min(100, Math.round(score)))
-
-  // 매출을 읽어내지 못하면 한도를 계산하지 않는다. 0으로 두고 수동 심사로 보낸다.
-  const capacity = monthlySales === null ? 0
-    : Math.round((monthlySales * .42 + Math.max(0, operatingCashflow ?? 0) * 2.2) / 1000000) * 1000000
-  const approvedLimit = Math.max(5000000, Math.min(requestedLimit || capacity, capacity, 100000000))
-  // 사업자 진위확인 실패나 문서 불일치는 점수와 무관하게 사람이 봐야 한다.
-  const status: Application['status'] = !basicVerified || !coreOperations || !businessVerification.verified || financialVerification.mismatches.length
-    ? 'manual_review'
-    : score >= 78 ? 'approved'
-      : score >= 58 ? 'conditional'
-        : score >= 40 ? 'manual_review' : 'rejected'
-
   // 계산해낸 값만 말한다. 읽지 못한 지표를 문장으로 지어내지 않는다.
   const won = (value: number) => `${Math.round(value).toLocaleString('ko-KR')}원`
   const strengths = [
@@ -2494,6 +2468,33 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
     : undefined
   const combined = riskAssessment ? combineAssessments(riskAssessment, creditAssessment) : undefined
 
+  /** 신청 점수와 등급은 동일한 35개 변수·가중치 SCB 예비평가를 사용한다. */
+  const score = creditAssessment.score
+
+  // 결측이나 검증 실패를 점수로 메우지 않는다. 핵심 원자료 또는 산정률이
+  // 부족하면 자동 권고를 중지하고 운영자에게 원자료 확인을 요청한다.
+  const needsHumanReview = !basicVerified
+    || !coreOperations
+    || !businessVerification.verified
+    || financialVerification.mismatches.length > 0
+    || monthlySales === null
+    || operatingCashflow === null
+    || creditAssessment.provisional
+
+  const status: Application['status'] = needsHumanReview
+    ? 'manual_review'
+    : score >= 75 ? 'approved'
+      : score >= 55 ? 'conditional'
+        : score >= 45 ? 'manual_review' : 'rejected'
+
+  // 검증 매출과 영업현금흐름이 모두 있을 때만 자동 한도를 제시한다.
+  const capacity = monthlySales !== null && operatingCashflow !== null
+    ? Math.round((monthlySales * .42 + Math.max(0, operatingCashflow) * 2.2) / 1000000) * 1000000
+    : 0
+  const approvedLimit = (status === 'approved' || status === 'conditional') && capacity > 0
+    ? Math.max(5000000, Math.min(requestedLimit || capacity, capacity, 100000000))
+    : 0
+
   strengths.push(`${industry} 업종 35개 지표 중 ${creditAssessment.measuredCount}개를 산정해 신용등급 ${creditAssessment.grade}(${creditAssessment.score}점)이 나왔어요.`)
   if (creditAssessment.topDrivers.length) strengths.push(`가장 크게 기여한 지표는 ${creditAssessment.topDrivers.slice(0, 2).map((item) => item.label).join(', ')}예요.`)
   for (const drag of creditAssessment.topDrags.slice(0, 2)) {
@@ -2511,7 +2512,7 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
 
   const application: Application = {
     id: id('application'), userId: req.user!.id, restaurantName, submittedAt: now(), status,
-    requestedLimit, approvedLimit: status === 'rejected' ? 0 : approvedLimit, score,
+    requestedLimit, approvedLimit, score,
     data: { ...data, uploadedDocuments, documentMetadata, connectedSources, sourceProvenance, dataConfidence,
       // 화면은 이름을 아는 지표만 그린다. 집계 중간값이 라벨 없이 새어 나가지 않게 한다.
       derivedMetrics: displayMetrics,

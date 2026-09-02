@@ -60,8 +60,10 @@ const applicationBody = (contents: Record<string, string>) => JSON.stringify({
 })
 
 const review = await request('/api/applications', { method: 'POST', body: applicationBody(documentContents) }, owner.token)
-if (!['approved', 'conditional'].includes(review.application.status)) {
-  throw new Error(`review failed: ${review.application.status} (${review.application.score}점)`)
+// 신청 상태는 더 이상 구형 44점 가감식이 아니라 SCB 등급 경계로 판정한다.
+// 이 샘플이 C등급이면 정상적으로 수동 검토에 머물 수 있다.
+if (review.application.status === 'rejected') {
+  throw new Error(`source-data review unexpectedly rejected: ${review.application.status} (${review.application.score}점)`)
 }
 const metrics = review.application.data.derivedMetrics
 if (!(metrics.recent12MonthAverageSales > 0)) throw new Error('POS 원자료에서 매출이 계산되지 않았습니다')
@@ -82,6 +84,9 @@ if (metrics.districtSalesGrowth === null) throw new Error('주소 기반 상권 
 
 // 산정률 정책: 자료가 적으면 좋은 지표 몇 개만으로 상위 등급을 받아갈 수 없어야 한다.
 const credit = review.application.data.creditAssessment
+if (review.application.score !== credit.score) {
+  throw new Error(`신청 점수(${review.application.score})가 SCB 35지표 점수(${credit.score})와 다릅니다`)
+}
 if (credit.coverage >= 50 && credit.provisional) throw new Error('산정률이 충분한데 잠정 등급으로 표시됐습니다')
 if (typeof credit.rawScore !== 'number') throw new Error('원점수가 기록되지 않았습니다')
 // 축소추정은 점수를 평균(50) 쪽으로만 움직인다. 반대로 벌어지면 계수 부호가 잘못된 것이다.
@@ -103,6 +108,9 @@ if (['approved', 'conditional'].includes(empty.application.status)) {
 }
 if (empty.application.data.derivedMetrics.recent12MonthAverageSales !== null) {
   throw new Error('자료가 없는데 매출 값이 만들어졌습니다')
+}
+if (empty.application.approvedLimit !== 0) {
+  throw new Error(`검증 매출·현금흐름이 없는데 한도가 산출됐습니다: ${empty.application.approvedLimit}`)
 }
 checks.push(`no-data guard (${empty.application.status}, 매출 미산정)`)
 

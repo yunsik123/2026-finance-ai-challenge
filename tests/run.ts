@@ -20,8 +20,10 @@ const healthy = async () => {
   }
 }
 
+const tsxCli = path.join(root, 'node_modules', 'tsx', 'dist', 'cli.mjs')
+
 const run = (file: string, env: NodeJS.ProcessEnv) => new Promise<void>((resolve, reject) => {
-  const child = spawn('npx', ['tsx', path.join('tests', file)], { cwd: root, stdio: 'inherit', env })
+  const child = spawn(process.execPath, [tsxCli, path.join('tests', file)], { cwd: root, stdio: 'inherit', env })
   child.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`${file} 실패 (exit ${code})`))))
   child.on('error', reject)
 })
@@ -36,7 +38,7 @@ if (existing) {
   }
   console.log('기존 8787 서버(local-demo)를 사용합니다.')
 } else {
-  server = spawn('npx', ['tsx', 'server/index.ts'], {
+  server = spawn(process.execPath, [tsxCli, 'server/index.ts'], {
     cwd: root,
     stdio: 'ignore',
     env: { ...process.env, SUPABASE_AUTH_DISABLED: '1', PORT: String(port) },
