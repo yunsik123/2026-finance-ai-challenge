@@ -132,6 +132,36 @@
   color: #226b48;
 }
 
+.risk-checkbox {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  display: grid;
+  place-items: center;
+  border: 2px solid #b87967;
+  border-radius: 5px;
+  background: #fff;
+  color: #fff;
+  transition: background .15s, border-color .15s;
+}
+
+.risk-confirm-check input:checked + span .risk-checkbox {
+  border-color: #23835b;
+  background: #23835b;
+}
+
+.risk-confirm-check input:focus-visible + span {
+  outline: 3px solid rgba(255, 105, 72, .22);
+  outline-offset: 2px;
+}
+
+.risk-confirm-check .risk-checkbox svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  stroke-width: 3;
+}
+
 .risk-confirm-check svg {
   width: 18px;
   flex: 0 0 18px;

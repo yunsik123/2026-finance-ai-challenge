@@ -181,7 +181,7 @@ export default function FundDetailModal({ restaurant: r, me, onClose, onLogin, r
         <button className="trade-confirm-close" onClick={() => setConfirming(false)} aria-label="확인창 닫기"><X /></button>
         <span className="eyebrow coral">최종 확인</span><h3>{tab === 'invest' ? '투자 조건을 확인해주세요' : '회수 조건을 확인해주세요'}</h3>
         <dl><div><dt>식당</dt><dd>{r.name}</dd></div><div><dt>{tab === 'invest' ? '투자 금액' : '회수 요청'}</dt><dd>{won(amount)}</dd></div><div><dt>처리 방식</dt><dd>{r.fund.status === 'funding' ? '즉시 반영' : '1,000원 단위 예약 매칭'}</dd></div>{tab === 'invest' && <div><dt>쿠폰 조건</dt><dd>{r.fund.minIssueDiscount}%부터 발급 · 최대 {r.fund.maxDiscount}%</dd></div>}</dl>
-        <label className="risk-confirm-check"><input type="checkbox" checked={riskAccepted} onChange={(event) => setRiskAccepted(event.target.checked)} /><span><AlertTriangle /><b>원금과 회수 시점이 보장되지 않으며 쿠폰은 금융수익이 아님을 확인했습니다.</b></span></label>
+        <label className="risk-confirm-check"><input type="checkbox" checked={riskAccepted} onChange={(event) => setRiskAccepted(event.target.checked)} /><span><i className="risk-checkbox" aria-hidden="true">{riskAccepted && <Check />}</i><AlertTriangle /><b>원금과 회수 시점이 보장되지 않으며 쿠폰은 금융수익이 아님을 확인했습니다.</b></span></label>
         <button className="button full large" disabled={!riskAccepted || busy} onClick={transact}>{busy ? '처리 중...' : tab === 'invest' ? '확인하고 투자하기' : '확인하고 회수 요청하기'}</button>
       </section></div>}
     </div>
