@@ -1,0 +1,28 @@
+.nearby-map-card{margin:18px 0;border:1px solid var(--line);border-radius:16px;background:#fff;overflow:hidden}
+.nearby-map-heading{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:18px 20px}
+.nearby-map-title{display:flex;align-items:center;gap:12px;min-width:0}
+.nearby-map-title>span{width:42px;height:42px;flex:0 0 42px;border-radius:13px;display:grid;place-items:center;background:#e8f5ee;color:var(--green)}
+.nearby-map-title svg{width:20px}
+.nearby-map-title small{display:block;color:var(--green);font-size:11px;font-weight:900}
+.nearby-map-title h3{margin:2px 0;font-size:16px}
+.nearby-map-title p{margin:0;color:var(--muted);font-size:11px;line-height:1.5}
+.nearby-map-actions{display:flex;gap:7px;flex:none}
+.nearby-map-actions button{border:1px solid var(--line);border-radius:9px;background:#fff;padding:9px 11px;display:flex;align-items:center;gap:5px;color:var(--ink-soft);font-size:11px;font-weight:800}
+.nearby-map-actions button.locate-button{border-color:var(--green);background:var(--green);color:#fff}
+.nearby-map-actions button:disabled{opacity:.55;cursor:wait}
+.nearby-map-actions svg{width:15px}
+.nearby-map-frame{position:relative;height:300px;border-top:1px solid var(--line);background:#edf2ef}
+.nearby-map-frame iframe{display:block;width:100%;height:100%;border:0}
+.nearby-map-frame>a{position:absolute;right:12px;bottom:12px;display:flex;align-items:center;gap:5px;border:1px solid rgba(0,0,0,.12);border-radius:8px;background:rgba(255,255,255,.94);padding:8px 10px;font-size:11px;font-weight:800;box-shadow:0 4px 14px rgba(0,0,0,.12)}
+.nearby-map-frame>a svg{width:14px}
+.nearby-location-error{margin:0;padding:9px 20px;background:#fff3e7;color:#8a5c30;font-size:11px}
+.nearby-map-note{margin:0;padding:9px 16px;background:#fafaf7;color:#8d938f;font-size:10px;line-height:1.5}
+.nearby-map-empty{min-height:180px;border-top:1px solid var(--line);display:grid;place-content:center;text-align:center;color:var(--muted)}
+.nearby-map-empty svg{margin:auto}
+.nearby-map-empty p{font-size:11px}
+
+@media(max-width:680px){
+  .nearby-map-heading{align-items:stretch;flex-direction:column;padding:16px}
+  .nearby-map-actions button{flex:1;justify-content:center}
+  .nearby-map-frame{height:260px}
+}

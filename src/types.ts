@@ -125,6 +125,7 @@ export interface OcrAnalysis {
 
 export interface CommercialAreaView {
   areaCode: string; areaName: string; region: string; summary: string
+  latitude?: number | null; longitude?: number | null
   matchLevel: 'exact' | 'nearby'
   dailyFootTraffic: number; footTrafficGrowth: number; competitorDensity: number; closureRate: number
   localSalesGrowth: number; averageTicketSize: number; rentGrowthRate: number; primaryCustomer: string

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, BadgeCheck, BarChart3, Check, Clock3, HandCoins, LockKeyhole, ShieldCheck, Star, Ticket, TrendingUp, WalletCards, X } from 'lucide-react'
 import { api } from './lib/api.ts'
 import CommercialAreaPanel from './CommercialAreaPanel.tsx'
+import NearbyMap from './NearbyMap.tsx'
 import type { CommercialAreaView, MeState, Restaurant, SalesPoint } from './types.ts'
 import './fund-detail-preview.css'
 
@@ -139,6 +140,7 @@ export default function FundDetailModal({ restaurant: r, me, onClose, onLogin, r
         <div className="fund-hero enhanced" style={{ background: `linear-gradient(145deg, ${r.color}28, ${r.color}70)` }}><span>{r.emoji}</span><div><small>{r.neighborhood} · {r.category}</small><h2>{r.name}</h2><p>{r.tagline}</p><div className="hero-rating"><Star fill="currentColor" /> {r.rating.toFixed(1)} <span>방문 리뷰 {r.reviewCount.toLocaleString()}개</span></div></div></div>
         <div className="fund-detail-content">
           {area && <CommercialAreaPanel area={area} category={r.category} compact />}
+          <NearbyMap restaurant={r} area={area} />
           {(position || openOrder) && <section className="my-investment-panel">
             <div className="my-investment-title"><span><Check /> 내 투자 현황</span><b>{position?.early ? '최초 투자자 · 계속 우대' : '일반 투자자'}</b></div>
             <div className="my-investment-grid"><div><span>현재 투자금</span><strong>{won(position?.amount || 0)}</strong></div><div><span>쌓인 쿠폰 할인율</span><strong>{(position?.couponProgress || 0).toFixed(1)}%</strong></div><div><span>실제 매출 보너스</span><strong>+{effectiveSalesBonus.toFixed(1)}%</strong></div></div>

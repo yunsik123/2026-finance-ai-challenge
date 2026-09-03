@@ -127,6 +127,8 @@ export function commercialGraphProperties(area: CommercialArea) {
   return {
     areaCode: area.areaCode,
     region: area.region,
+    latitude: area.latitude,
+    longitude: area.longitude,
     dailyFootTraffic: area.footTraffic.dailyAverage,
     footTrafficGrowth: area.footTraffic.growthRate,
     competitorDensity: area.marketDynamics.competitorDensity,
