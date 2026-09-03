@@ -1,0 +1,156 @@
+/* Site-wide visual system: clear finance UI, warm food-brand accent. */
+:root{
+  --ink:#192431;
+  --ink-soft:#566270;
+  --muted:#77818c;
+  --cream:#f6f7f8;
+  --paper:#fff;
+  --coral:#f2633f;
+  --coral-dark:#da4d2d;
+  --green:#167466;
+  --mint:#e6f3f0;
+  --navy:#18354a;
+  --yellow:#f4b942;
+  --surface-soft:#f4f6f7;
+  --line:#e2e7ea;
+  --shadow:0 12px 32px rgba(24,53,74,.08);
+}
+
+body{background:var(--cream);color:var(--ink)}
+p{line-height:1.65}
+.app-shell{background:var(--cream)}
+.site-header{height:72px;background:rgba(255,255,255,.94);border-bottom:1px solid var(--line);backdrop-filter:blur(16px)}
+.header-inner{max-width:1440px}
+.brand-mark{border-radius:11px;background:var(--coral);box-shadow:none;transform:none}
+.logo{font-family:'Noto Sans KR',sans-serif;font-size:22px;font-weight:900;letter-spacing:-.04em}
+.logo small{letter-spacing:0;color:var(--muted)}
+.desktop-nav a{font-weight:700;color:#64707b}
+.desktop-nav a.active:after{bottom:-14px;width:16px;height:3px;border-radius:99px}
+.icon-button:hover{background:#eef2f4}
+.avatar{background:#e6f3f0;color:var(--green)}
+
+.button{border-radius:10px;box-shadow:none;font-weight:800;transition:background .18s,border-color .18s,transform .18s}
+.button:hover{transform:translateY(-1px)}
+.button.secondary{border-color:#d8dfe3}
+.button.secondary:hover{background:#f5f7f8;border-color:#c8d1d7}
+.button.cream{background:#fff;color:var(--navy)}
+.icon-button,.round-arrow{box-shadow:none}
+
+.page-wrap{max-width:1440px;padding-top:68px}
+.page-heading{margin-bottom:42px}
+.page-heading h1,.owner-page-hero h1,.my-head h1,.section-title h2,.form-heading h2,.result-hero h2{
+  font-family:'Noto Sans KR',sans-serif;
+  font-weight:800;
+  letter-spacing:-.045em;
+}
+.page-heading h1{font-size:52px;line-height:1.13}
+.page-heading p{color:var(--ink-soft);line-height:1.7}
+.eyebrow{letter-spacing:.04em;text-transform:none}
+
+/* Shared surfaces */
+.restaurant-card,.etf-card,.position-card,.portfolio-summary,.wallet-card,.my-coupon,
+.trade-list,.market-guide,.listing-card,.coupon-ticket,.ai-picks,.articles,.chat-panel,
+.application-form,.review-flow,.result-columns section,.support-form,.support-history,
+.admin-card,.admin-panel,.commercial-card,.credit-card{
+  border-radius:14px;
+  box-shadow:none;
+  border-color:var(--line);
+}
+.restaurant-card,.etf-card,.position-card,.portfolio-summary,.trade-list,.market-guide,
+.listing-card,.ai-picks,.articles,.chat-panel,.application-form,.support-form,.support-history{
+  background:#fff;
+}
+.restaurant-card:hover,.etf-card:hover,.position-card:hover,.listing-card:hover{
+  border-color:#c8d1d7;
+  box-shadow:var(--shadow);
+}
+.tag-row span,.detail-tags span,.chip-row button,.suggestions button{border-radius:7px}
+.status-badge,.rank-badge,.risk-badge{box-shadow:none}
+.progress-track{height:6px;background:#e9edef}
+.progress-track i{background:var(--coral)}
+
+/* Discovery and restaurant detail */
+.discover-toolbar{gap:10px}
+.search-box,.discover-toolbar select,.discover-filters select,.field select{border-radius:10px;background:#fff;border-color:#dbe1e5}
+.search-box:focus-within{border-color:#9eb2bf;box-shadow:0 0 0 3px rgba(24,53,74,.07)}
+.chip-row button{font-size:12px;background:#fff}
+.chip-row button.active{background:var(--navy);border-color:var(--navy)}
+.restaurant-cover{background-color:#f1f4f5}
+.big-food{filter:none}
+.restaurant-card:hover .big-food{transform:scale(1.03)}
+.fund-modal{border-radius:18px;box-shadow:0 24px 70px rgba(20,38,50,.22)}
+.fund-big-progress,.coupon-explain,.matching-note,.limit-note{border-radius:10px}
+.order-panel{background:#f6f7f8}
+.order-tabs,.amount-input{border-radius:10px}
+
+/* Market and coupon exchange */
+.big-tabs{gap:8px}
+.big-tabs button{padding-inline:18px}
+.trade-head{background:#f3f5f6}
+.market-stats>div{background:#fff;border-color:var(--line);border-radius:12px}
+.market-mode-tabs,.order-tabs{background:#e9edef}
+.market-mode-tabs button.active,.order-tabs button.active{box-shadow:none}
+.coupon-intro,.exchange-rules{border-radius:14px;box-shadow:none}
+.listing-card.enhanced{border-radius:14px}
+.listing-cta{background:#f5f7f8}
+.demo-limit-note{background:#fff3e8;color:#83503d}
+
+/* Insights */
+.insight-layout{gap:22px}
+.ai-picks,.articles{padding:24px;border-radius:14px}
+.pick-row{border-radius:10px}
+.pick-row:hover{background:#f4f6f7}
+.article-card>span{background:#edf3f5;border-radius:11px}
+.insight-disclosure,.data-source-note{border-radius:10px;background:#eef3f5}
+
+/* Owner and credit review */
+.owner-page{background:var(--cream)}
+.owner-page-hero{min-height:500px;background:var(--navy)}
+.owner-page-hero h1{font-size:48px}
+.review-flow{border:1px solid rgba(255,255,255,.15);box-shadow:none}
+.application-form{padding:38px}
+.form-section-title>span{border-radius:7px;background:var(--navy)}
+.field input,.field textarea,.field select,.number-field{border-radius:9px;background:#fff;border-color:#dbe1e5;font-size:13px}
+.field input:focus,.field textarea:focus,.number-field:focus-within{border-color:#8fa6b4;box-shadow:0 0 0 3px rgba(24,53,74,.07)}
+.check-card,.yesno-row,.login-nudge{border-radius:9px}
+.result-hero{border-radius:16px}
+.result-hero.approved{background:#e6f3f0}
+.result-hero.conditional{background:#fff4dd}
+.result-hero.manual_review{background:#edf2f6}
+.result-hero.rejected{background:#f8e9e6}
+.result-score strong{font-family:'Noto Sans KR',sans-serif;font-weight:800}
+.additional-fund-intro{background:var(--navy);border-radius:14px;box-shadow:none}
+
+/* My page */
+.wallet-card{background:var(--navy);border:0}
+.wallet-card button{background:#2c5a70;border-radius:8px}
+.portfolio-summary{padding:24px}
+.portfolio-summary b{letter-spacing:-.02em}
+.position-card,.my-coupon{border-radius:14px}
+.coupon-growth{background:#fff2e9;border-radius:9px}
+.my-coupon{background:#fff7ec;border-color:#e5b98f}
+
+/* Authentication and feedback */
+.modal-backdrop{background:rgba(17,31,42,.58)}
+.auth-modal{border-radius:18px;box-shadow:0 24px 70px rgba(17,31,42,.22)}
+.auth-tabs button.active{border-color:var(--coral)}
+.role-picker button,.demo-buttons button{border-radius:9px}
+.toast{border-radius:10px;background:var(--navy)}
+
+/* Footer */
+footer{background:#e9edef}
+.footer-bottom{border-color:#d4dce0}
+
+@media(max-width:780px){
+  .site-header{height:66px}
+  .desktop-nav{background:#fff}
+  .mobile-nav{background:rgba(255,255,255,.97);border-color:var(--line)}
+  .page-heading h1,.owner-page-hero h1{font-size:40px}
+  .application-form{padding:24px 18px}
+  .fund-modal{border-radius:16px}
+}
+
+@media(max-width:520px){
+  .page-heading h1,.owner-page-hero h1{font-size:35px}
+  .auth-modal{border-radius:18px 18px 0 0}
+}
