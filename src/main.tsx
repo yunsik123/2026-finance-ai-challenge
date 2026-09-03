@@ -14,8 +14,6 @@ import './discover-ai.css'
 import './design-unify.css'
 import './admin.css'
 import './ux-review.css'
-import './home-refine.css'
-import './site-refine.css'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
