@@ -161,7 +161,7 @@ function MobileNav({ user }: { user?: User }) {
 
 function Home({ state, onSelect, onExplore, favoriteIds, onFavorite }: { state: PublicState; onSelect: (r: Restaurant) => void; onExplore: () => void; favoriteIds: string[]; onFavorite: (r: Restaurant) => void }) {
   const featured = [...state.restaurants].sort((a, b) => b.opportunityScore - a.opportunityScore).slice(0, 4)
-  return <>
+  return <div className="home-page">
     <section className="hero section-pad">
       <div className="hero-copy">
         <span className="eyebrow coral"><Sparkles size={15} /> 오늘의 단골이, 내일의 투자자로</span>
@@ -201,7 +201,7 @@ function Home({ state, onSelect, onExplore, favoriteIds, onFavorite }: { state: 
     </section>
     <section className="owner-banner content-section"><div><span className="eyebrow light"><Building2 /> 사장님이신가요?</span><h2>은행이 놓친 성장성,<br />단골은 알고 있어요.</h2><p>매출 규모만으로 평가하지 않습니다. 성장 흐름과 실제 고객의 지지를 함께 봐요.</p><NavLink to="/owner" className="button cream large">내 식당 가능성 확인하기 <ArrowRight /></NavLink></div><div className="owner-score-card"><span>먹투 성장 가능성</span><strong>82<small>/100</small></strong><div className="score-track"><i style={{ width: '82%' }} /></div><ul><li><Check /> 단골 재방문율 상위 12%</li><li><Check /> 최근 6개월 매출 꾸준한 상승</li><li><Check /> 상권 유동인구 전년비 +9.2%</li></ul></div></section>
     <section className="risk-note content-section"><ShieldCheck /><div><b>꼭 알아두세요</b><p>먹투의 투자금은 예금이 아니며 원금과 회수 시점이 보장되지 않습니다. 쿠폰은 식당이 제공하는 혜택이며 금융 수익이 아닙니다. 분산해서, 직접 방문할 식당을 중심으로 응원해 주세요.</p></div></section>
-  </>
+  </div>
 }
 
 function SectionTitle({ eyebrow, title, description, action, align }: { eyebrow: string; title: string; description?: string; action?: ReactNode; align?: string }) {
