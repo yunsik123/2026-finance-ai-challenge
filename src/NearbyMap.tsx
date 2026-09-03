@@ -21,7 +21,7 @@ const neighborhoodCenters: Record<string, Point> = {
   '노형동': { latitude: 33.4850, longitude: 126.4772 },
 }
 
-export default function NearbyMap({ restaurant, area }: { restaurant: Restaurant; area?: CommercialAreaView }) {
+export default function NearbyMap({ restaurant, area, restaurants, onRestaurantChange }: { restaurant: Restaurant; area?: CommercialAreaView; restaurants?: Restaurant[]; onRestaurantChange?: (id: string) => void }) {
   const restaurantPoint = neighborhoodCenters[restaurant.neighborhood]
     || (area?.latitude && area?.longitude ? { latitude: area.latitude, longitude: area.longitude } : undefined)
   const [userPoint, setUserPoint] = useState<Point>()
@@ -65,6 +65,7 @@ export default function NearbyMap({ restaurant, area }: { restaurant: Restaurant
     <div className="nearby-map-heading">
       <div className="nearby-map-title"><span><MapPin /></span><div><small>위치 기반 탐색</small><h3>{userPoint ? '내 주변 가게' : `${restaurant.neighborhood} 주변 가게`}</h3><p>지도를 확대하면 등록된 음식점·카페·편의시설을 확인할 수 있어요.</p></div></div>
       <div className="nearby-map-actions">
+        {restaurants && onRestaurantChange && <label className="nearby-map-picker"><span>기준 식당</span><select value={restaurant.id} onChange={(event) => { setUserPoint(undefined); onRestaurantChange(event.target.value) }}>{restaurants.map((item) => <option value={item.id} key={item.id}>{item.neighborhood} · {item.name}</option>)}</select></label>}
         {userPoint && <button type="button" onClick={() => setUserPoint(undefined)}><Store /> 식당 주변</button>}
         <button type="button" className="locate-button" disabled={locating} onClick={locateMe}><LocateFixed /> {locating ? '위치 확인 중' : '내 위치 주변'}</button>
       </div>

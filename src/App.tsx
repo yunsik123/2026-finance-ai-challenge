@@ -14,6 +14,7 @@ import NotificationBell from './NotificationBell.tsx'
 import FundDetailModal from './FundDetailModal.tsx'
 import InsightPage from './InsightPage.tsx'
 import OwnerCenter from './OwnerCenter.tsx'
+import NearbyMap from './NearbyMap.tsx'
 import AdminCenter from './AdminCenter.tsx'
 import WalletTopup from './WalletTopup.tsx'
 import SupportPage from './SupportPage.tsx'
@@ -227,6 +228,7 @@ function Discover({ restaurants, onSelect, favoriteIds, onFavorite }: { restaura
   const [risk, setRisk] = useState('전체 위험도')
   const [fundStatus, setFundStatus] = useState('전체 상태')
   const [sort, setSort] = useState('추천순')
+  const [mapRestaurantId, setMapRestaurantId] = useState(restaurants[0]?.id || '')
   const categories = ['전체', ...new Set(restaurants.map((r) => r.category))]
   const regions = ['전체 지역', ...new Set(restaurants.map((r) => r.region))]
   const filtered = useMemo(() => restaurants.filter((r) =>
@@ -240,7 +242,8 @@ function Discover({ restaurants, onSelect, favoriteIds, onFavorite }: { restaura
       : sort === '마감임박순' ? new Date(a.fund.endsAt).getTime() - new Date(b.fund.endsAt).getTime()
         : b.opportunityScore - a.opportunityScore), [restaurants, query, category, region, risk, fundStatus, sort])
   const resetFilters = () => { setQuery(''); setCategory('전체'); setRegion('전체 지역'); setRisk('전체 위험도'); setFundStatus('전체 상태'); setSort('추천순') }
-  return <div className="page-wrap"><div className="page-heading"><span className="eyebrow coral">식당 발견</span><h1>내 취향에 맞는<br />맛있는 기회를 찾아보세요.</h1><p>모든 식당과 수치는 서비스 시연을 위한 가상 데이터입니다.</p></div><div className="discover-toolbar"><label className="search-box"><Search /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="식당, 동네, 음식 검색" /></label><select value={sort} onChange={(e) => setSort(e.target.value)}><option>추천순</option><option>성장률순</option><option>혜택순</option><option>마감임박순</option></select></div><div className="discover-filters"><select value={region} onChange={(e) => setRegion(e.target.value)}>{regions.map((item) => <option key={item}>{item}</option>)}</select><select value={risk} onChange={(e) => setRisk(e.target.value)}><option>전체 위험도</option><option>낮음</option><option>보통</option><option>주의</option></select><select value={fundStatus} onChange={(e) => setFundStatus(e.target.value)}><option value="전체 상태">전체 상태</option><option value="funding">모금 중</option><option value="trading">거래 가능</option></select><button onClick={resetFilters}>필터 초기화</button></div><div className="chip-row">{categories.map((item) => <button className={item === category ? 'active' : ''} onClick={() => setCategory(item)} key={item}>{item}</button>)}</div><div className="result-row"><b>{filtered.length}개의 식당</b><span>지역·혜택·위험도를 함께 확인한 뒤 직접 방문할 식당을 중심으로 살펴보세요.</span></div><div className="restaurant-grid">{filtered.map((r) => <RestaurantCard key={r.id} restaurant={r} onClick={() => onSelect(r)} favorite={favoriteIds.includes(r.id)} onFavorite={() => onFavorite(r)} />)}</div>{!filtered.length && <Empty icon="🔎" title="조건에 맞는 식당이 없어요" text="필터를 초기화하거나 검색 범위를 넓혀보세요." />}</div>
+  const mapRestaurant = restaurants.find((item) => item.id === mapRestaurantId) || restaurants[0]
+  return <div className="page-wrap"><div className="page-heading"><span className="eyebrow coral">식당 발견</span><h1>내 취향에 맞는<br />맛있는 기회를 찾아보세요.</h1><p>모든 식당과 수치는 서비스 시연을 위한 가상 데이터입니다.</p></div><div className="discover-toolbar"><label className="search-box"><Search /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="식당, 동네, 음식 검색" /></label><select value={sort} onChange={(e) => setSort(e.target.value)}><option>추천순</option><option>성장률순</option><option>혜택순</option><option>마감임박순</option></select></div><div className="discover-filters"><select value={region} onChange={(e) => setRegion(e.target.value)}>{regions.map((item) => <option key={item}>{item}</option>)}</select><select value={risk} onChange={(e) => setRisk(e.target.value)}><option>전체 위험도</option><option>낮음</option><option>보통</option><option>주의</option></select><select value={fundStatus} onChange={(e) => setFundStatus(e.target.value)}><option value="전체 상태">전체 상태</option><option value="funding">모금 중</option><option value="trading">거래 가능</option></select><button onClick={resetFilters}>필터 초기화</button></div><div className="chip-row">{categories.map((item) => <button className={item === category ? 'active' : ''} onClick={() => setCategory(item)} key={item}>{item}</button>)}</div>{mapRestaurant && <NearbyMap restaurant={mapRestaurant} restaurants={restaurants} onRestaurantChange={setMapRestaurantId} />}<div className="result-row"><b>{filtered.length}개의 식당</b><span>지역·혜택·위험도를 함께 확인한 뒤 직접 방문할 식당을 중심으로 살펴보세요.</span></div><div className="restaurant-grid">{filtered.map((r) => <RestaurantCard key={r.id} restaurant={r} onClick={() => onSelect(r)} favorite={favoriteIds.includes(r.id)} onFavorite={() => onFavorite(r)} />)}</div>{!filtered.length && <Empty icon="🔎" title="조건에 맞는 식당이 없어요" text="필터를 초기화하거나 검색 범위를 넓혀보세요." />}</div>
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }) { return <label className="field"><span>{label}</span>{children}</label> }
