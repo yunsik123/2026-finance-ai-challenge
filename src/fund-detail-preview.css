@@ -1,0 +1,122 @@
+.decision-summary {
+  margin: 24px 0;
+  padding: 24px;
+  border: 1px solid #dbe5df;
+  border-radius: 20px;
+  background: linear-gradient(145deg, #f8fbf9, #fffdf8);
+}
+
+.detail-tags .risk-badge {
+  border: 1px solid transparent;
+  font-weight: 900;
+}
+
+.detail-tags .risk-badge svg {
+  color: currentColor;
+}
+
+.detail-tags .risk-badge.risk-low {
+  border-color: #b9dfc9;
+  background: #e7f6ed;
+  color: #18764a;
+}
+
+.detail-tags .risk-badge.risk-medium {
+  border-color: #ecd493;
+  background: #fff5d8;
+  color: #8a6400;
+}
+
+.detail-tags .risk-badge.risk-high {
+  border-color: #efb8aa;
+  background: #ffebe5;
+  color: #b33f28;
+}
+
+.decision-summary-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 18px;
+}
+
+.decision-summary-head span {
+  color: var(--coral);
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.decision-summary-head h3 {
+  margin: 3px 0 0;
+  font-size: 21px;
+}
+
+.decision-summary-head > svg {
+  width: 26px;
+  color: var(--green);
+}
+
+.decision-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.decision-facts article {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  column-gap: 10px;
+  padding: 15px;
+  border: 1px solid #e1e8e3;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.decision-facts svg {
+  grid-row: 1 / 4;
+  width: 21px;
+  color: var(--green);
+}
+
+.decision-facts span,
+.decision-facts small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.decision-facts b {
+  margin: 2px 0;
+  font-size: 14px;
+}
+
+.decision-risk {
+  display: flex;
+  gap: 11px;
+  margin-top: 12px;
+  padding: 14px 16px;
+  border-radius: 13px;
+  background: #fff1e7;
+  color: #7b4d3e;
+}
+
+.decision-risk svg {
+  width: 20px;
+  flex: 0 0 20px;
+  color: var(--coral);
+}
+
+.decision-risk b {
+  font-size: 12px;
+}
+
+.decision-risk p {
+  margin: 3px 0 0;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+@media (max-width: 620px) {
+  .decision-summary { padding: 18px; }
+  .decision-facts { grid-template-columns: 1fr; }
+}

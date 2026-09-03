@@ -23,12 +23,12 @@ export default function InsightPage({ state, onSelect }: { state: PublicState; o
   const selected = useMemo(() => selectedIds.map((id) => state.restaurants.find((restaurant) => restaurant.id === id)).filter(Boolean) as Restaurant[], [selectedIds, state.restaurants])
   const toggleCompare = (id: string) => setSelectedIds((ids) => ids.includes(id) ? ids.filter((item) => item !== id) : ids.length < 3 ? [...ids, id] : ids)
   const comparisonRows = [
-    ['매출 성장룰', '최근 매출의 성장 방향', (restaurant: Restaurant) => `${restaurant.salesGrowth > 0 ? '+' : ''}${restaurant.salesGrowth}%`],
+    ['매출 성장률', '최근 매출의 성장 방향', (restaurant: Restaurant) => `${restaurant.salesGrowth > 0 ? '+' : ''}${restaurant.salesGrowth}%`],
     ['재방문율', '단골 고객 기반의 참고 지표', (restaurant: Restaurant) => `${restaurant.repeatRate}%`],
-    ['상권 안정성', '100점 기준·주변 폐업룰 당 반영', (restaurant: Restaurant) => `${restaurant.stabilityScore}점`],
-    ['모집 달성룰', '목표 모집액 대비 현재 모집액', (restaurant: Restaurant) => `${progress(restaurant)}%`],
-    ['쿠폰 혜택', '최소 발급룰부터 최대 할인율까지', (restaurant: Restaurant) => `${restaurant.fund.minIssueDiscount}%부터 · 최대 ${restaurant.fund.maxDiscount}%`],
-    ['종합 위험', '공개자료와 식당지표로 꼬시', (restaurant: Restaurant) => `${restaurant.fund.riskLevel}`],
+    ['상권 안정성', '100점 기준·주변 폐업률 반영', (restaurant: Restaurant) => `${restaurant.stabilityScore}점`],
+    ['모집 달성률', '목표 모집액 대비 현재 모집액', (restaurant: Restaurant) => `${progress(restaurant)}%`],
+    ['쿠폰 혜택', '최소 발급률부터 최대 할인율까지', (restaurant: Restaurant) => `${restaurant.fund.minIssueDiscount}%부터 · 최대 ${restaurant.fund.maxDiscount}%`],
+    ['종합 위험', '공개자료와 식당 지표로 산정', (restaurant: Restaurant) => `${restaurant.fund.riskLevel}`],
   ] as const
   return <div className="page-wrap">
     <div className="page-heading compact"><span className="eyebrow coral"><Bot /> 먹투 AI</span><h1>숫자 너머의 맛있는<br />가능성을 읽어드려요.</h1><p>공공 상권자료와 가상 식당 원천데이터를 구분해 설명하고, 비공개 매출은 답변에서 보호합니다.</p></div>

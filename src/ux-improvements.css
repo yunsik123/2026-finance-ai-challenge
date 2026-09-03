@@ -1,0 +1,144 @@
+.discover-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 14px;
+}
+
+.discover-filters select,
+.discover-filters button {
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0 12px;
+  background: #fff;
+  color: var(--ink-soft);
+  font: 700 12px inherit;
+}
+
+.discover-filters button {
+  cursor: pointer;
+  color: var(--coral);
+}
+
+.decision-source {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.decision-source svg {
+  width: 16px;
+  color: var(--green);
+}
+
+.decision-source span { flex: 1; }
+.decision-source b { color: var(--ink); }
+.decision-source em {
+  border-radius: 999px;
+  padding: 4px 8px;
+  background: #f0eee8;
+  color: #6f756f;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.trade-confirm-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 22px;
+  background: rgba(17, 29, 25, .68);
+  backdrop-filter: blur(5px);
+}
+
+.trade-confirm {
+  position: relative;
+  width: min(460px, 100%);
+  border-radius: 22px;
+  padding: 28px;
+  background: #fff;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, .28);
+}
+
+.trade-confirm h3 {
+  margin: 5px 0 20px;
+  font-size: 22px;
+}
+
+.trade-confirm-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: #f2f3ef;
+  cursor: pointer;
+}
+
+.trade-confirm-close svg { width: 17px; }
+.trade-confirm dl { margin: 0 0 18px; }
+.trade-confirm dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 15px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+
+.trade-confirm dt { color: var(--muted); }
+.trade-confirm dd {
+  margin: 0;
+  text-align: right;
+  font-weight: 800;
+}
+
+.risk-confirm-check {
+  display: block;
+  margin: 16px 0;
+  cursor: pointer;
+}
+
+.risk-confirm-check input {
+  position: absolute;
+  opacity: 0;
+}
+
+.risk-confirm-check span {
+  display: flex;
+  gap: 9px;
+  padding: 13px;
+  border: 1px solid #efc2b6;
+  border-radius: 12px;
+  background: #fff3ed;
+  color: #854e3d;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.risk-confirm-check input:checked + span {
+  border-color: #8fc9aa;
+  background: #e9f6ee;
+  color: #226b48;
+}
+
+.risk-confirm-check svg {
+  width: 18px;
+  flex: 0 0 18px;
+}
+
+@media (max-width: 780px) {
+  .discover-filters select,
+  .discover-filters button { flex: 1 1 140px; }
+  .trade-confirm { padding: 24px 20px; }
+}

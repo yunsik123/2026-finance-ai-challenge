@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { BadgeCheck, BarChart3, Check, Clock3, HandCoins, LockKeyhole, ShieldCheck, Star, Ticket, TrendingUp, X } from 'lucide-react'
+import { AlertTriangle, BadgeCheck, BarChart3, Check, Clock3, HandCoins, LockKeyhole, ShieldCheck, Star, Ticket, TrendingUp, WalletCards, X } from 'lucide-react'
 import { api } from './lib/api.ts'
 import CommercialAreaPanel from './CommercialAreaPanel.tsx'
 import type { CommercialAreaView, MeState, Restaurant, SalesPoint } from './types.ts'
+import './fund-detail-preview.css'
 
 const won = (value: number) => `${Math.round(value).toLocaleString('ko-KR')}원`
 const compactWon = (value: number) => value >= 100000000 ? `${(value / 100000000).toFixed(1)}억원` : `${Math.round(value / 10000).toLocaleString()}만원`
@@ -60,6 +61,8 @@ export default function FundDetailModal({ restaurant: r, me, onClose, onLogin, r
   const [amount, setAmount] = useState(50000)
   const [tab, setTab] = useState<'invest' | 'withdraw'>('invest')
   const [busy, setBusy] = useState(false)
+  const [confirming, setConfirming] = useState(false)
+  const [riskAccepted, setRiskAccepted] = useState(false)
   // 상권 분석은 이 모달을 열 때만 필요하므로 별도로 가져온다.
   const [area, setArea] = useState<CommercialAreaView | undefined>()
   useEffect(() => {
@@ -77,6 +80,7 @@ export default function FundDetailModal({ restaurant: r, me, onClose, onLogin, r
   const openOrders = me?.orders.filter((order) => order.fundId === r.fund.id && ['open','partial'].includes(order.status)) || []
   const openOrder = openOrders[0]
   const progress = Math.min(100, Math.round(r.fund.raised / r.fund.goal * 100))
+  const riskTone = r.fund.riskLevel === '낮음' ? 'low' : r.fund.riskLevel === '보통' ? 'medium' : 'high'
   const max = Math.floor(r.fund.goal * .01 / 1000) * 1000
   const pendingBuy = openOrders.filter((order) => order.type === 'buy').reduce((sum, order) => sum + order.remaining, 0)
   const remainingLimit = Math.max(0, max - (position?.amount || 0) - pendingBuy)
@@ -94,10 +98,17 @@ export default function FundDetailModal({ restaurant: r, me, onClose, onLogin, r
     try {
       const result = await api<{ message: string; matched: number; queued: number }>(`/api/funds/${r.fund.id}/${tab}`, { method: 'POST', body: JSON.stringify({ amount }) })
       setLastResult(result)
+      setConfirming(false)
+      setRiskAccepted(false)
       notify(result.message)
       await refresh()
     } catch (error) { notify((error as Error).message) }
     finally { setBusy(false) }
+  }
+  const reviewTransaction = () => {
+    if (!me) { onLogin(); return }
+    setRiskAccepted(false)
+    setConfirming(true)
   }
   const issueCoupon = async () => {
     if (!position) return
@@ -136,7 +147,18 @@ export default function FundDetailModal({ restaurant: r, me, onClose, onLogin, r
             {openOrder && <div className="my-open-order"><div><Clock3 /><span><b>{openOrder.type === 'buy' ? '투자 예약' : '회수 주문'} {won(openOrder.remaining)} 대기 중</b><small>체결된 금액은 자동으로 내 투자금과 잔액에 반영됩니다.</small></span></div><button onClick={cancelOrder}>대기 취소</button></div>}
           </section>}
           {lastResult && <div className="transaction-result"><Check /><div><b>{lastResult.message}</b>{typeof lastResult.matched === 'number' && <p>즉시 체결 {won(lastResult.matched)} · 대기 {won(lastResult.queued || 0)}</p>}</div></div>}
-          <div className="detail-tags"><span><BadgeCheck /> 기초 심사 완료</span><span><BarChart3 /> 기회점수 {r.opportunityScore}</span><span><ShieldCheck /> 위험 {r.fund.riskLevel}</span></div>
+          <div className="detail-tags"><span><BadgeCheck /> 기초 심사 완료</span><span><BarChart3 /> 기회점수 {r.opportunityScore}</span><span className={`risk-badge risk-${riskTone}`}><ShieldCheck /> 위험도 {r.fund.riskLevel}</span></div>
+          <section className="decision-summary">
+            <div className="decision-summary-head"><div><span>투자 전 한눈에 보기</span><h3>돈의 용도와 회수 조건부터 확인하세요</h3></div><ShieldCheck /></div>
+            <div className="decision-facts">
+              <article><HandCoins /><span>현재 모집</span><b>{compactWon(r.fund.raised)}</b><small>목표 {compactWon(r.fund.goal)} · {progress}% 달성</small></article>
+              <article><WalletCards /><span>자금 사용처</span><b>{r.fund.purpose}</b><small>모집된 금액은 표시된 사업 목적에 사용돼요.</small></article>
+              <article><BarChart3 /><span>개인 투자 한도</span><b>{compactWon(max)}</b><small>전체 모집 목표의 최대 1%</small></article>
+              <article><Clock3 /><span>회수 방식</span><b>{r.fund.status === 'funding' ? '모금 중 바로 회수' : '예약 순서대로 매칭'}</b><small>{r.fund.status === 'funding' ? '현재 모금 단계에서 요청할 수 있어요.' : orderBook.note}</small></article>
+            </div>
+            <div className="decision-risk"><AlertTriangle /><div><b>손실·유동성 위험</b><p>원금과 회수 시점은 보장되지 않으며, 모금 종료 후에는 다른 투자자의 예약이 있어야 회수될 수 있어요. 쿠폰은 금융수익이 아니라 해당 식당에서 사용하는 할인 혜택입니다.</p></div></div>
+            <div className="decision-source"><BadgeCheck /><span><b>데이터 기준</b> 펀딩 시작 {new Date(r.fund.startedAt).toLocaleDateString('ko-KR')} · 종료 예정 {new Date(r.fund.endsAt).toLocaleDateString('ko-KR')}</span><em>MVP 시연 데이터</em></div>
+          </section>
           <section className="restaurant-story"><span>이 식당은요</span><h3>{r.foodDescription || r.description}</h3><p>{r.story}</p><div className="strength-list">{r.strengths?.map((strength) => <span key={strength}><Check /> {strength}</span>)}</div></section>
           <section className="menu-detail-section"><div className="detail-section-head"><div><span>음식과 메뉴</span><h3>무엇을 잘하는 식당인가요?</h3></div></div><div className="menu-detail-grid">{r.menuHighlights?.map((menu) => <article key={menu.name}><span>{r.emoji}</span><div><b>{menu.name}</b><p>{menu.description}</p></div><strong>{won(menu.price)}</strong></article>)}</div><p className="dining-note">💡 {r.diningNotes}</p></section>
           <section className="fund-overview"><div className="fund-big-progress"><div><span>{r.fund.status === 'funding' ? `${progress}% 모였어요` : '모금 완료 · 예약 거래 중'}</span><strong>{compactWon(r.fund.raised)} <small>/ {compactWon(r.fund.goal)}</small></strong></div><div className="progress-track"><i style={{ width: `${progress}%` }} /></div></div><p>자금 사용처 · {r.fund.purpose}</p><div className="metric-grid"><div><span>매출 성장지수</span><b>+{r.salesGrowth}%</b></div><div><span>재방문율</span><b>{r.repeatRate}%</b></div><div><span>운영 이력</span><b>{r.openedYears}년</b></div><div><span>주변 폐업률</span><b>{r.closingRate}%</b></div></div></section>
@@ -152,9 +174,16 @@ export default function FundDetailModal({ restaurant: r, me, onClose, onLogin, r
         <div className="quick-amounts">{[10000,50000,100000].map((value) => <button key={value} onClick={() => setAmount(value)}>+{value/10000}만</button>)}<button onClick={() => setAmount(tab === 'invest' ? Math.min(me?.user.cash || 0, remainingLimit) : position?.availableAmount || 0)}>최대</button></div>
         {tab === 'invest' && <div className="limit-note"><span>남은 개인 투자 한도</span><b>{won(remainingLimit)}</b></div>}
         <div className="benefit-preview"><Ticket /><div><span>혜택 적립 속도</span><b>10만원당 하루 {r.fund.dailyRatePer100k}%</b><p>매출 보너스 +{r.fund.salesBonus}%{position?.early ? ` · 최초 투자자 적용 +${effectiveSalesBonus.toFixed(1)}%` : r.fund.status === 'funding' ? ` · 최초 투자자는 매출 보너스 ${r.fund.earlyBonus}% 우대` : ''}</p></div></div>
-        <button className="button full large" disabled={busy || (tab === 'withdraw' && !position)} onClick={transact}>{busy ? '처리 중...' : !me ? '로그인하고 시작하기' : tab === 'invest' ? r.fund.status === 'funding' ? '응원 투자하기' : '투자 예약 넣기' : r.fund.status === 'funding' ? '바로 회수하기' : '회수 주문 넣기'}</button>
+        <button className="button full large" disabled={busy || (tab === 'withdraw' && !position)} onClick={reviewTransaction}>{busy ? '처리 중...' : !me ? '로그인하고 시작하기' : tab === 'invest' ? r.fund.status === 'funding' ? '투자 내용 확인하기' : '투자 예약 확인하기' : r.fund.status === 'funding' ? '회수 내용 확인하기' : '회수 주문 확인하기'}</button>
         <p className="order-risk">원금과 회수 시점은 보장되지 않아요. 대기 주문은 이 화면에서 취소할 수 있습니다.</p>
       </aside>
+      {confirming && <div className="trade-confirm-backdrop" onMouseDown={() => setConfirming(false)}><section className="trade-confirm" onMouseDown={(event) => event.stopPropagation()}>
+        <button className="trade-confirm-close" onClick={() => setConfirming(false)} aria-label="확인창 닫기"><X /></button>
+        <span className="eyebrow coral">최종 확인</span><h3>{tab === 'invest' ? '투자 조건을 확인해주세요' : '회수 조건을 확인해주세요'}</h3>
+        <dl><div><dt>식당</dt><dd>{r.name}</dd></div><div><dt>{tab === 'invest' ? '투자 금액' : '회수 요청'}</dt><dd>{won(amount)}</dd></div><div><dt>처리 방식</dt><dd>{r.fund.status === 'funding' ? '즉시 반영' : '1,000원 단위 예약 매칭'}</dd></div>{tab === 'invest' && <div><dt>쿠폰 조건</dt><dd>{r.fund.minIssueDiscount}%부터 발급 · 최대 {r.fund.maxDiscount}%</dd></div>}</dl>
+        <label className="risk-confirm-check"><input type="checkbox" checked={riskAccepted} onChange={(event) => setRiskAccepted(event.target.checked)} /><span><AlertTriangle /><b>원금과 회수 시점이 보장되지 않으며 쿠폰은 금융수익이 아님을 확인했습니다.</b></span></label>
+        <button className="button full large" disabled={!riskAccepted || busy} onClick={transact}>{busy ? '처리 중...' : tab === 'invest' ? '확인하고 투자하기' : '확인하고 회수 요청하기'}</button>
+      </section></div>}
     </div>
   </div>
 }

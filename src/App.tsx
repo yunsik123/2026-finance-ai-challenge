@@ -18,6 +18,7 @@ import AdminCenter from './AdminCenter.tsx'
 import WalletTopup from './WalletTopup.tsx'
 import SupportPage from './SupportPage.tsx'
 import FloatingAiChat from './FloatingAiChat.tsx'
+import './ux-improvements.css'
 import type { ApplicationResult, AppNotification, MeState, Position, PublicState, Restaurant, Role, User } from './types.ts'
 
 const won = (value: number) => `${Math.round(value).toLocaleString('ko-KR')}원`
@@ -167,7 +168,7 @@ function Home({ state, onSelect, onExplore, favoriteIds, onFavorite }: { state: 
         <h1>좋아하는 식당의 성장을<br /><em>함께 먹어요.</em></h1>
         <p>실제 고객의 응원이 소상공인의 자금이 되고,<br className="hide-mobile" /> 그 성장은 맛있는 쿠폰으로 돌아옵니다.</p>
         <div className="hero-actions"><button className="button large" onClick={onExplore}>식당 둘러보기 <ArrowRight size={18} /></button><NavLink className="button secondary large" to="/owner">펀딩 시작하기</NavLink></div>
-        <div className="trust-row"><span><ShieldCheck /> 6단계 성장성 심사</span><span><CircleDollarSign /> 1천원 단위 거래</span><span><Users /> 1% 투자 한도</span></div>
+        <div className="trust-row"><span><ShieldCheck /> 35지표 SCB 예비심사</span><span><CircleDollarSign /> 1천원 단위 거래</span><span><Users /> 1% 투자 한도</span></div>
       </div>
       <div className="hero-visual">
         <div className="ticker-card ticker-main">
@@ -222,10 +223,24 @@ function RestaurantCard({ restaurant: r, onClick, rank, favorite, onFavorite }: 
 function Discover({ restaurants, onSelect, favoriteIds, onFavorite }: { restaurants: Restaurant[]; onSelect: (r: Restaurant) => void; favoriteIds: string[]; onFavorite: (r: Restaurant) => void }) {
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('전체')
+  const [region, setRegion] = useState('전체 지역')
+  const [risk, setRisk] = useState('전체 위험도')
+  const [fundStatus, setFundStatus] = useState('전체 상태')
   const [sort, setSort] = useState('추천순')
   const categories = ['전체', ...new Set(restaurants.map((r) => r.category))]
-  const filtered = useMemo(() => restaurants.filter((r) => (category === '전체' || r.category === category) && `${r.name}${r.region}${r.neighborhood}${r.tags.join('')}`.includes(query)).sort((a, b) => sort === '성장률순' ? b.salesGrowth - a.salesGrowth : sort === '마감임박순' ? new Date(a.fund.endsAt).getTime() - new Date(b.fund.endsAt).getTime() : b.opportunityScore - a.opportunityScore), [restaurants, query, category, sort])
-  return <div className="page-wrap"><div className="page-heading"><span className="eyebrow coral">식당 발견</span><h1>내 취향에 맞는<br />맛있는 기회를 찾아보세요.</h1><p>모든 식당과 수치는 서비스 시연을 위한 가상 데이터입니다.</p></div><div className="discover-toolbar"><label className="search-box"><Search /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="식당, 동네, 음식 검색" /></label><select value={sort} onChange={(e) => setSort(e.target.value)}><option>추천순</option><option>성장률순</option><option>마감임박순</option></select></div><div className="chip-row">{categories.map((item) => <button className={item === category ? 'active' : ''} onClick={() => setCategory(item)} key={item}>{item}</button>)}</div><div className="result-row"><b>{filtered.length}개의 식당</b><span>AI 기회점수는 성장성·단골·안정성을 함께 반영해요.</span></div><div className="restaurant-grid">{filtered.map((r) => <RestaurantCard key={r.id} restaurant={r} onClick={() => onSelect(r)} favorite={favoriteIds.includes(r.id)} onFavorite={() => onFavorite(r)} />)}</div></div>
+  const regions = ['전체 지역', ...new Set(restaurants.map((r) => r.region))]
+  const filtered = useMemo(() => restaurants.filter((r) =>
+    (category === '전체' || r.category === category)
+    && (region === '전체 지역' || r.region === region)
+    && (risk === '전체 위험도' || r.fund.riskLevel === risk)
+    && (fundStatus === '전체 상태' || r.fund.status === fundStatus)
+    && `${r.name}${r.region}${r.neighborhood}${r.tags.join('')}`.includes(query),
+  ).sort((a, b) => sort === '성장률순' ? b.salesGrowth - a.salesGrowth
+    : sort === '혜택순' ? b.fund.maxDiscount - a.fund.maxDiscount
+      : sort === '마감임박순' ? new Date(a.fund.endsAt).getTime() - new Date(b.fund.endsAt).getTime()
+        : b.opportunityScore - a.opportunityScore), [restaurants, query, category, region, risk, fundStatus, sort])
+  const resetFilters = () => { setQuery(''); setCategory('전체'); setRegion('전체 지역'); setRisk('전체 위험도'); setFundStatus('전체 상태'); setSort('추천순') }
+  return <div className="page-wrap"><div className="page-heading"><span className="eyebrow coral">식당 발견</span><h1>내 취향에 맞는<br />맛있는 기회를 찾아보세요.</h1><p>모든 식당과 수치는 서비스 시연을 위한 가상 데이터입니다.</p></div><div className="discover-toolbar"><label className="search-box"><Search /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="식당, 동네, 음식 검색" /></label><select value={sort} onChange={(e) => setSort(e.target.value)}><option>추천순</option><option>성장률순</option><option>혜택순</option><option>마감임박순</option></select></div><div className="discover-filters"><select value={region} onChange={(e) => setRegion(e.target.value)}>{regions.map((item) => <option key={item}>{item}</option>)}</select><select value={risk} onChange={(e) => setRisk(e.target.value)}><option>전체 위험도</option><option>낮음</option><option>보통</option><option>주의</option></select><select value={fundStatus} onChange={(e) => setFundStatus(e.target.value)}><option value="전체 상태">전체 상태</option><option value="funding">모금 중</option><option value="trading">거래 가능</option></select><button onClick={resetFilters}>필터 초기화</button></div><div className="chip-row">{categories.map((item) => <button className={item === category ? 'active' : ''} onClick={() => setCategory(item)} key={item}>{item}</button>)}</div><div className="result-row"><b>{filtered.length}개의 식당</b><span>지역·혜택·위험도를 함께 확인한 뒤 직접 방문할 식당을 중심으로 살펴보세요.</span></div><div className="restaurant-grid">{filtered.map((r) => <RestaurantCard key={r.id} restaurant={r} onClick={() => onSelect(r)} favorite={favoriteIds.includes(r.id)} onFavorite={() => onFavorite(r)} />)}</div>{!filtered.length && <Empty icon="🔎" title="조건에 맞는 식당이 없어요" text="필터를 초기화하거나 검색 범위를 넓혀보세요." />}</div>
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }) { return <label className="field"><span>{label}</span>{children}</label> }
