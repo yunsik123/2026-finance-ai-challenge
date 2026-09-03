@@ -249,9 +249,7 @@ export default function CouponMarket({ state, me, requireLogin, refresh, notify 
             <span>{listing.userName}님의 제안</span>
             <small>최대 {won(listing.coupon?.maxDiscountWon || 0)} 할인 · {shortDate(listing.expiresAt)}까지</small>
           </div>
-          <div className={`listing-offers-count ${listing.offerCount > 0 ? '' : 'empty'}`} aria-hidden={listing.offerCount === 0}>
-            <Inbox size={14} /> 받은 제안 {listing.offerCount}건
-          </div>
+          {listing.offerCount > 0 && <div className="listing-offers-count"><Inbox size={14} /> 받은 제안 {listing.offerCount}건</div>}
 
           {listing.mine
             ? <button className="button full cancel-listing" disabled={busyId === listing.id}
