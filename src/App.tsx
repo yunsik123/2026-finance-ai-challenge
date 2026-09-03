@@ -115,7 +115,7 @@ function App() {
           <Route path="/" element={<Home state={state} onSelect={setSelected} onExplore={() => navigate('/discover')} favoriteIds={me?.favoriteRestaurantIds || []} onFavorite={toggleFavorite} />} />
           <Route path="/discover" element={<Discover restaurants={state.restaurants} onSelect={setSelected} favoriteIds={me?.favoriteRestaurantIds || []} onFavorite={toggleFavorite} />} />
           <Route path="/market" element={<MarketPage state={state} me={me} requireLogin={requireLogin} onSelect={setSelected} refresh={refresh} notify={notify} />} />
-          <Route path="/insight" element={<InsightPage state={state} role={me?.user.role || 'investor'} onSelect={setSelected} notify={notify} />} />
+          <Route path="/insight" element={<InsightPage state={state} onSelect={setSelected} />} />
           <Route path="/owner" element={<OwnerCenter me={me} onLogin={() => setAuthOpen(true)} refresh={refresh} notify={notify} />} />
           <Route path="/admin" element={<AdminCenter me={me} onLogin={() => setAuthOpen(true)} notify={notify} />} />
           <Route path="/my" element={<MyPage me={me} state={state} restaurants={state.restaurants} requireLogin={requireLogin} onSelect={setSelected} transact={transact} refresh={refresh} notify={notify} />} />
