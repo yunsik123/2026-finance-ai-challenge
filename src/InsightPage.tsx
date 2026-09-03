@@ -30,7 +30,7 @@ export default function InsightPage({ state, onSelect }: { state: PublicState; o
     ['쿠폰 혜택', '최소 발급률부터 최대 할인율까지', (restaurant: Restaurant) => `${restaurant.fund.minIssueDiscount}%부터 · 최대 ${restaurant.fund.maxDiscount}%`],
     ['종합 위험', '공개자료와 식당 지표로 산정', (restaurant: Restaurant) => `${restaurant.fund.riskLevel}`],
   ] as const
-  return <div className="page-wrap">
+  return <div className="page-wrap insight-page">
     <div className="page-heading compact"><span className="eyebrow coral"><Bot /> 먹투 AI</span><h1>숫자 너머의 맛있는<br />가능성을 읽어드려요.</h1><p>공공 상권자료와 가상 식당 원천데이터를 구분해 설명하고, 비공개 매출은 답변에서 보호합니다.</p></div>
     <div className="insight-layout"><section><section className="ai-compare">
         <div className="compare-heading"><div><span><Scale /> AI 투자 비교</span><h2>가게 2~3개를 나란히 살펴보세요</h2><p>수치와 성향을 비교하되 특정 가게에 대한 투자 권유는 하지 않습니다.</p></div><strong>{selected.length}<small>/3 선택</small></strong></div>

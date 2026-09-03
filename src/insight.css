@@ -1,3 +1,17 @@
-.insight-layout {
+.insight-page .page-heading {
+  max-width: 760px;
+  margin-right: auto;
+  margin-left: auto;
+  text-align: center;
+}
+
+.insight-page .page-heading .eyebrow {
+  justify-content: center;
+}
+
+.insight-page .insight-layout {
+  width: min(100%, 980px);
+  margin-right: auto;
+  margin-left: auto;
   grid-template-columns: minmax(0, 1fr);
 }
