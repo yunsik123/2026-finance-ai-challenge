@@ -153,7 +153,7 @@ export default function FundDetailModal({ restaurant: r, me, onClose, onLogin, r
             <div className="decision-facts">
               <article><HandCoins /><span>현재 모집</span><b>{compactWon(r.fund.raised)}</b><small>목표 {compactWon(r.fund.goal)} · {progress}% 달성</small></article>
               <article><WalletCards /><span>자금 사용처</span><b>{r.fund.purpose}</b><small>모집된 금액은 표시된 사업 목적에 사용돼요.</small></article>
-              <article><BarChart3 /><span>개인 투자 한도</span><b>{compactWon(max)}</b><small>전체 모집 목표의 최대 1%</small></article>
+              <article><BarChart3 /><span>개인 투자 한도</span><b>{compactWon(max)}</b><small>먹투 자체 투기 방지 기준 · 법정 투자한도는 별도 적용</small></article>
               <article><Clock3 /><span>회수 방식</span><b>{r.fund.status === 'funding' ? '모금 중 바로 회수' : '예약 순서대로 매칭'}</b><small>{r.fund.status === 'funding' ? '현재 모금 단계에서 요청할 수 있어요.' : orderBook.note}</small></article>
             </div>
             <div className="decision-risk"><AlertTriangle /><div><b>손실·유동성 위험</b><p>원금과 회수 시점은 보장되지 않으며, 모금 종료 후에는 다른 투자자의 예약이 있어야 회수될 수 있어요. 쿠폰은 금융수익이 아니라 해당 식당에서 사용하는 할인 혜택입니다.</p></div></div>
@@ -174,7 +174,7 @@ export default function FundDetailModal({ restaurant: r, me, onClose, onLogin, r
         <div className="quick-amounts">{[10000,50000,100000].map((value) => <button key={value} onClick={() => setAmount(value)}>+{value/10000}만</button>)}<button onClick={() => setAmount(tab === 'invest' ? Math.min(me?.user.cash || 0, remainingLimit) : position?.availableAmount || 0)}>최대</button></div>
         {tab === 'invest' && <div className="limit-note"><span>남은 개인 투자 한도</span><b>{won(remainingLimit)}</b></div>}
         <div className="benefit-preview"><Ticket /><div><span>혜택 적립 속도</span><b>10만원당 하루 {r.fund.dailyRatePer100k}%</b><p>매출 보너스 +{r.fund.salesBonus}%{position?.early ? ` · 최초 투자자 적용 +${effectiveSalesBonus.toFixed(1)}%` : r.fund.status === 'funding' ? ` · 최초 투자자는 매출 보너스 ${r.fund.earlyBonus}% 우대` : ''}</p></div></div>
-        <button className="button full large" disabled={busy || (tab === 'withdraw' && !position)} onClick={reviewTransaction}>{busy ? '처리 중...' : !me ? '로그인하고 시작하기' : tab === 'invest' ? r.fund.status === 'funding' ? '투자 내용 확인하기' : '투자 예약 확인하기' : r.fund.status === 'funding' ? '회수 내용 확인하기' : '회수 주문 확인하기'}</button>
+        <button className="button full large" disabled={busy || (tab === 'withdraw' && !position)} onClick={reviewTransaction}>{busy ? '처리 중...' : !me ? '로그인하고 시작하기' : tab === 'invest' ? r.fund.status === 'funding' ? '투자하기' : '투자 예약 확인하기' : r.fund.status === 'funding' ? '회수 내용 확인하기' : '회수 주문 확인하기'}</button>
         <p className="order-risk">원금과 회수 시점은 보장되지 않아요. 대기 주문은 이 화면에서 취소할 수 있습니다.</p>
       </aside>
       {confirming && <div className="trade-confirm-backdrop" onMouseDown={() => setConfirming(false)}><section className="trade-confirm" onMouseDown={(event) => event.stopPropagation()}>

@@ -169,7 +169,7 @@ function Home({ state, onSelect, onExplore, favoriteIds, onFavorite }: { state: 
         <h1>좋아하는 식당의 성장을<br /><em>함께 먹어요.</em></h1>
         <p>실제 고객의 응원이 소상공인의 자금이 되고,<br className="hide-mobile" /> 그 성장은 맛있는 쿠폰으로 돌아옵니다.</p>
         <div className="hero-actions"><button className="button large" onClick={onExplore}>식당 둘러보기 <ArrowRight size={18} /></button><NavLink className="button secondary large" to="/owner">펀딩 시작하기</NavLink></div>
-        <div className="trust-row"><span><ShieldCheck /> 35지표 SCB 예비심사</span><span><CircleDollarSign /> 1천원 단위 거래</span><span><Users /> 1% 투자 한도</span></div>
+        <div className="trust-row"><span><ShieldCheck /> 35지표 먹투 성장성 예비평가</span><span><CircleDollarSign /> 1천원 단위 거래</span><span><Users /> 먹투 자체 1% 한도</span></div>
       </div>
       <div className="hero-visual">
         <div className="ticker-card ticker-main">
@@ -191,13 +191,13 @@ function Home({ state, onSelect, onExplore, favoriteIds, onFavorite }: { state: 
       <SectionTitle eyebrow="어떻게 작동하나요?" title="응원은 간단하고, 혜택은 차곡차곡" align="center" />
       <div className="steps-grid">
         <Step icon="🔎" number="01" title="진짜 단골 맛집 발견" text="매출과 상권, 실제 고객의 재방문 데이터를 살펴봐요." />
-        <Step icon="💸" number="02" title="1천원부터 응원 투자" text="한 식당 최대 1%까지, 모금 중엔 자유롭게 넣고 빼요." />
+        <Step icon="💸" number="02" title="1천원부터 응원 투자" text="한 식당 최대 1%까지 참여해요. 이는 먹투의 투기 방지 규칙이며 법정 투자한도를 대신하지 않아요." />
         <Step icon="🎟️" number="03" title="할인율이 매일 차곡차곡" text="투자액과 성장에 따라 쿠폰 혜택이 매일 쌓여요." />
         <Step icon="🤝" number="04" title="필요할 때 투자 회수" text="모금 후엔 새 투자자와 1천원씩 자동 매칭돼요." />
       </div>
     </section>
     <section className="content-section etf-section">
-      <SectionTitle eyebrow="한 번에 골고루" title="맛으로 묶은 먹투 펀드" description="지역과 음식 취향을 골라 여러 식당을 함께 응원해요." />
+      <SectionTitle eyebrow="한 번에 골고루" title="지역·음식 테마 모음" description="지역과 음식 취향에 따라 여러 식당의 공개정보를 모아 살펴봐요." />
       <div className="etf-grid">{state.etfs.map((etf) => <article className="etf-card" key={etf.id}><span className="etf-emoji">{etf.emoji}</span><div className="etf-copy"><span>{etf.region} · {etf.category}</span><h3>{etf.name}</h3><p>{etf.description}</p></div><div className="etf-stats"><span>최근 성장 <b>+{etf.growth}%</b></span><span>최대 쿠폰 <strong>{etf.maxDiscount}%</strong></span></div><button className="round-arrow" aria-label="상세보기"><ArrowRight /></button></article>)}</div>
     </section>
     <section className="owner-banner content-section"><div><span className="eyebrow light"><Building2 /> 사장님이신가요?</span><h2>은행이 놓친 성장성,<br />단골은 알고 있어요.</h2><p>매출 규모만으로 평가하지 않습니다. 성장 흐름과 실제 고객의 지지를 함께 봐요.</p><NavLink to="/owner" className="button cream large">내 식당 가능성 확인하기 <ArrowRight /></NavLink></div><div className="owner-score-card"><span>먹투 성장 가능성</span><strong>82<small>/100</small></strong><div className="score-track"><i style={{ width: '82%' }} /></div><ul><li><Check /> 단골 재방문율 상위 12%</li><li><Check /> 최근 6개월 매출 꾸준한 상승</li><li><Check /> 상권 유동인구 전년비 +9.2%</li></ul></div></section>
@@ -227,7 +227,7 @@ function Discover({ restaurants, onSelect, favoriteIds, onFavorite }: { restaura
   const [region, setRegion] = useState('전체 지역')
   const [risk, setRisk] = useState('전체 위험도')
   const [fundStatus, setFundStatus] = useState('전체 상태')
-  const [sort, setSort] = useState('추천순')
+  const [sort, setSort] = useState('기본순')
   const [mapRestaurantId, setMapRestaurantId] = useState(restaurants[0]?.id || '')
   const categories = ['전체', ...new Set(restaurants.map((r) => r.category))]
   const regions = ['전체 지역', ...new Set(restaurants.map((r) => r.region))]
@@ -241,9 +241,9 @@ function Discover({ restaurants, onSelect, favoriteIds, onFavorite }: { restaura
     : sort === '혜택순' ? b.fund.maxDiscount - a.fund.maxDiscount
       : sort === '마감임박순' ? new Date(a.fund.endsAt).getTime() - new Date(b.fund.endsAt).getTime()
         : b.opportunityScore - a.opportunityScore), [restaurants, query, category, region, risk, fundStatus, sort])
-  const resetFilters = () => { setQuery(''); setCategory('전체'); setRegion('전체 지역'); setRisk('전체 위험도'); setFundStatus('전체 상태'); setSort('추천순') }
+  const resetFilters = () => { setQuery(''); setCategory('전체'); setRegion('전체 지역'); setRisk('전체 위험도'); setFundStatus('전체 상태'); setSort('기본순') }
   const mapRestaurant = restaurants.find((item) => item.id === mapRestaurantId) || restaurants[0]
-  return <div className="page-wrap"><div className="page-heading"><span className="eyebrow coral">식당 발견</span><h1>내 취향에 맞는<br />맛있는 기회를 찾아보세요.</h1><p>모든 식당과 수치는 서비스 시연을 위한 가상 데이터입니다.</p></div><div className="discover-toolbar"><label className="search-box"><Search /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="식당, 동네, 음식 검색" /></label><select value={sort} onChange={(e) => setSort(e.target.value)}><option>추천순</option><option>성장률순</option><option>혜택순</option><option>마감임박순</option></select></div><div className="discover-filters"><select value={region} onChange={(e) => setRegion(e.target.value)}>{regions.map((item) => <option key={item}>{item}</option>)}</select><select value={risk} onChange={(e) => setRisk(e.target.value)}><option>전체 위험도</option><option>낮음</option><option>보통</option><option>주의</option></select><select value={fundStatus} onChange={(e) => setFundStatus(e.target.value)}><option value="전체 상태">전체 상태</option><option value="funding">모금 중</option><option value="trading">거래 가능</option></select><button onClick={resetFilters}>필터 초기화</button></div><div className="chip-row">{categories.map((item) => <button className={item === category ? 'active' : ''} onClick={() => setCategory(item)} key={item}>{item}</button>)}</div>{mapRestaurant && <NearbyMap restaurant={mapRestaurant} restaurants={restaurants} onRestaurantChange={setMapRestaurantId} />}<div className="result-row"><b>{filtered.length}개의 식당</b><span>지역·혜택·위험도를 함께 확인한 뒤 직접 방문할 식당을 중심으로 살펴보세요.</span></div><div className="restaurant-grid">{filtered.map((r) => <RestaurantCard key={r.id} restaurant={r} onClick={() => onSelect(r)} favorite={favoriteIds.includes(r.id)} onFavorite={() => onFavorite(r)} />)}</div>{!filtered.length && <Empty icon="🔎" title="조건에 맞는 식당이 없어요" text="필터를 초기화하거나 검색 범위를 넓혀보세요." />}</div>
+  return <div className="page-wrap"><div className="page-heading"><span className="eyebrow coral">식당 발견</span><h1>내 취향에 맞는<br />맛있는 기회를 찾아보세요.</h1><p>모든 식당과 수치는 서비스 시연을 위한 가상 데이터입니다.</p></div><div className="discover-toolbar"><label className="search-box"><Search /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="식당, 동네, 음식 검색" /></label><select value={sort} onChange={(e) => setSort(e.target.value)}><option>기본순</option><option>성장률순</option><option>혜택순</option><option>마감임박순</option></select></div><div className="discover-filters"><select value={region} onChange={(e) => setRegion(e.target.value)}>{regions.map((item) => <option key={item}>{item}</option>)}</select><select value={risk} onChange={(e) => setRisk(e.target.value)}><option>전체 위험도</option><option>낮음</option><option>보통</option><option>주의</option></select><select value={fundStatus} onChange={(e) => setFundStatus(e.target.value)}><option value="전체 상태">전체 상태</option><option value="funding">모금 중</option><option value="trading">거래 가능</option></select><button onClick={resetFilters}>필터 초기화</button></div><div className="chip-row">{categories.map((item) => <button className={item === category ? 'active' : ''} onClick={() => setCategory(item)} key={item}>{item}</button>)}</div>{mapRestaurant && <NearbyMap restaurant={mapRestaurant} restaurants={restaurants} onRestaurantChange={setMapRestaurantId} />}<div className="result-row"><b>{filtered.length}개의 식당</b><span>지역·혜택·위험도를 함께 확인한 뒤 직접 방문할 식당을 중심으로 살펴보세요.</span></div><div className="restaurant-grid">{filtered.map((r) => <RestaurantCard key={r.id} restaurant={r} onClick={() => onSelect(r)} favorite={favoriteIds.includes(r.id)} onFavorite={() => onFavorite(r)} />)}</div>{!filtered.length && <Empty icon="🔎" title="조건에 맞는 식당이 없어요" text="필터를 초기화하거나 검색 범위를 넓혀보세요." />}</div>
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }) { return <label className="field"><span>{label}</span>{children}</label> }

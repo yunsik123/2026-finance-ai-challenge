@@ -164,7 +164,7 @@ export default function CouponWallet({ me, state, refresh, notify }: {
       const expiring = (coupon.daysLeft ?? 99) < rules.minDaysLeft
       return <article className={`my-coupon ${coupon.status} ${expiring ? 'expiring' : ''}`} key={coupon.id}>
         <div className="coupon-ticket-main">
-          <div className="coupon-card-top"><span className="coupon-food">{coupon.restaurant?.emoji || '🎟️'}</span><div><small>{coupon.type === 'dividend' ? '깜짝 배당' : coupon.type === 'etf' ? '테마 펀드' : '투자 혜택'}</small><h3>{coupon.restaurant?.name || coupon.title}</h3></div><em className={`coupon-status ${coupon.status}`}>{statusLabel[coupon.status]}</em></div>
+          <div className="coupon-card-top"><span className="coupon-food">{coupon.restaurant?.emoji || '🎟️'}</span><div><small>{coupon.type === 'dividend' ? '식당 감사 쿠폰' : coupon.type === 'etf' ? '지역·음식 테마' : '투자 혜택'}</small><h3>{coupon.restaurant?.name || coupon.title}</h3></div><em className={`coupon-status ${coupon.status}`}>{statusLabel[coupon.status]}</em></div>
           <div className="coupon-benefit"><b>{coupon.discount}<span>%</span></b><div><small>최대 할인 금액</small><strong>{won(coupon.maxDiscountWon)}</strong></div></div>
           <p className="coupon-title-detail">{coupon.title}</p>
           <div className="coupon-meta"><span><Clock3 /> {shortDate(coupon.expiresAt)}까지</span><b>{coupon.daysLeft ?? 0}일 남음</b>{coupon.acquiredFromUserId && <em>교환으로 받음</em>}</div>

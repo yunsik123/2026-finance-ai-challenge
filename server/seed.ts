@@ -181,7 +181,7 @@ export const articles: Article[] = [
 ]
 export const etfs: EtfFund[] = [
   { id: 'e-mapochina', name: '마포 중식 한바퀴', emoji: '🥢', region: '마포구', category: '중식', restaurantIds: ['r-huaxiang', 'r-mealmill'], minimum: 10000, maxDiscount: 35, growth: 18.6, members: 841, description: '마포 생활권의 면·중화요리 제휴점에서 쓰는 분산 쿠폰' },
-  { id: 'e-localbakery', name: '동네빵 행복지수', emoji: '🥖', region: '전국', category: '베이커리', restaurantIds: ['r-oven', 'r-mokhwa'], minimum: 10000, maxDiscount: 30, growth: 21.2, members: 1260, description: '우리 밀과 지역 로스터리를 함께 응원하는 펀드' },
+  { id: 'e-localbakery', name: '동네빵 행복지수', emoji: '🥖', region: '전국', category: '베이커리', restaurantIds: ['r-oven', 'r-mokhwa'], minimum: 10000, maxDiscount: 30, growth: 21.2, members: 1260, description: '우리 밀과 지역 로스터리의 공개정보를 함께 보는 테마 모음' },
   { id: 'e-nighttable', name: '밤의 식탁', emoji: '🌙', region: '전국', category: '저녁', restaurantIds: ['r-bada', 'r-nokturn', 'r-podo'], minimum: 10000, maxDiscount: 32, growth: 12.4, members: 617, description: '저녁 시간을 빛내는 로컬 다이닝 3곳에 나눠 응원해요' }
 ]
 
@@ -285,17 +285,17 @@ export function createSeed(ownerHash: string, investorHash: string): Database {
       // 통과 사례와 탈락 사례가 둘 다 나오도록 업종·지역·할인율·액면가를 흩어 놓았다.
       { id: 'c-mc-1', userId: 'u-market-c', restaurantId: 'r-mokhwa', fundId: 'f-mokhwa', title: '목화다방 26% 쿠폰', discount: 26, maxDiscountWon: 3120, type: 'fund', status: 'listed', expiresAt: day(58), createdAt: day(-9) },
       { id: 'c-mc-2', userId: 'u-market-c', restaurantId: 'r-jejudam', fundId: 'f-jejudam', title: '제주담 국수 24% 쿠폰', discount: 24, maxDiscountWon: 5760, type: 'fund', status: 'available', expiresAt: day(77), createdAt: day(-14) },
-      { id: 'c-mc-3', userId: 'u-market-c', restaurantId: 'r-podo', fundId: 'f-podo', title: '포도상점 30% 배당 쿠폰', discount: 30, maxDiscountWon: 14700, type: 'dividend', status: 'available', expiresAt: day(52), createdAt: day(-6) },
+      { id: 'c-mc-3', userId: 'u-market-c', restaurantId: 'r-podo', fundId: 'f-podo', title: '포도상점 30% 식당 감사 쿠폰', discount: 30, maxDiscountWon: 14700, type: 'dividend', status: 'available', expiresAt: day(52), createdAt: day(-6) },
       { id: 'c-mc-4', userId: 'u-market-c', restaurantId: 'r-nokturn', fundId: 'f-nokturn', title: '녹턴 키친 23% 쿠폰', discount: 23, maxDiscountWon: 9200, type: 'fund', status: 'offered', expiresAt: day(63), createdAt: day(-12) },
       { id: 'c-md-1', userId: 'u-market-d', restaurantId: 'r-nokturn', fundId: 'f-nokturn', title: '녹턴 키친 28% 쿠폰', discount: 28, maxDiscountWon: 11760, type: 'fund', status: 'listed', expiresAt: day(61), createdAt: day(-7) },
       { id: 'c-md-2', userId: 'u-market-d', restaurantId: 'r-oven', fundId: 'f-oven', title: '오후의 오븐 22% 쿠폰', discount: 22, maxDiscountWon: 7920, type: 'fund', status: 'available', expiresAt: day(45), createdAt: day(-16) },
       { id: 'c-md-3', userId: 'u-market-d', restaurantId: 'r-sobok', fundId: 'f-sobok', title: '소복소복 24% 쿠폰', discount: 24, maxDiscountWon: 4560, type: 'fund', status: 'offered', expiresAt: day(69), createdAt: day(-5) },
-      { id: 'c-me-1', userId: 'u-market-e', restaurantId: 'r-bada', fundId: 'f-bada', title: '바다의 식탁 25% 배당 쿠폰', discount: 25, maxDiscountWon: 14500, type: 'dividend', status: 'listed', expiresAt: day(54), createdAt: day(-10) },
+      { id: 'c-me-1', userId: 'u-market-e', restaurantId: 'r-bada', fundId: 'f-bada', title: '바다의 식탁 25% 식당 감사 쿠폰', discount: 25, maxDiscountWon: 14500, type: 'dividend', status: 'listed', expiresAt: day(54), createdAt: day(-10) },
       { id: 'c-me-2', userId: 'u-market-e', restaurantId: 'r-greenbowl', fundId: 'f-greenbowl', title: '그린볼 클럽 20% 쿠폰', discount: 20, maxDiscountWon: 3800, type: 'fund', status: 'available', expiresAt: day(83), createdAt: day(-13) },
       { id: 'c-me-3', userId: 'u-market-e', restaurantId: 'r-oven', fundId: 'f-oven', title: '오후의 오븐 26% 쿠폰', discount: 26, maxDiscountWon: 9360, type: 'fund', status: 'offered', expiresAt: day(49), createdAt: day(-8) },
       { id: 'c-mf-1', userId: 'u-market-f', restaurantId: 'r-sobok', fundId: 'f-sobok', title: '소복소복 12% 쿠폰', discount: 12, maxDiscountWon: 2280, type: 'fund', status: 'available', expiresAt: day(88), createdAt: day(-4) },
       { id: 'c-mf-2', userId: 'u-market-f', restaurantId: 'r-mealmill', fundId: 'f-mealmill', title: '밀밀키친 35% 쿠폰', discount: 35, maxDiscountWon: 11200, type: 'fund', status: 'listed', expiresAt: day(71), createdAt: day(-3) },
-      { id: 'c-mg-1', userId: 'u-market-g', restaurantId: 'r-sunmandu', fundId: 'f-sunmandu', title: '선만두 29% 배당 쿠폰', discount: 29, maxDiscountWon: 7830, type: 'dividend', status: 'listed', expiresAt: day(66), createdAt: day(-11) },
+      { id: 'c-mg-1', userId: 'u-market-g', restaurantId: 'r-sunmandu', fundId: 'f-sunmandu', title: '선만두 29% 식당 감사 쿠폰', discount: 29, maxDiscountWon: 7830, type: 'dividend', status: 'listed', expiresAt: day(66), createdAt: day(-11) },
       { id: 'c-mg-2', userId: 'u-market-g', restaurantId: 'r-dotori', fundId: 'f-dotori', title: '도토리분식 31% 쿠폰', discount: 31, maxDiscountWon: 4960, type: 'fund', status: 'listed', expiresAt: day(43), createdAt: day(-15) },
       { id: 'c-mg-3', userId: 'u-market-g', restaurantId: 'r-jejudam', fundId: 'f-jejudam', title: '제주담 국수 27% 쿠폰', discount: 27, maxDiscountWon: 6480, type: 'fund', status: 'available', expiresAt: day(74), createdAt: day(-9) },
       { id: 'c-mg-4', userId: 'u-market-g', restaurantId: 'r-huaxiang', fundId: 'f-huaxiang', title: '화향면관 15% 쿠폰', discount: 15, maxDiscountWon: 4200, type: 'fund', status: 'available', expiresAt: day(36), createdAt: day(-19) },
@@ -304,7 +304,7 @@ export function createSeed(ownerHash: string, investorHash: string): Database {
       // 아래 4장은 각 매물에 실제로 성립하는 상대가 최소 1명은 있게 맞춘 '짝' 쿠폰이다.
       // (없으면 교환장에 매물은 보이는데 아무도 교환할 수 없는 화면이 된다.)
       { id: 'c-mh-3', userId: 'u-market-h', restaurantId: 'r-oven', fundId: 'f-oven', title: '오후의 오븐 25% 쿠폰', discount: 25, maxDiscountWon: 6300, type: 'fund', status: 'available', expiresAt: day(59), createdAt: day(-7) },
-      { id: 'c-mg-5', userId: 'u-market-g', restaurantId: 'r-oven', fundId: 'f-oven', title: '오후의 오븐 30% 배당 쿠폰', discount: 30, maxDiscountWon: 10800, type: 'dividend', status: 'available', expiresAt: day(47), createdAt: day(-12) },
+      { id: 'c-mg-5', userId: 'u-market-g', restaurantId: 'r-oven', fundId: 'f-oven', title: '오후의 오븐 30% 식당 감사 쿠폰', discount: 30, maxDiscountWon: 10800, type: 'dividend', status: 'available', expiresAt: day(47), createdAt: day(-12) },
       { id: 'c-mf-3', userId: 'u-market-f', restaurantId: 'r-mealmill', fundId: 'f-mealmill', title: '밀밀키친 27% 쿠폰', discount: 27, maxDiscountWon: 8640, type: 'fund', status: 'available', expiresAt: day(68), createdAt: day(-5) },
       { id: 'c-me-4', userId: 'u-market-e', restaurantId: 'r-dotori', fundId: 'f-dotori', title: '도토리분식 27% 쿠폰', discount: 27, maxDiscountWon: 4320, type: 'fund', status: 'available', expiresAt: day(62), createdAt: day(-10) },
     ],

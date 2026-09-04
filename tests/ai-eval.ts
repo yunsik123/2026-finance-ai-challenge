@@ -153,10 +153,10 @@ async function main() {
         { label: '사장님 센터 안내', pass: a.includes('사장님 센터') },
         { label: '실제 카드명 안내', pass: a.includes('AI 점주 경영 리포트') },
       ] },
-    { no: 28, group: 'C.사장님', role: 'owner', token: owner.token, path: '/owner', q: '투자자에게 배당 쿠폰은 어떻게 보내?',
+    { no: 28, group: 'C.사장님', role: 'owner', token: owner.token, path: '/owner', q: '투자자에게 식당 감사 쿠폰은 어떻게 보내?',
       expect: (a) => [
         { label: '사장님 센터 안내', pass: a.includes('사장님 센터') },
-        { label: '실제 버튼명 안내', pass: a.includes('10% 배당 쿠폰 보내기') },
+        { label: '실제 버튼명 안내', pass: a.includes('10% 식당 감사 쿠폰 보내기') },
       ] },
     { no: 29, group: 'C.사장님', role: 'owner', token: owner.token, path: '/owner', q: '내 매출 공개는 지금 어떤 상태야?',
       expect: (a, r) => [

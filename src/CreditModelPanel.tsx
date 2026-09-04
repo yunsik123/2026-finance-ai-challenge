@@ -33,12 +33,12 @@ export default function CreditModelPanel() {
 
   return <section className="trust-section credit-model">
     <div className="trust-section-head">
-      <div><span className="eyebrow">CREDIT MODEL</span><h2>신용평가는 무엇을 보나요</h2></div>
+      <div><span className="eyebrow">먹투 평가모형</span><h2>먹투 성장성 예비평가는 무엇을 보나요</h2></div>
       <Layers />
     </div>
     <p className="credit-model-lead">
       업종별 기준분포와 비교해 {model.groups.reduce((sum, group) => sum + group.features.length, 0)}개 지표를 점수로 바꾸고,
-      가중치 합계 {model.weightSum}%로 등급을 냅니다. {model.missingHandling}.
+      가중치 합계 {model.weightSum}%로 예비평가 구간을 냅니다. {model.missingHandling}.
     </p>
 
     <div className="credit-model-industries">

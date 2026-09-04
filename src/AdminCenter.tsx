@@ -101,7 +101,7 @@ export default function AdminCenter({ me, onLogin, notify }: { me: MeState | nul
 
   const applications = <section className="admin-list">{filtered(dashboard.applications).map((item) => <article className="admin-row-card" key={item.id}>
     <div className="admin-row-main"><span className={`admin-status ${item.status}`}>{applicationLabel[item.status]}</span><div><small>{item.owner?.name || '사장님'} · {date(item.submittedAt)}</small><h3>{item.restaurantName}</h3><p>{item.explanation}</p></div></div>
-    <div className="admin-score"><small>SCB 예비점수</small><b>{item.score}</b><span>{won(item.approvedLimit)}</span></div>
+    <div className="admin-score"><small>먹투 성장성 예비평가</small><b>{item.score}</b><span>{item.status === 'approved' ? '운영자 확정 한도' : 'AI 제안 한도'} {won(item.approvedLimit)}</span></div>
     <select disabled={busy === item.id} value={item.status} onChange={(event) => mutate(item.id, `/api/admin/applications/${item.id}`, { status: event.target.value }, '심사 상태를 변경했어요.')}><option value="approved">승인</option><option value="conditional">조건부 승인</option><option value="manual_review">관리자 검토</option><option value="rejected">보완 필요</option></select>
   </article>)}{!filtered(dashboard.applications).length && <Empty text="표시할 심사가 없어요." />}</section>
 

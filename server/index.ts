@@ -869,7 +869,7 @@ async function handleDemoMutation(req: AuthedRequest, res: Response, user: Sessi
     if (fundAction[2] === 'invest') {
       const limit = Math.floor(fund.goal * .01 / 1000) * 1000
       if (amount > sandbox.cash) { res.status(400).json({ error: '체험 잔액이 부족해요. MY 먹투에서 먹투머니를 충전해보세요.' }); return }
-      if (position.amount + amount > limit) { res.status(400).json({ error: `한 식당 투자 한도는 목표액의 1%(${limit.toLocaleString()}원)예요.` }); return }
+      if (position.amount + amount > limit) { res.status(400).json({ error: `한 식당 투자 한도는 목표액의 1%(${limit.toLocaleString()}원)예요. 이는 먹투 자체 투기 방지 규칙이며 법정 투자한도는 별도로 적용됩니다.` }); return }
       sandbox.cash -= amount
       position.amount += amount
       position.updatedAt = now()
@@ -1513,7 +1513,7 @@ app.post('/api/funds/:fundId/invest', auth('investor'), async (req: AuthedReques
   const position = getPosition(user.id, fund.id)
   const pending = db.orders.filter((o) => o.userId === user.id && o.fundId === fund.id && o.type === 'buy' && o.remaining > 0).reduce((sum, o) => sum + o.remaining, 0)
   const personalLimit = Math.floor(fund.goal * 0.01 / 1000) * 1000
-  if (position.amount + pending + amount > personalLimit) return res.status(400).json({ error: `한 식당에는 목표액의 1%인 ${personalLimit.toLocaleString()}원까지 투자할 수 있어요.` })
+  if (position.amount + pending + amount > personalLimit) return res.status(400).json({ error: `한 식당에는 목표액의 1%인 ${personalLimit.toLocaleString()}원까지 투자할 수 있어요. 이는 먹투 자체 투기 방지 규칙이며 법정 투자한도는 별도로 적용됩니다.` })
   user.cash -= amount
   if (fund.status === 'funding') {
     const accepted = Math.min(amount, fund.goal - fund.raised)
@@ -2495,15 +2495,15 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
     ? Math.max(5000000, Math.min(requestedLimit || capacity, capacity, 100000000))
     : 0
 
-  strengths.push(`${industry} 업종 35개 지표 중 ${creditAssessment.measuredCount}개를 산정해 신용등급 ${creditAssessment.grade}(${creditAssessment.score}점)이 나왔어요.`)
+  strengths.push(`${industry} 업종 35개 지표 중 ${creditAssessment.measuredCount}개를 산정해 먹투 성장성 예비평가 ${creditAssessment.grade}(${creditAssessment.score}점)이 나왔어요.`)
   if (creditAssessment.topDrivers.length) strengths.push(`가장 크게 기여한 지표는 ${creditAssessment.topDrivers.slice(0, 2).map((item) => item.label).join(', ')}예요.`)
   for (const drag of creditAssessment.topDrags.slice(0, 2)) {
-    improvements.push(`${drag.label}이(가) ${industry} 업종 기준으로 하위권(${drag.score}점)이라 등급을 끌어내리고 있어요.`)
+    improvements.push(`${drag.label}이(가) ${industry} 업종 기준으로 하위권(${drag.score}점)이라 예비평가 점수를 낮추고 있어요.`)
   }
-  if (creditAssessment.missing.length >= 8) improvements.push(`아직 산정하지 못한 신용지표가 ${creditAssessment.missing.length}개예요. 대출·계좌·재방문 자료를 연결하면 등급 근거가 촘촘해져요.`)
+  if (creditAssessment.missing.length >= 8) improvements.push(`아직 산정하지 못한 평가 지표가 ${creditAssessment.missing.length}개예요. 대출·계좌·재방문 자료를 연결하면 예비평가 근거가 촘촘해져요.`)
 
   const explanation = status === 'approved'
-    ? '핵심 원천데이터가 연결됐고 3중 검증의 일치도가 높아 펀딩 개설이 가능해요. 이 결과는 공식 SCB 등급이 아닌 먹투 MVP의 성장성 예비심사입니다.'
+    ? '핵심 원천데이터가 연결됐고 3중 검증의 일치도가 높아 펀딩 개설을 운영자에게 제안할 수 있어요. 이 결과는 금융기관의 공식 신용평가나 정부 SCB 결과가 아닌 먹투 성장성 예비평가입니다.'
     : status === 'conditional'
       ? '성장성은 확인됐지만 일부 자료의 최신성이나 상환부담 확인이 필요해 낮춘 한도로 먼저 시작하는 조건부 승인을 권해요.'
       : status === 'manual_review'
@@ -2524,7 +2524,7 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
   if (req.user!.sessionMode === 'demo') {
     const sandbox = sandboxFor(req.user!.id, 'owner')
     sandbox.applications.unshift(application)
-    demoNotification(sandbox, 'application', '체험 심사 완료', `${restaurantName} 예비심사 ${score}점 · 신용등급 ${creditAssessment.grade}`, '/owner')
+    demoNotification(sandbox, 'application', '체험 심사 완료', `${restaurantName} 먹투 성장성 예비평가 ${score}점 · 결과 ${creditAssessment.grade}`, '/owner')
     return res.status(201).json({ message: '체험 심사가 끝났어요. 결과는 저장되지 않습니다.', application, ephemeral: true, demoNotice: DEMO_NOTICE })
   }
   db.applications.push(application)
@@ -2532,7 +2532,7 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
   const statusWord = { approved: '펀딩 가능', conditional: '조건부 승인', manual_review: '운영자 확인 필요', rejected: '보완 필요' }[status]
   audit(req.user!.id, 'application.analyzed', 'application', application.id, `${restaurantName} 예비심사 ${statusWord} · ${score}점`)
   audit(req.user!.id, 'application.credit_graded', 'application', application.id,
-    `신용등급 ${creditAssessment.grade} (${creditAssessment.score}점) · ${creditAssessment.industry} 업종 · 지표 ${creditAssessment.measuredCount}/${creditAssessment.totalCount} 산정`)
+    `먹투 성장성 예비평가 ${creditAssessment.grade} (${creditAssessment.score}점) · ${creditAssessment.industry} 업종 · 지표 ${creditAssessment.measuredCount}/${creditAssessment.totalCount} 산정`)
   audit(req.user!.id, 'application.business_verified', 'application', application.id, `사업자 진위확인 ${businessVerification.verified ? '통과' : '보완 필요'}`)
   const verificationWord: Record<string, string> = {
     ready_for_admin: '운영자 확인 준비 완료', mismatch: '값이 서로 맞지 않음',
@@ -2586,12 +2586,12 @@ app.post('/api/owner/funds/:fundId/dividend', auth('owner'), async (req: AuthedR
   if (!fund || !restaurant) return res.status(404).json({ error: '관리할 수 있는 펀드가 아니에요.' })
   const investors = db.positions.filter((p) => p.fundId === fund.id && p.amount > 0)
   for (const position of investors) {
-    db.coupons.push({ id: id('coupon'), userId: position.userId, restaurantId: restaurant.id, fundId: fund.id, title: `${restaurant.name} 깜짝 배당 쿠폰`, discount, maxDiscountWon: Math.floor(restaurant.maxMenuPrice * discount / 100), type: 'dividend', status: 'available', createdAt: now(), expiresAt: new Date(Date.now() + 60 * 86400000).toISOString() })
+    db.coupons.push({ id: id('coupon'), userId: position.userId, restaurantId: restaurant.id, fundId: fund.id, title: `${restaurant.name} 식당 감사 쿠폰`, discount, maxDiscountWon: Math.floor(restaurant.maxMenuPrice * discount / 100), type: 'dividend', status: 'available', createdAt: now(), expiresAt: new Date(Date.now() + 60 * 86400000).toISOString() })
   }
   syncCouponLedger(fund.id)
   audit(req.user!.id, 'coupon.dividend_issued', 'fund', fund.id, `${investors.length}명에게 ${discount}% 쿠폰 발행`)
   await saveDatabase(); changed()
-  res.json({ message: `${investors.length}명의 투자자에게 ${discount}% 배당 쿠폰을 보냈어요.` })
+  res.json({ message: `${investors.length}명의 투자자에게 ${discount}% 식당 감사 쿠폰을 보냈어요.` })
 })
 
 app.post('/api/ai/ocr', auth('owner'), async (req: AuthedRequest, res) => {
@@ -2672,6 +2672,25 @@ bbox는 0~1000 기준 [x,y,width,height]이며 이미지 전체를 가리키는 
   res.json({ message: status === 'ai_extracted' ? 'AI가 문서의 보이는 항목을 구조화했어요. 최종 판단은 운영자 확인이 필요해요.' : '문서를 접수했어요. AI 연결 전이라 운영자 수동 검토 대상으로 표시했어요.', analysis })
 })
 
+const INVESTMENT_ADVICE_REFUSAL = '개인의 투자 금액을 정하거나 특정 식당을 가장 유리하다고 판단해 권유할 수는 없어요. 대신 모든 이용자에게 동일하게 공개되는 매출 성장률·재방문율·운영 이력·상권 위험·쿠폰 조건을 나란히 요약해드릴 수 있어요. 투자 여부와 금액은 원금 및 회수 지연 가능성을 확인한 뒤 직접 결정해주세요.'
+
+function isInvestmentAdviceRequest(question: string) {
+  const normalized = question.replace(/\s/g, '').toLocaleLowerCase('ko')
+  const asksAmountAdvice = /(?:\d[\d,]*(?:만|천)?원|얼마|몇만?원|몇천원|전액|금액).*(?:투자|넣).*(?:좋|적당|추천|권|할까|해야|할지|해도|해줘|하세요)|(?:투자|넣).*(?:\d[\d,]*(?:만|천)?원|얼마|몇만?원|몇천원|전액|금액|적당).*(?:좋|추천|권|할까|해야|할지|해도|해줘|하세요)/.test(normalized)
+  const asksBestRestaurant = /(?:가장|제일).*(?:유리|좋|낫|최적|수익|추천)|(?:어디|어느|어떤|뭐).*(?:투자해야|투자할까|투자하면좋|넣어야|넣을까|가장유리)|(?:추천|골라|정해).*(?:식당|가게|투자)|(?:식당|가게|투자).*(?:추천해|골라줘|정해줘)/.test(normalized)
+  return asksAmountAdvice || asksBestRestaurant
+}
+
+function enforceInvestmentAdvicePolicy(answer: string) {
+  const prohibited = [
+    /\d[\d,]*(?:만|천)?\s*원(?:을|를)?\s*(?:투자|넣)(?:하세요|하는\s*게\s*좋|하시는\s*게\s*좋|해보세요)/,
+    /(?:가장|제일)\s*(?:유리|좋|낫|적합|추천)/,
+    /(?:투자를?\s*)?(?:강력히\s*)?(?:권합니다|추천합니다)/,
+    /(?:식당|가게).{0,20}(?:투자|선택|우선).{0,10}(?:하세요|권해요|추천해요)/,
+  ]
+  return prohibited.some((pattern) => pattern.test(answer)) ? INVESTMENT_ADVICE_REFUSAL : answer
+}
+
 function localAiAnswer(question: string) {
   const normalized = question.replace(/\s/g, '').toLowerCase()
   const restaurant = db.restaurants.find((r) => normalized.includes(r.name.replace(/\s/g, '').toLowerCase()))
@@ -2680,15 +2699,15 @@ function localAiAnswer(question: string) {
     const salesSummary = restaurant.salesDisclosure ? `최근 월매출은 약 ${(restaurant.monthlySales / 10000).toFixed(0)}만원이고` : '월별 매출액은 사장님 선택으로 비공개이며'
     return `${restaurant.name}은 ${restaurant.neighborhood}의 ${restaurant.category} 식당이에요. ${salesSummary} 검증된 매출 성장지수는 ${restaurant.salesGrowth}%, 재방문율은 ${restaurant.repeatRate}%예요. 현재 펀드는 ${(fund.raised / 10000).toLocaleString()}만원이 모였고 최대 ${fund.maxDiscount}% 쿠폰을 설정했어요. ${restaurant.stabilityScore >= 85 ? '운영 안정성이 비교적 높지만' : '성장성은 돋보이지만 운영 변동성도 있어'} 투자 기간과 실제 방문 가능성을 함께 고려해보세요. 이 안내는 투자 권유가 아니에요.`
   }
-  if (/추천|어디|뭐가좋|투자할/.test(normalized)) {
+  if (/추천|어디|뭐가좋|투자할|비교|성장률높|재방문율높/.test(normalized)) {
     const top = restaurantView().sort((a, b) => b.opportunityScore - a.opportunityScore).slice(0, 3)
-    return `현재 데이터에서 눈에 띄는 곳은 ${top.map((r) => `${r.name}(기회점수 ${r.opportunityScore})`).join(', ')}예요. 성장률만 보지 않고 재방문율·운영 이력·상권 위험을 함께 봤어요. 직접 방문할 수 있고 쿠폰을 실제로 쓸 식당을 우선 고르는 게 좋아요.`
+    return `공개정보의 동일한 기준으로 정렬하면 ${top.map((r) => `${r.name}(기회점수 ${r.opportunityScore})`).join(', ')} 순서예요. 성장률뿐 아니라 재방문율·운영 이력·상권 위험을 함께 표시한 공개정보 요약이며, 특정 식당에 대한 투자 추천이나 권유는 아니에요.`
   }
   if (/회수|빼|출금/.test(normalized)) return '모금 중에는 즉시 회수할 수 있어요. 모금이 끝난 뒤에는 같은 금액을 사려는 예약 투자자와 1,000원 단위로 선착순 매칭될 때 회수됩니다. 따라서 회수 시점은 보장되지 않아요.'
   if (/쿠폰|할인/.test(normalized)) return '10만원 투자 기준 기본 하루 0.5%씩 할인율이 쌓이고, 매출 성장 보너스와 최초 투자자 보너스가 붙을 수 있어요. 10%부터 원하는 때 발급할 수 있고 식당이 정한 최대 할인율에 도달하면 자동 발급 대상이 됩니다.'
-  if (/안전|위험|원금|보장/.test(normalized)) return '먹투의 투자금은 예금이 아니며 원금과 회수 시점이 보장되지 않아요. 모금 완료 뒤에는 새 투자자가 있어야 회수됩니다. 한 식당 투자 한도를 목표액의 1%로 제한하고, 서류·현금흐름·부채·상권을 함께 심사하지만 위험이 사라지는 것은 아니에요.'
+  if (/안전|위험|원금|보장/.test(normalized)) return '먹투의 투자금은 예금이 아니며 원금과 회수 시점이 보장되지 않아요. 모금 완료 뒤에는 새 투자자가 있어야 회수됩니다. 한 식당 목표액의 1% 한도는 먹투 자체 투기 방지 규칙일 뿐 법정 투자한도를 대신하지 않으며, 서류·현금흐름·부채·상권을 함께 심사해도 위험이 사라지는 것은 아니에요.'
   if (/심사|승인|사장/.test(normalized)) return '심사는 기본 서류, 6개월 매출·현금흐름, 부채 부담, 세금·행정 이력, 상권 경쟁력, 고객 재방문을 함께 봐요. 기존 금융에서 놓치기 쉬운 성장률과 실제 고객 지지를 적극 반영하며, 애매한 경우 바로 탈락시키지 않고 조건부 승인이나 수동 심사를 진행해요.'
-  return '식당 이름이나 “회수는 어떻게 해?”, “단골이 많은 곳 추천해줘”, “쿠폰은 언제 받아?”처럼 물어보세요. 먹투의 가상 식당 데이터와 이용 규칙을 바탕으로 설명해드릴게요.'
+  return '식당 이름이나 “회수는 어떻게 해?”, “재방문율이 높은 곳을 공개정보로 비교해줘”, “쿠폰은 언제 받아?”처럼 물어보세요. 먹투의 가상 식당 데이터와 이용 규칙을 바탕으로 설명해드릴게요.'
 }
 
 type ConsultationAccount = {
@@ -2893,7 +2912,7 @@ app.get('/api/credit/model', (_req, res) => {
     ],
     missingHandling: '측정하지 못한 지표는 감점하지 않고 가중치에서 제외한 뒤 나머지로 재정규화',
     references: creditReferences,
-    disclaimer: '참고용 예비평가입니다. 금융기관의 공식 신용등급이 아니며 부도확률을 계산하지 않습니다.',
+    disclaimer: '먹투 성장성 예비평가입니다. 금융기관의 공식 신용평가나 정부 SCB 결과가 아니며 부도확률을 계산하지 않습니다.',
   })
 })
 
@@ -2938,14 +2957,14 @@ app.post('/api/ai/management-credit-diagnosis', auth('owner'), async (req: Authe
   const combined = risk ? combineAssessments(risk, credit) : undefined
   const situation = ownerSituation({ application, connections, restaurant, fund })
 
-  const strengths = credit.topDrivers.slice(0, 4).map((item) => `${item.label}이(가) ${industry} 업종 기준 상위권(${item.score}점)이라 등급을 올리고 있어요.`)
-  const risks = credit.topDrags.slice(0, 4).map((item) => `${item.label}이(가) ${item.score}점으로 낮아 등급을 끌어내리고 있어요.`)
+  const strengths = credit.topDrivers.slice(0, 4).map((item) => `${item.label}이(가) ${industry} 업종 기준 상위권(${item.score}점)이라 예비평가 점수를 올리고 있어요.`)
+  const risks = credit.topDrags.slice(0, 4).map((item) => `${item.label}이(가) ${item.score}점으로 낮아 예비평가 점수를 낮추고 있어요.`)
   if (risk?.contextualAlerts?.length) risks.push(...risk.contextualAlerts.slice(0, 2))
   const actions = [...situation.nextActions]
-  if (credit.missing.length) actions.push(`아직 산정하지 못한 지표 ${credit.missing.length}개(${credit.missing.slice(0, 3).join(', ')} 등)를 채우면 등급 근거가 촘촘해져요.`)
+  if (credit.missing.length) actions.push(`아직 산정하지 못한 지표 ${credit.missing.length}개(${credit.missing.slice(0, 3).join(', ')} 등)를 채우면 예비평가 근거가 촘촘해져요.`)
 
   const report = {
-    headline: `${restaurant?.name || application?.restaurantName || '내 가게'}의 현재 신용등급은 ${credit.grade}(${credit.score}점)이고, 심사는 ${situation.currentStage.total}단계 중 ${situation.currentStage.order}단계예요.`,
+    headline: `${restaurant?.name || application?.restaurantName || '내 가게'}의 현재 먹투 성장성 예비평가 결과는 ${credit.grade}(${credit.score}점)이고, 심사는 ${situation.currentStage.total}단계 중 ${situation.currentStage.order}단계예요.`,
     industry,
     industryNote: credit.industryNote,
     grade: credit.grade,
@@ -2957,7 +2976,7 @@ app.post('/api/ai/management-credit-diagnosis', auth('owner'), async (req: Authe
     risks: risks.length ? risks : ['현재 산정된 지표에서 뚜렷한 고위험 신호는 확인되지 않았어요.'],
     actions: actions.slice(0, 5),
     overrides: credit.overrides,
-    notice: '참고용 예비평가입니다. 금융기관의 공식 신용등급이 아니며 대출 승인·거절의 근거가 아닙니다.',
+    notice: '먹투 성장성 예비평가입니다. 금융기관의 공식 신용평가나 정부 SCB 결과가 아니며 대출 승인·거절의 근거가 아닙니다.',
   }
 
   res.json({
@@ -2982,6 +3001,13 @@ app.post('/api/ai/chat', async (req: AuthedRequest, res) => {
     || String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'anonymous').split(',')[0].trim()
   if (!rateLimit(`ai:${caller}`, 20, 60_000)) return res.status(429).json({ error: 'AI 상담 요청이 너무 많아요. 잠시 후 다시 시도해주세요.' })
   const normalizedQuestion = question.replace(/\s/g, '').toLocaleLowerCase('ko')
+  if (isInvestmentAdviceRequest(question)) return res.json({
+    answer: INVESTMENT_ADVICE_REFUSAL,
+    mode: 'investment-advice-blocked',
+    provider: 'meoktu-policy',
+    sources: [],
+    retrieval: { strategy: 'investment-advice-policy', graphVersion: 'investment-advice-policy-v1' },
+  })
   // 화면 안내 질문은 묻는 내용에 맞는 역할 그래프를 써야 한다.
   // 투자자로 로그인한 사람이 "펀드 등록은 어디서 해?"라고 물으면 사장님 절차를 봐야 답이 된다.
   const askedRole: Role = asker?.role === 'owner' ? 'owner' : req.body.role === 'owner' ? 'owner' : 'investor'
@@ -3050,7 +3076,7 @@ app.post('/api/ai/chat', async (req: AuthedRequest, res) => {
   const storedCredit = application?.data?.creditAssessment as CreditAssessment | undefined
   if (storedCredit) {
     knowledgeGraph.nodes.push({
-      id: 'credit:grade', type: 'CreditGrade', label: `신용등급 ${storedCredit.grade} (${storedCredit.score}점)`,
+      id: 'credit:grade', type: 'CreditGrade', label: `먹투 성장성 예비평가 ${storedCredit.grade} (${storedCredit.score}점)`,
       source: 'MEOKTU_CREDIT_35V',
       properties: {
         industry: storedCredit.industry, grade: storedCredit.grade, score: storedCredit.score,
@@ -3117,7 +3143,7 @@ app.post('/api/ai/chat', async (req: AuthedRequest, res) => {
   const localAnswer = ledgerAnswer || currentPageAnswer || ((wantsNavigation && navigationAnswer) ? navigationAnswer : (supportAnswer || graphAnswer || fallback))
   // 개인 원장 값은 외부 생성형 서비스로 보내지 않고 서버 원장에서 집계한 답을 그대로 돌려준다.
   if (ledgerAnswer) return res.json({
-    answer: localAnswer,
+    answer: enforceInvestmentAdvicePolicy(localAnswer),
     mode: ownerRole ? 'owner-ledger-local' : 'account-ledger-local',
     provider: 'meoktu-private-ledger',
     sources: retrievedGraph.sources,
@@ -3126,7 +3152,7 @@ app.post('/api/ai/chat', async (req: AuthedRequest, res) => {
   const apiUrl = aiApiUrl
   const apiKey = aiApiKey
   if (!apiUrl || !apiKey) return res.json({
-    answer: localAnswer,
+    answer: enforceInvestmentAdvicePolicy(localAnswer),
     mode: 'graph-rag-local',
     provider: 'local-knowledge-graph',
     sources: retrievedGraph.sources,
@@ -3194,7 +3220,10 @@ app.post('/api/ai/chat', async (req: AuthedRequest, res) => {
 - sales.visibility가 owner_private이면 정확한 매출액이나 월별 이력을 추측하거나 공개하지 않는다.
 - 식당 비교 시 성장률뿐 아니라 재방문율, 운영 이력, 상권 위험, 쿠폰의 실제 사용 가능성을 함께 설명한다.
 - 투자 권유, 수익 보장, 원금 보장으로 오해될 표현을 쓰지 않는다. "투자할 만한 가치가 높다", "지금이 기회다" 같은 판단은 하지 말고, 판단 재료(성장률·재방문율·운영 이력·상권 위험)를 보여주고 결정은 사용자에게 맡긴다.
+- 사용자가 요청해도 특정 금액을 투자하라고 지시하지 않는다. “○원 투자하세요”, “○만원을 넣는 게 좋습니다” 같은 표현은 금지한다.
+- 특정 식당을 가장 유리하거나 최적이라고 결론내리지 않고, “이 식당이 가장 유리합니다”처럼 선택을 대신하는 문장을 쓰지 않는다. 요청받으면 투자 권유는 할 수 없다고 밝히고 동일한 공개정보 비교만 제안한다.
 - 투자금은 예금이 아니며 모금 종료 뒤에는 반대 주문이 있어야 1,000원 단위로 회수된다는 점을 필요할 때 명확히 알린다.
+- 한 식당 목표액의 1% 한도는 먹투 자체 투기 방지 규칙일 뿐 법정 투자한도를 대신하지 않는다는 점을 한도 질문에 명확히 알린다.
 - 아래 참고자료를 우선 근거로 사용하되, 원문을 그대로 복사하지 말고 사람이 이해할 문장으로 풀어서 설명한다.
 
 [말투 규칙 — 내부 용어 금지]
@@ -3236,10 +3265,10 @@ app.post('/api/ai/chat', async (req: AuthedRequest, res) => {
     const result = await response.json() as { choices?: Array<{ message?: { content?: string } }> }
     const answer = result.choices?.[0]?.message?.content?.trim()
     if (!answer) throw new Error('OpenAI API returned an empty answer')
-    res.json({ answer, mode: 'graph-rag-generative', provider: 'openai', model, sources: retrievedGraph.sources, retrieval: { strategy: 'symbolic-keyword-plus-one-hop', graphVersion: retrievedGraph.graphVersion } })
+    res.json({ answer: enforceInvestmentAdvicePolicy(answer), mode: 'graph-rag-generative', provider: 'openai', model, sources: retrievedGraph.sources, retrieval: { strategy: 'symbolic-keyword-plus-one-hop', graphVersion: retrievedGraph.graphVersion } })
   } catch (error) {
     console.error('OpenAI API request failed:', error instanceof Error ? error.message : error)
-    res.json({ answer: localAnswer, mode: 'graph-rag-fallback', provider: 'local-knowledge-graph', sources: retrievedGraph.sources, retrieval: { strategy: 'symbolic-keyword-plus-one-hop', graphVersion: retrievedGraph.graphVersion } })
+    res.json({ answer: enforceInvestmentAdvicePolicy(localAnswer), mode: 'graph-rag-fallback', provider: 'local-knowledge-graph', sources: retrievedGraph.sources, retrieval: { strategy: 'symbolic-keyword-plus-one-hop', graphVersion: retrievedGraph.graphVersion } })
   }
 })
 

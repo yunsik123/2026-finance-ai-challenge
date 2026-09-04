@@ -93,12 +93,12 @@ async function fetchSampleFile(option: UploadOption): Promise<File> {
 /** 감사 로그의 내부 동작 코드를 사장님이 읽을 말로 바꾼다. */
 const auditActions: Record<string, string> = {
   'application.analyzed': '예비심사 실행',
-  'application.credit_graded': '신용등급 산정',
+  'application.credit_graded': '먹투 성장성 예비평가 산정',
   'application.business_verified': '사업자 진위확인',
   'application.financial_orchestrated': '제출자료 대조',
   'data_connection.connected': '기관 연결',
   'data_connection.revoked': '기관 연결 해제',
-  'coupon.dividend_issued': '배당 쿠폰 발송',
+  'coupon.dividend_issued': '식당 감사 쿠폰 발송',
   'coupon.list': '쿠폰 교환장 등록',
   'coupon.unlist': '쿠폰 교환장 등록 취소',
   'coupon.listing_updated': '교환 조건 수정',
@@ -315,7 +315,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
   return <div className="owner-page owner-v2">
     <section className="owner-page-hero">
       <div><span className="eyebrow light"><Store /> 먹투 사장님 센터</span><h1>제출한 자료와<br /><em>기관 연결을 구분해요.</em></h1><p>사장님 직접 업로드와 제휴기관 전송을 출처별로 기록하고 POS·계좌·카드·세무·상권을 교차검증합니다.</p><div className="owner-values"><span><Check /> 신청비 0원</span><span><Check /> 평균 3분 예비심사</span><span><Check /> 조건부 승인 가능</span><span><Check /> 출처 구분 원장</span><span><Check /> 6단계 교차검증</span><span><Check /> 부족한 자료는 미산정</span></div></div>
-      <div className="review-flow data-flow"><b>펀딩 등록 흐름</b>{['사업자·대표자 인증','직접 업로드/기관연동 선택','최소 필수 동의 확인','35지표 SCB 예비점수 계산','결측·위험 관리자 확인','펀딩 등록과 공개범위 선택'].map((title,index) => <div key={title}><span>{index+1}</span><p>{title}</p><Check /></div>)}</div>
+      <div className="review-flow data-flow"><b>펀딩 등록 흐름</b>{['사업자·대표자 인증','직접 업로드/기관연동 선택','최소 필수 동의 확인','35지표 먹투 성장성 예비평가','결측·위험 관리자 확인','펀딩 등록과 공개범위 선택'].map((title,index) => <div key={title}><span>{index+1}</span><p>{title}</p><Check /></div>)}</div>
     </section>
     <div className="owner-body">
       {owner && restaurant && !showForm && !result && <>
@@ -327,7 +327,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
         {ownerData?.auditEvents?.length > 0 && <section className="owner-audit"><div><span className="eyebrow">AUDIT TRAIL</span><h2>내 계정 변경 이력</h2><p>심사 접수, 자료 연결, 등급 산정처럼 중요한 변경을 시간과 함께 남겨둡니다.</p></div><div>{ownerData.auditEvents.slice(0, 8).map((event: any) => <article key={event.id}><span><Check /></span><div><b>{event.summary}</b><small>{new Date(event.createdAt).toLocaleString('ko-KR')} · {auditActionLabel(event.action)}</small></div></article>)}</div></section>}
       </>}
 
-      {demoMode && <section className="demo-mode-banner"><ShieldCheck /><div><b>사장님 체험 모드 · 저장되지 않아요</b><p>기관 연결, 샘플 자료 업로드, AI 문서 확인, 심사 접수, 신용등급 확인까지 실제와 똑같이 눌러볼 수 있어요. 이 체험 기록은 다른 사용자에게 보이지 않고 브라우저를 닫으면 사라집니다.</p></div></section>}
+      {demoMode && <section className="demo-mode-banner"><ShieldCheck /><div><b>사장님 체험 모드 · 저장되지 않아요</b><p>기관 연결, 샘플 자료 업로드, AI 문서 확인, 심사 접수, 먹투 성장성 예비평가 확인까지 실제와 똑같이 눌러볼 수 있어요. 이 체험 기록은 다른 사용자에게 보이지 않고 브라우저를 닫으면 사라집니다.</p></div></section>}
 
       {result ? <section className="source-review-result">
         <div className="result-score"><span>먹투 자동분석 점수</span><b>{result.score}<small>/100</small></b><strong>{result.status === 'approved' ? '펀딩 가능' : result.status === 'conditional' ? '조건부 승인' : result.status === 'manual_review' ? '추가자료 검토' : '재신청 필요'}</strong></div>
@@ -338,7 +338,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
         {result.data?.creditAssessment && <CreditGradePanel credit={result.data.creditAssessment} combined={result.data.combinedAssessment} />}
         <VerificationReport business={result.data?.businessVerification} financial={result.data?.financialVerification} />
         <div className="result-columns"><section><h3>확인된 강점</h3>{result.strengths.map((item) => <p key={item}><Check /> {item}</p>)}</section><section><h3>보강하면 좋은 자료</h3>{result.improvements.map((item) => <p key={item}>{item}</p>)}</section></div>
-        <div className="result-explanation"><b>심사 설명</b><p>{result.explanation}</p><span>승인 가능 한도 {won(result.approvedLimit)}{result.requestedLimit ? ` · 희망 ${won(result.requestedLimit)}` : ''}</span></div>
+        <div className="result-explanation"><b>심사 설명</b><p>{result.explanation}</p><span>AI 제안 한도 {won(result.approvedLimit)}{result.requestedLimit ? ` · 희망 ${won(result.requestedLimit)}` : ''} · 운영자 확정 전 참고값</span></div>
         {/* 초기 MVP에 있던 안내. 점수가 낮게 나왔을 때 사장님이 가장 먼저 궁금해하는 것이라 되살렸다. */}
         <div className="result-why"><b>왜 바로 탈락시키지 않았나요?</b><p>먹투는 기존 신용점수만으로 판단하지 않습니다. 실제 고객의 재방문과 최근 성장 흐름이 보이면 조건부 승인이나 사람의 추가 검토 기회를 드려요. 자료가 부족하다는 이유만으로 자동 거절하지 않습니다.</p></div>
         <button className="button" onClick={goBack}>사장님 센터로 돌아가기</button>
@@ -383,7 +383,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
 
           <section className="three-check-system"><h3>먹투 3중 검증</h3><div><span>① 공식자료</span><p>사업자·홈택스·대출·임대차</p></div><div><span>② 실제 영업자료</span><p>POS·카드·계좌·배달</p></div><div><span>③ 외부자료</span><p>상권·리뷰·고객수요·경쟁</p></div><small>서로 맞지 않는 값은 원인을 분류하고 수동 심사 대상으로 표시합니다.</small></section>
           <button className="button full huge" disabled={submitting || !identityVerified}>{submitting ? '원천데이터를 교차검증하고 있어요...' : !identityVerified ? '대표자 본인인증을 먼저 완료해주세요' : demoMode ? '체험으로 자동분석 해보기' : '먹투 자동분석 시작'} <Database /></button>
-          <p className="form-disclaimer">이 결과는 공식 SCB 등급이나 최종 펀딩 승인이 아닙니다. 실제 서비스 출시 전 개인정보·신용정보 처리 구조와 보유기간은 전문 법률 검토 및 제휴기관 요건 확인이 필요합니다.</p>
+          <p className="form-disclaimer">이 결과는 금융기관의 공식 신용평가나 정부 SCB 결과가 아닌 먹투 성장성 예비평가이며 최종 펀딩 승인이 아닙니다. 실제 서비스 출시 전 개인정보·신용정보 처리 구조와 보유기간은 전문 법률 검토 및 제휴기관 요건 확인이 필요합니다.</p>
         </fieldset>
       </form>}
     </div>

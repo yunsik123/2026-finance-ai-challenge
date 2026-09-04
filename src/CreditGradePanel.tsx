@@ -25,14 +25,14 @@ export default function CreditGradePanel({ credit, combined }: { credit: CreditA
   return <section className="credit-panel">
     <div className="credit-head">
       <div>
-        <span className="eyebrow">신용평가</span>
-        <h2>{credit.industry} 업종 기준 신용등급</h2>
+        <span className="eyebrow">먹투 성장성 예비평가</span>
+        <h2>{credit.industry} 업종 기준 예비평가 결과</h2>
         <p>35개 지표 중 {credit.measuredCount}개를 산정했어요. {credit.industryNote}</p>
       </div>
       {/* 산정률이 절반에 못 미치면 확정 등급이라고 말할 수 없다.
           등급만 크게 보이면 자료를 덜 낸 결과가 확정 판정처럼 읽힌다. */}
       <div className={`credit-grade ${gradeTone[credit.grade] || 'fair'} ${credit.provisional ? 'provisional' : ''}`}>
-        {credit.provisional && <em>잠정</em>}
+        {credit.provisional && <em>자료 보완 필요</em>}
         <b>{credit.grade}</b>
         <span>{credit.score}점</span>
       </div>
@@ -44,7 +44,7 @@ export default function CreditGradePanel({ credit, combined }: { credit: CreditA
         <b>{credit.coverage}%</b>
         <div className="progress-track"><i style={{ width: `${credit.coverage}%` }} /></div>
         <small>{credit.provisional
-          ? '산정하지 못한 지표는 감점하지 않지만, 절반에 못 미쳐 잠정 등급이에요. 자료를 채우면 다시 산정해요.'
+          ? '산정하지 못한 지표는 감점하지 않지만, 절반에 못 미쳐 자료 보완이 필요해요. 자료를 채우면 다시 평가해요.'
           : '산정하지 못한 지표는 감점하지 않고 가중치에서 뺐어요.'}</small>
       </div>
       {combined && <div>
@@ -65,24 +65,24 @@ export default function CreditGradePanel({ credit, combined }: { credit: CreditA
 
     <div className="credit-drivers">
       <section>
-        <h3><TrendingUp /> 등급을 올린 지표</h3>
+        <h3><TrendingUp /> 평가점수를 올린 지표</h3>
         {credit.topDrivers.length ? credit.topDrivers.map((item) => <p key={item.key}><b>{item.label}</b><span>{item.score}점 · 가중치 {item.weight}%</span></p>) : <p className="muted">아직 뚜렷한 상위 지표가 없어요.</p>}
       </section>
       <section>
-        <h3><TrendingDown /> 등급을 낮춘 지표</h3>
+        <h3><TrendingDown /> 평가점수를 낮춘 지표</h3>
         {credit.topDrags.length ? credit.topDrags.map((item) => <p key={item.key}><b>{item.label}</b><span>{item.score}점 · 가중치 {item.weight}%</span></p>) : <p className="muted">평균을 크게 밑도는 지표는 없어요.</p>}
       </section>
     </div>
 
     {credit.overrides.length > 0 && <div className="credit-overrides">
-      <b>등급 조정 규칙이 적용됐어요</b>
+      <b>평가 조정 규칙이 적용됐어요</b>
       {credit.overrides.map((item) => <p key={item}>{item}</p>)}
     </div>}
 
     {credit.missing.length > 0 && <div className="credit-missing">
       <b>아직 산정하지 못한 지표 {credit.missing.length}개</b>
       <p>{credit.missing.join(' · ')}</p>
-      <small>해당 자료를 연결하면 다음 심사부터 등급 근거에 함께 반영돼요.</small>
+      <small>해당 자료를 연결하면 다음 심사부터 평가 근거에 함께 반영돼요.</small>
     </div>}
 
     <button type="button" className="credit-toggle" onClick={() => setOpenAll((current) => !current)}>
@@ -111,6 +111,6 @@ export default function CreditGradePanel({ credit, combined }: { credit: CreditA
       </li>)}
     </ul>}
 
-    <p className="credit-disclaimer">{credit.methodology.disclaimer} 등급 경계: {credit.methodology.gradeBands}.</p>
+    <p className="credit-disclaimer">{credit.methodology.disclaimer} 평가 구간: {credit.methodology.gradeBands}.</p>
   </section>
 }

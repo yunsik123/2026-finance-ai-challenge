@@ -287,7 +287,7 @@ export function assessCredit(input: CreditInput) {
       missingHandling: '미산정 지표는 감점하지 않고 가중치에서 제외한 뒤 나머지로 재정규화. 산정률이 낮을수록 점수를 평균(50)으로 축소하고, 산정률 상한까지만 등급을 부여',
       coverageCap: `${coverageCap} (산정률 ${coverage}%)`,
       shrinkFactor: shrink,
-      disclaimer: '이 등급은 참고용 예비평가입니다. 금융기관의 공식 신용등급(SCB)이 아니며 부도확률을 계산하지 않습니다.',
+      disclaimer: '이 결과는 먹투 성장성 예비평가입니다. 금융기관의 공식 신용평가나 정부 SCB 결과가 아니며 부도확률을 계산하지 않습니다.',
     },
     references: creditReferences,
   }
