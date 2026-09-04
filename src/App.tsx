@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
-import { NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { io } from 'socket.io-client'
 import {
   ArrowRight, Bell, Building2, Check, ChevronRight, CircleDollarSign,
@@ -36,6 +36,7 @@ function App() {
   const navigate = useNavigate()
   const location = useLocation()
   const adminRoute = location.pathname.startsWith('/admin')
+  const ownerOnly = me?.user.role === 'owner'
 
   const notify = (message: string) => {
     setToast(message)
@@ -114,21 +115,26 @@ function App() {
       {!adminRoute && <Header user={me?.user} notifications={me?.notifications || []} unread={me?.unreadNotifications || 0} refresh={refresh} onLogin={() => setAuthOpen(true)} onLogout={logout} />}
       <main>
         <Routes>
-          <Route path="/" element={<Home state={state} onSelect={setSelected} onExplore={() => navigate('/discover')} favoriteIds={me?.favoriteRestaurantIds || []} onFavorite={toggleFavorite} />} />
-          <Route path="/discover" element={<Discover restaurants={state.restaurants} onSelect={setSelected} favoriteIds={me?.favoriteRestaurantIds || []} onFavorite={toggleFavorite} />} />
-          <Route path="/market" element={<MarketPage state={state} me={me} requireLogin={requireLogin} onSelect={setSelected} refresh={refresh} notify={notify} />} />
-          <Route path="/insight" element={<InsightPage state={state} onSelect={setSelected} />} />
-          <Route path="/owner" element={<OwnerCenter me={me} onLogin={() => setAuthOpen(true)} refresh={refresh} notify={notify} />} />
-          <Route path="/admin" element={<AdminCenter me={me} onLogin={() => setAuthOpen(true)} notify={notify} />} />
-          <Route path="/my" element={<MyPage me={me} state={state} restaurants={state.restaurants} requireLogin={requireLogin} onSelect={setSelected} transact={transact} refresh={refresh} notify={notify} />} />
-          <Route path="/support" element={<SupportPage me={me} state={state} onLogin={() => setAuthOpen(true)} notify={notify} />} />
-          <Route path="*" element={<NotFound />} />
+          {ownerOnly ? <>
+            <Route path="/owner" element={<OwnerCenter me={me} onLogin={() => setAuthOpen(true)} refresh={refresh} notify={notify} />} />
+            <Route path="*" element={<Navigate to="/owner" replace />} />
+          </> : <>
+            <Route path="/" element={<Home state={state} onSelect={setSelected} onExplore={() => navigate('/discover')} favoriteIds={me?.favoriteRestaurantIds || []} onFavorite={toggleFavorite} />} />
+            <Route path="/discover" element={<Discover restaurants={state.restaurants} onSelect={setSelected} favoriteIds={me?.favoriteRestaurantIds || []} onFavorite={toggleFavorite} />} />
+            <Route path="/market" element={<MarketPage state={state} me={me} requireLogin={requireLogin} onSelect={setSelected} refresh={refresh} notify={notify} />} />
+            <Route path="/insight" element={<InsightPage state={state} onSelect={setSelected} />} />
+            <Route path="/owner" element={<OwnerCenter me={me} onLogin={() => setAuthOpen(true)} refresh={refresh} notify={notify} />} />
+            <Route path="/admin" element={<AdminCenter me={me} onLogin={() => setAuthOpen(true)} notify={notify} />} />
+            <Route path="/my" element={<MyPage me={me} state={state} restaurants={state.restaurants} requireLogin={requireLogin} onSelect={setSelected} transact={transact} refresh={refresh} notify={notify} />} />
+            <Route path="/support" element={<SupportPage me={me} state={state} onLogin={() => setAuthOpen(true)} notify={notify} />} />
+            <Route path="*" element={<NotFound />} />
+          </>}
         </Routes>
       </main>
-      {!adminRoute && <Footer />}
+      {!adminRoute && !ownerOnly && <Footer />}
       {!adminRoute && <MobileNav user={me?.user} />}
       {authOpen && <AuthModal onClose={() => setAuthOpen(false)} onAuth={onAuth} notify={notify} />}
-      {selected && <FundDetailModal restaurant={state.restaurants.find((r) => r.id === selected.id) || selected} me={me} onClose={() => setSelected(null)} onLogin={() => setAuthOpen(true)} refresh={refresh} notify={notify} />}
+      {!ownerOnly && selected && <FundDetailModal restaurant={state.restaurants.find((r) => r.id === selected.id) || selected} me={me} onClose={() => setSelected(null)} onLogin={() => setAuthOpen(true)} refresh={refresh} notify={notify} />}
       {toast && <div className="toast"><Check size={18} />{toast}</div>}
       {!adminRoute && <FloatingAiChat role={me?.user.role || 'investor'} />}
     </div>
@@ -141,9 +147,9 @@ function Header({ user, notifications, unread, refresh, onLogin, onLogout }: { u
   useEffect(() => setMenuOpen(false), [location.pathname])
   return <header className="site-header">
     <div className="header-inner">
-      <NavLink to="/" className="logo"><span className="brand-mark">묵</span><span>먹투<small>먹는 투자의 시작</small></span></NavLink>
+      <NavLink to={user?.role === 'owner' ? '/owner' : '/'} className="logo"><span className="brand-mark">묵</span><span>먹투<small>먹는 투자의 시작</small></span></NavLink>
       <nav className={menuOpen ? 'desktop-nav open' : 'desktop-nav'}>
-        {user?.role === 'admin' ? <NavLink to="/admin">운영센터</NavLink> : <><NavLink to="/discover">식당 발견</NavLink><NavLink to="/market">거래장</NavLink><NavLink to="/insight">AI 인사이트</NavLink><NavLink to="/support">신고·문의</NavLink>{user?.role === 'investor' && <NavLink to="/my">마이페이지</NavLink>}{user?.role === 'owner' && <NavLink to="/owner">사장님 센터</NavLink>}</>}
+        {user?.role === 'admin' ? <NavLink to="/admin">운영센터</NavLink> : user?.role === 'owner' ? <NavLink to="/owner">사장님 센터</NavLink> : <><NavLink to="/discover">식당 발견</NavLink><NavLink to="/market">거래장</NavLink><NavLink to="/insight">AI 인사이트</NavLink><NavLink to="/support">신고·문의</NavLink>{user?.role === 'investor' && <NavLink to="/my">마이페이지</NavLink>}</>}
       </nav>
       <div className="header-actions">
         {user ? <NotificationBell notifications={notifications} unread={unread} refresh={refresh} /> : <button className="icon-button hide-mobile" aria-label="알림" onClick={onLogin}><Bell size={20} /></button>}
@@ -156,7 +162,7 @@ function Header({ user, notifications, unread, refresh, onLogin, onLogout }: { u
 
 function MobileNav({ user }: { user?: User }) {
   return <nav className="mobile-nav">
-    {user?.role === 'admin' ? <NavLink to="/admin"><ShieldCheck /><span>운영</span></NavLink> : <><NavLink to="/discover"><Search /><span>발견</span></NavLink><NavLink to="/market"><ArrowRight /><span>거래</span></NavLink><NavLink to="/insight"><Sparkles /><span>AI</span></NavLink><NavLink to="/support"><MessageCircleQuestion /><span>문의</span></NavLink>{user?.role === 'owner' ? <NavLink to="/owner"><Building2 /><span>사장님</span></NavLink> : user?.role === 'investor' ? <NavLink to="/my"><UserRound /><span>MY</span></NavLink> : <NavLink to="/"><Store /><span>홈</span></NavLink>}</>}
+    {user?.role === 'admin' ? <NavLink to="/admin"><ShieldCheck /><span>운영</span></NavLink> : user?.role === 'owner' ? <NavLink to="/owner"><Building2 /><span>사장님 센터</span></NavLink> : <><NavLink to="/discover"><Search /><span>발견</span></NavLink><NavLink to="/market"><ArrowRight /><span>거래</span></NavLink><NavLink to="/insight"><Sparkles /><span>AI</span></NavLink><NavLink to="/support"><MessageCircleQuestion /><span>문의</span></NavLink>{user?.role === 'investor' ? <NavLink to="/my"><UserRound /><span>MY</span></NavLink> : <NavLink to="/"><Store /><span>홈</span></NavLink>}</>}
   </nav>
 }
 
