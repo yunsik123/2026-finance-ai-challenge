@@ -125,11 +125,6 @@ const percentMetrics = new Set(['recent12MonthSalesGrowth','salesVolatility','re
 export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeState | null; onLogin: () => void; refresh: () => Promise<void>; notify: (message: string) => void }) {
   const owner = me?.user.role === 'owner'
   const demoMode = me?.user.sessionMode === 'demo'
-  // 샘플 일괄 업로드를 보여줄 '시연 계정' 판정.
-  // 체험 세션(sessionMode: 'demo')과 로그인 모달의 데모 버튼이 쓰는 시드 계정(@meoktu.demo)이 모두 해당한다.
-  // 데모 버튼은 /api/auth/demo 가 아니라 owner@meoktu.demo 로 로그인하므로 sessionMode 만으로는 걸러지지 않는다.
-  // 실제로 가입한 소상공인 계정은 이 도메인을 쓰지 않아 일괄 업로드가 노출되지 않는다.
-  const demoAccount = demoMode || Boolean(me?.user.email?.endsWith('@meoktu.demo'))
   const [ownerData, setOwnerData] = useState<any>(null)
   const [showForm, setShowForm] = useState(!owner)
   const [uploadedFiles, setUploadedFiles] = useState<Record<string, string>>({})
@@ -201,13 +196,13 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
     setOcrResults((current) => { const next = { ...current }; delete next[sourceId]; return next })
   }
   /**
-   * 샘플 자료 한 번에 올리기. 시연 계정(체험 세션·데모 계정)에서만 호출된다.
+   * 샘플 자료 한 번에 올리기. 로그인한 모든 사장님 계정에서 사용할 수 있다.
    * 카드마다 파일을 고르는 대신 public/samples 의 원자료 전체를 받아
    * 실제 선택과 똑같은 File 로 채우고, 문서와 값이 맞물리는 1·4단계 입력란까지 함께 채운다.
    * 3단계 필수 동의는 사장님이 직접 확인해야 하므로 자동으로 체크하지 않는다.
    */
   const fillWithSamples = async () => {
-    if (!demoAccount) return
+    if (!owner) return
     const options = uploadOptions.filter((option) => option.sampleUrl)
     setFillingSamples(true)
     try {
@@ -363,7 +358,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
 
             <div className="evidence-lane partner-lane"><div className="evidence-lane-heading"><PlugZap /><div><b>A. 제휴기관·마이데이터형 연결</b><p>동의 범위·제공기관·동기화 시각이 함께 기록됩니다. 현재 버튼은 실제 기관 API 대신 시연 어댑터를 사용합니다.</p></div></div><div className="partner-connection-grid">{partnerOptions.map((option) => { const Icon = option.icon; const connection = activeConnections.find((item: any) => item.sourceId === option.id); return <article className={connection ? 'connected' : ''} key={option.id}><Icon /><div><b>{option.title}</b><span>{option.provider}</span><small>{option.scope}</small>{connection && <em><Check /> {connection.recordCount.toLocaleString()}건 · {new Date(connection.lastSyncedAt).toLocaleDateString('ko-KR')}</em>}</div><button type="button" disabled={Boolean(connection)} onClick={() => connectPartner(option.id)}>{connection ? '연결됨' : '동의하고 연결'}</button></article> })}</div></div>
 
-            <div className="evidence-lane upload-lane"><div className="evidence-lane-heading"><UploadCloud /><div><b>B. 소상공인 직접 업로드</b><p>사업자·영업신고·임대차처럼 직접 보유한 문서 또는 기관 연결이 어려울 때의 대체 파일입니다. CSV는 브라우저에서 열·행 수를 확인합니다.</p></div></div><SamplePack /><div className="document-upload-grid">{uploadOptions.map((option) => <DocumentUploadCard key={option.id} option={option} fileName={uploadedFiles[option.id]} metadata={documentMetadata[option.id]} required={Boolean(option.required && !connectedIds.has(option.id))} onChange={(event) => selectFile(option.id, event)} />)}</div>{demoAccount && <SampleAutoFill filling={fillingSamples} uploadedCount={uploadedCount} onFill={fillWithSamples} onClear={clearUploads} />}</div>
+            <div className="evidence-lane upload-lane"><div className="evidence-lane-heading"><UploadCloud /><div><b>B. 소상공인 직접 업로드</b><p>사업자·영업신고·임대차처럼 직접 보유한 문서 또는 기관 연결이 어려울 때의 대체 파일입니다. CSV는 브라우저에서 열·행 수를 확인합니다.</p></div></div><SamplePack /><div className="document-upload-grid">{uploadOptions.map((option) => <DocumentUploadCard key={option.id} option={option} fileName={uploadedFiles[option.id]} metadata={documentMetadata[option.id]} required={Boolean(option.required && !connectedIds.has(option.id))} onChange={(event) => selectFile(option.id, event)} />)}</div>{owner && <SampleAutoFill filling={fillingSamples} uploadedCount={uploadedCount} onFill={fillWithSamples} onClear={clearUploads} />}</div>
             {Object.entries(selectedFiles).some(([, file]) => /^image\/(png|jpeg|webp)$/.test(file.type)) && <div className="ocr-workbench"><div><Database /><div><b>AI 문서 자동 확인</b><p>올리신 이미지 서류에서 사업자번호·날짜·금액을 읽어 서로 맞는지 대조합니다. 확인 결과는 승인 결정이 아니며, 원본 이미지는 저장하지 않습니다.</p></div></div>{Object.entries(selectedFiles).filter(([, file]) => /^image\/(png|jpeg|webp)$/.test(file.type)).map(([sourceId, file]) => { const analysis = ocrResults[sourceId]; const result = analysis?.result; return <article key={sourceId}><div><b>{file.name}</b><span>{uploadOptions.find((option) => option.id === sourceId)?.title}</span></div>{analysis ? <div className="ocr-result"><strong>{analysis.status === 'ai_extracted' ? 'AI 구조화 완료' : '수동 검토 대기'}</strong><span>{result.documentType || '문서 종류 미확인'} · 신뢰도 {Math.round((result.confidence || 0) * 100)}%</span>{result.businessNumber && <small>사업자번호 {result.businessNumber}</small>}{result.total ? <small>판독 금액 {won(result.total)}</small> : null}{result.warnings?.map((warning) => <small className="warning" key={warning}>{warning}</small>)}</div> : <button type="button" disabled={Boolean(analyzingSource)} onClick={() => analyzeDocument(sourceId)}>{analyzingSource === sourceId ? 'AI가 문서를 읽는 중...' : 'AI 문서 판독'}</button>}</article> })}</div>}
             <p className="mvp-source-note">MVP는 직접 업로드 파일의 이름·크기·형식과 CSV 열·행 수를 검증해 심사 출처로 기록합니다. 이미지에서 ‘AI 문서 판독’을 누른 경우에만 서버 AI로 전송하며 원본 이미지는 저장하지 않습니다. 실제 기관 연결은 현재 모의 어댑터이고, 운영 전 기관 OAuth·전자서명·암호화 보관으로 교체해야 합니다.</p>
           </section>
@@ -391,16 +386,16 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
 }
 
 /**
- * 시연 계정 전용 · 샘플 자료 한 번에 올리기.
+ * 샘플 자료 한 번에 올리기.
  * 카드 11장을 하나씩 고르지 않고도 자동분석 결과까지 바로 확인하기 위한 심사·시연 도구라서
- * 실제로 가입한 소상공인 계정으로 로그인한 화면에는 노출하지 않는다.
+ * 데모 계정과 직접 가입한 사장님 계정에 동일하게 제공한다.
  */
 function SampleAutoFill({ filling, uploadedCount, onFill, onClear }: { filling: boolean; uploadedCount: number; onFill: () => void; onClear: () => void }) {
   const total = uploadOptions.filter((option) => option.sampleUrl).length
   return <div className="sample-autofill">
     <span className="sample-autofill-icon"><Sparkles /></span>
     <div className="sample-autofill-copy">
-      <b>시연 계정 전용 · 샘플 자료 {total}종 한 번에 올리기</b>
+      <b>샘플 자료 {total}종 한 번에 올리기</b>
       <p>파일을 하나씩 고르지 않아도 <em>샘플식당</em>의 원자료를 위 카드에 자동으로 채우고, 1단계 사업체 정보와 4단계 작성란·대표자 인증까지 함께 완료합니다. 3단계 필수 동의 2개만 직접 체크하면 바로 자동분석 결과를 볼 수 있어요.</p>
       {uploadedCount > 0 && <strong><Check /> 현재 {uploadedCount}종의 자료가 올라가 있어요.</strong>}
     </div>
