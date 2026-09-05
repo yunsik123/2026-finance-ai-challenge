@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, BadgeCheck, BarChart3, Check, Clock3, HandCoins, LockKeyhole, ShieldCheck, Star, Ticket, TrendingUp, WalletCards, X } from 'lucide-react'
 import { api } from './lib/api.ts'
+import { useAmountInput } from './lib/amount.ts'
 import CommercialAreaPanel from './CommercialAreaPanel.tsx'
 import type { CommercialAreaView, MeState, Restaurant, SalesPoint } from './types.ts'
 import './fund-detail-preview.css'
@@ -58,7 +59,7 @@ function RevenueChart({ restaurant }: { restaurant: Restaurant }) {
 }
 
 export default function FundDetailModal({ restaurant: r, me, onClose, onLogin, refresh, notify }: Props) {
-  const [amount, setAmount] = useState(50000)
+  const { amount, setAmount, commit: commitAmount, bind: amountBind } = useAmountInput(50000)
   const [tab, setTab] = useState<'invest' | 'withdraw'>('invest')
   const [busy, setBusy] = useState(false)
   const [confirming, setConfirming] = useState(false)
@@ -107,6 +108,8 @@ export default function FundDetailModal({ restaurant: r, me, onClose, onLogin, r
   }
   const reviewTransaction = () => {
     if (!me) { onLogin(); return }
+    // 확인창과 서버로 나가는 금액을 1,000원 단위로 맞춘 뒤 열어준다.
+    commitAmount()
     setRiskAccepted(false)
     setConfirming(true)
   }
@@ -170,7 +173,7 @@ export default function FundDetailModal({ restaurant: r, me, onClose, onLogin, r
         <div className="order-tabs"><button className={tab === 'invest' ? 'active' : ''} onClick={() => setTab('invest')}>투자하기</button><button className={tab === 'withdraw' ? 'active' : ''} onClick={() => setTab('withdraw')}>회수하기</button></div>
         {r.fund.status === 'trading' && <div className={`orderbook-card ${orderBook.kind}`}><span>{orderBook.label}</span><b>{won(orderBook.amount)}</b><p>{orderBook.note}</p></div>}
         <div className="balance-row"><span>{tab === 'invest' ? '보유 먹투머니' : '회수 가능 금액'}</span><b>{won(tab === 'invest' ? me?.user.cash || 0 : position?.availableAmount || 0)}</b></div>
-        <label className="amount-input"><input type="number" step="1000" min="1000" value={amount} onChange={(event) => setAmount(Math.max(1000, Math.floor(Number(event.target.value) / 1000) * 1000))} /><span>원</span></label>
+        <label className="amount-input"><input aria-label={tab === 'invest' ? '투자 금액' : '회수 금액'} {...amountBind} /><span>원</span></label>
         <div className="quick-amounts">{[10000,50000,100000].map((value) => <button key={value} onClick={() => setAmount(value)}>+{value/10000}만</button>)}<button onClick={() => setAmount(tab === 'invest' ? Math.min(me?.user.cash || 0, remainingLimit) : position?.availableAmount || 0)}>최대</button></div>
         {tab === 'invest' && <div className="limit-note"><span>남은 개인 투자 한도</span><b>{won(remainingLimit)}</b></div>}
         <div className="benefit-preview"><Ticket /><div><span>혜택 적립 속도</span><b>10만원당 하루 {r.fund.dailyRatePer100k}%</b><p>매출 보너스 +{r.fund.salesBonus}%{position?.early ? ` · 최초 투자자 적용 +${effectiveSalesBonus.toFixed(1)}%` : r.fund.status === 'funding' ? ` · 최초 투자자는 매출 보너스 ${r.fund.earlyBonus}% 우대` : ''}</p></div></div>

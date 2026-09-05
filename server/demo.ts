@@ -44,6 +44,8 @@ export type DemoSandbox = {
   fundDeltas: Record<string, number>
   /** 사장님 체험에서 매출 공개 토글 상태. */
   salesDisclosure?: boolean
+  /** 가입 축하 쿠폰을 이미 넣어줬는지. 세션당 한 번만 넣는다. */
+  welcomed?: boolean
 }
 
 const sandboxes = new Map<string, DemoSandbox>()

@@ -47,7 +47,25 @@ assert(sharedPublic.stats.funded === ledgerCashBefore, '체험 투자가 공유 
 
 const otherDemo = await ok('/api/auth/demo', { method: 'POST', body: JSON.stringify({ role: 'investor' }) })
 const otherDemoMe = await ok('/api/me', {}, otherDemo.token)
-assert(otherDemoMe.positions.length === 0 && otherDemoMe.coupons.length === 0, '체험 세션끼리도 서로의 기록이 보이면 안 됩니다.')
+assert(otherDemoMe.positions.length === 0, '체험 세션끼리도 서로의 기록이 보이면 안 됩니다.')
+// 새 체험 세션의 지갑에는 자기 가입 축하 쿠폰만 있어야 한다. 앞 세션이 발급한 쿠폰이 섞이면 안 된다.
+assert(!otherDemoMe.coupons.some((item: any) => item.id === demoCoupon.coupon.id), '앞 체험 세션의 쿠폰이 보이면 안 됩니다.')
+assert(otherDemoMe.coupons.length >= 2 && otherDemoMe.coupons.every((item: any) => item.status === 'available' && !item.fundId),
+  '체험 세션은 가입 축하 쿠폰을 들고 시작해야 합니다.')
+
+// 가입 축하 쿠폰만으로 교환장에서 실제 교환까지 해볼 수 있어야 한다.
+const demoMarket = await ok('/api/public', {}, otherDemo.token)
+const swappable = demoMarket.listings.find((item: any) => item.matchableCouponIds.length > 0)
+assert(swappable, '체험 지갑 기준으로 교환 가능한 매물이 표시되어야 합니다.')
+const demoSwap = await ok(`/api/listings/${swappable.id}/offers`, {
+  method: 'POST', body: JSON.stringify({ couponId: swappable.matchableCouponIds[0] }),
+}, otherDemo.token)
+assert(demoSwap.ephemeral === true && demoSwap.coupon?.id, '체험 교환은 비영구 결과로 체결되어야 합니다.')
+const afterSwap = await ok('/api/me', {}, otherDemo.token)
+assert(afterSwap.coupons.some((item: any) => item.id === demoSwap.coupon.id), '교환으로 받은 쿠폰이 체험 지갑에 있어야 합니다.')
+assert(afterSwap.coupons.find((item: any) => item.id === swappable.matchableCouponIds[0])?.status === 'used', '내놓은 쿠폰은 지갑에서 빠져야 합니다.')
+const sharedAfterSwap = await ok('/api/public')
+assert(sharedAfterSwap.listings.some((item: any) => item.id === swappable.id), '체험 교환이 공유 원장의 매물을 가져가면 안 됩니다.')
 
 const ownerAccount = await ok('/api/auth/login', { method: 'POST', body: JSON.stringify({ email: 'owner@meoktu.demo', password: 'demo1234!' }) })
 const beforeOcrCount = (await ok('/api/owner', {}, ownerAccount.token)).ocrAnalyses.length

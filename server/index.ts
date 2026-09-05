@@ -197,6 +197,8 @@ async function supabaseUserFromAuthorization(value?: string) {
       }
       db.users.push(user)
       audit(user.id, 'auth.supabase_profile_created', 'user', user.id, 'Supabase Auth 사용자 로컬 서비스 프로필 생성')
+      // Supabase 가입은 로컬 프로필이 이때 처음 생긴다. 가입 축하 쿠폰도 같이 넣어준다.
+      grantWelcomeCoupons(user)
       await saveDatabase()
     }
     supabaseUserCache.set(cacheKey, { userId: user.id, at: Date.now() })
@@ -618,6 +620,54 @@ function issueCoupon(position: Position) {
   return coupon
 }
 
+/**
+ * 가입 축하 쿠폰.
+ *
+ * 지갑이 비어 있으면 교환장에 들어가도 "조건에 맞는 내 쿠폰이 없어요"만 보인다.
+ * 그래서 이 서비스의 핵심인 쿠폰 교환을 한 번도 못 해보고 나가게 된다.
+ * 계정을 만들 때와 체험 세션을 열 때 두 장을 미리 넣어 주고,
+ * 그 두 장은 지금 열려 있는 매물과 교환 규칙(할인율 차이·액면가 배수·업종·지역)을
+ * 실제로 통과하도록 골라 두었다.
+ *
+ * 펀드에서 나온 쿠폰이 아니라 플랫폼이 주는 쿠폰이라 fundId 는 비운다.
+ * (그래야 펀드의 발급·사용 집계에 섞이지 않는다.)
+ * 사장님 계정이 붙어 있는 식당은 피했다. 남의 대시보드에 없던 쿠폰 부담이 생기면 안 된다.
+ */
+const WELCOME_COUPONS = [
+  { restaurantId: 'r-mealmill', discount: 26 },
+  { restaurantId: 'r-podo', discount: 22 },
+] as const
+const WELCOME_COUPON_DAYS = 60
+
+function buildWelcomeCoupons(userId: string, makeId: (prefix: string) => string): Coupon[] {
+  const expiresAt = new Date(Date.now() + WELCOME_COUPON_DAYS * 86400000).toISOString()
+  return WELCOME_COUPONS.flatMap(({ restaurantId, discount }) => {
+    const restaurant = db.restaurants.find((item) => item.id === restaurantId)
+    if (!restaurant) return []
+    return [{
+      id: makeId('coupon'), userId, restaurantId: restaurant.id,
+      title: `${restaurant.name} ${discount}% 가입 축하 쿠폰`, discount,
+      maxDiscountWon: Math.floor(restaurant.maxMenuPrice * discount / 100),
+      type: 'fund', status: 'available', createdAt: now(), expiresAt,
+    } satisfies Coupon]
+  })
+}
+
+const welcomeCouponMessage = (coupons: Coupon[]) =>
+  `${coupons.map((coupon) => coupon.title.replace(' 가입 축하 쿠폰', '')).join(', ')} 쿠폰을 지갑에 넣어 뒀어요. 교환장에서 원하는 식당 쿠폰으로 바꿔보세요.`
+
+/** 새 계정에 가입 축하 쿠폰을 넣는다. 이미 쿠폰이 있는 계정은 건드리지 않는다. */
+function grantWelcomeCoupons(user: User) {
+  // 사장님·관리자 계정은 쿠폰 지갑과 교환장 화면 자체가 없다. 받아도 볼 곳이 없으니 주지 않는다.
+  if (user.role !== 'investor') return []
+  if (db.coupons.some((coupon) => coupon.userId === user.id)) return []
+  const coupons = buildWelcomeCoupons(user.id, id)
+  if (!coupons.length) return []
+  db.coupons.push(...coupons)
+  pushNotification(user.id, 'coupon', `가입 축하 쿠폰 ${coupons.length}장이 도착했어요`, welcomeCouponMessage(coupons), '/market')
+  return coupons
+}
+
 function getPosition(userId: string, fundId: string) {
   let position = db.positions.find((item) => item.userId === userId && item.fundId === fundId)
   if (!position) {
@@ -810,6 +860,23 @@ const DEMO_PARTNER_PROVIDERS: Record<string, { title: string; provider: string; 
 
 const demoRestaurantOf = (restaurantId?: string) => db.restaurants.find((item) => item.id === restaurantId)
 
+/**
+ * 체험 세션의 원장. 처음 열릴 때 가입 축하 쿠폰을 넣어 준다.
+ * 체험자도 회원과 똑같이 지갑에 쿠폰 두 장을 들고 시작해야 교환장을 눌러볼 수 있다.
+ */
+function demoSandbox(id: string, role: Role) {
+  const sandbox = sandboxFor(id, role)
+  if (!sandbox.welcomed && role === 'investor') {
+    sandbox.welcomed = true
+    const coupons = buildWelcomeCoupons(sandbox.id, demoId)
+    sandbox.coupons.unshift(...coupons)
+    if (coupons.length) {
+      demoNotification(sandbox, 'coupon', `가입 축하 쿠폰 ${coupons.length}장이 도착했어요`, welcomeCouponMessage(coupons), '/market')
+    }
+  }
+  return sandbox
+}
+
 /** 체험 원장 기준의 투자 잔액. 없으면 만든다. */
 function demoPosition(sandbox: DemoSandbox, fundId: string) {
   let position = sandbox.positions.find((item) => item.fundId === fundId)
@@ -825,7 +892,7 @@ function demoPosition(sandbox: DemoSandbox, fundId: string) {
  * false를 돌려주면 "실제 라우터에 넘겨라"는 뜻이다.
  */
 async function handleDemoMutation(req: AuthedRequest, res: Response, user: SessionUser): Promise<boolean | void> {
-  const sandbox = sandboxFor(user.id, user.role)
+  const sandbox = demoSandbox(user.id, user.role)
   const pathname = req.originalUrl.split('?')[0]
   const body = (req.body || {}) as Record<string, any>
   const method = req.method
@@ -971,14 +1038,19 @@ async function handleDemoMutation(req: AuthedRequest, res: Response, user: Sessi
     return done({ message: '교환장 등록을 취소했어요. 쿠폰을 지갑으로 되돌렸어요.' })
   }
 
-  /* 즉시 교환 — 공개 매물의 쿠폰을 체험 지갑으로 가져온다 (실제 매물은 그대로 남는다) */
-  const swap = match(/^\/api\/listings\/([^/]+)\/swap$/)
+  /* 교환 — 공개 매물의 쿠폰을 체험 지갑으로 가져온다 (실제 매물은 그대로 남는다)
+     화면은 즉시 교환 매물과 승인 매물 모두 /offers 로 보낸다. 체험에서는 상대의 답을
+     기다릴 수 없으니 두 경로 모두 그 자리에서 체결하고, 승인 매물이면 그렇게 말해준다. */
+  const swap = match(/^\/api\/listings\/([^/]+)\/(swap|offers)$/)
   if (swap && method === 'POST') {
     const listing = db.couponListings.find((item) => item.id === swap[1] && item.status === 'open')
     const wanted = listing && db.coupons.find((item) => item.id === listing.couponId)
     const mine = sandbox.coupons.find((item) => item.id === String(body.couponId) && item.status === 'available')
     if (!listing || !wanted) { res.status(404).json({ error: '교환할 매물을 찾을 수 없어요.' }); return }
-    if (!mine) { res.status(400).json({ error: '내놓을 체험 쿠폰을 먼저 골라주세요. MY 먹투에서 투자한 식당의 쿠폰을 발급받을 수 있어요.' }); return }
+    if (!mine) { res.status(400).json({ error: '내놓을 체험 쿠폰을 먼저 골라주세요. MY 먹투 쿠폰 지갑에서 확인할 수 있어요.' }); return }
+    // 체험이라도 교환 규칙은 실제와 같아야 한다. 여기서 막히는 이유가 곧 서비스 설명이다.
+    const check = checkSwap({ listing, wanted, offered: mine, offeredRestaurant: demoRestaurantOf(mine.restaurantId), offerUserId: sandbox.id })
+    if (!check.ok) { res.status(400).json({ error: check.issues[0].message, issues: check.issues }); return }
     const restaurant = demoRestaurantOf(wanted.restaurantId)
     mine.status = 'used'
     mine.usedAt = now()
@@ -994,7 +1066,10 @@ async function handleDemoMutation(req: AuthedRequest, res: Response, user: Sessi
       createdAt: now(),
     })
     demoNotification(sandbox, 'exchange', '체험 교환 완료', `${restaurant?.name || '식당'} ${wanted.discount}% 쿠폰을 받았어요.`, '/my')
-    return done({ message: `${restaurant?.name || '식당'} ${wanted.discount}% 쿠폰으로 체험 교환했어요.`, coupon: received })
+    return done({
+      message: `${restaurant?.name || '식당'} ${wanted.discount}% 쿠폰으로 체험 교환했어요.${listing.autoAccept ? '' : ' (승인이 필요한 매물이지만 체험이라 바로 처리했어요.)'}`,
+      coupon: received, settled: true,
+    })
   }
 
   /* 쿠폰 사용 요청 */
@@ -1094,7 +1169,7 @@ app.use('/api', async (req: AuthedRequest, res, next) => {
 
 /** 체험 세션이 보는 /api/me. 공유 원장 대신 샌드박스를 읽는다. */
 function demoMeState(user: SessionUser) {
-  const sandbox = sandboxFor(user.id, user.role)
+  const sandbox = demoSandbox(user.id, user.role)
   const positions = sandbox.positions.filter((item) => item.amount > 0).map((position) => {
     const fund = db.funds.find((item) => item.id === position.fundId)
     const restaurant = fund && db.restaurants.find((item) => item.id === fund.restaurantId)
@@ -1135,7 +1210,7 @@ function demoMeState(user: SessionUser) {
 
 /** 공개 데이터 위에 이 체험 세션의 리뷰·투자분·매물만 얹는다. */
 function withDemoOverlay(state: ReturnType<typeof publicState>, user: SessionUser) {
-  const sandbox = sandboxFor(user.id, user.role)
+  const sandbox = demoSandbox(user.id, user.role)
   const restaurants = state.restaurants.map((restaurant) => {
     const myReviews = sandbox.reviews.filter((review) => review.restaurantId === restaurant.id)
     const delta = restaurant.fund ? sandbox.fundDeltas[restaurant.fund.id] || 0 : 0
@@ -1156,7 +1231,19 @@ function withDemoOverlay(state: ReturnType<typeof publicState>, user: SessionUse
       offerCount: 0, myOfferId: undefined, matchableCouponIds: [] as string[], mine: true,
     }
   })
-  return { ...state, restaurants, listings: [...myListings, ...state.listings], demo: { notice: DEMO_NOTICE } }
+  // 공개 매물의 "교환 가능한 내 쿠폰"은 공유 원장 기준으로 계산되어 있어서
+  // 체험 세션에는 늘 비어 있었다. 체험 지갑을 기준으로 같은 규칙을 다시 돌려 준다.
+  const listings = state.listings.map((listing) => {
+    const wanted = listing.coupon
+    if (!wanted) return listing
+    const matchableCouponIds = sandbox.coupons
+      .filter((coupon) => coupon.status === 'available' && checkSwap({
+        listing, wanted, offered: coupon, offeredRestaurant: demoRestaurantOf(coupon.restaurantId), offerUserId: sandbox.id,
+      }).ok)
+      .map((coupon) => coupon.id)
+    return { ...listing, matchableCouponIds }
+  })
+  return { ...state, restaurants, listings: [...myListings, ...listings], demo: { notice: DEMO_NOTICE } }
 }
 
 
@@ -1248,8 +1335,9 @@ app.post('/api/auth/signup', async (req, res) => {
   }
   const user: User = { id: id('user'), email: email.toLowerCase(), name: name.trim(), role, passwordHash: await hashPassword(password), cash: role === 'investor' ? 2000000 : 0, createdAt: now() }
   db.users.push(user)
+  const welcomeCoupons = grantWelcomeCoupons(user)
   await saveDatabase()
-  res.status(201).json({ token: tokenFor(user), user: publicUser(user) })
+  res.status(201).json({ token: tokenFor(user), user: publicUser(user), welcomeCoupons: welcomeCoupons.map(couponView) })
 })
 
 app.post('/api/auth/demo', (req, res) => {
@@ -2522,7 +2610,7 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
   }
   // 체험 세션은 같은 채점 로직을 쓰되 결과를 공유 원장이 아닌 체험 원장에 남긴다.
   if (req.user!.sessionMode === 'demo') {
-    const sandbox = sandboxFor(req.user!.id, 'owner')
+    const sandbox = demoSandbox(req.user!.id, 'owner')
     sandbox.applications.unshift(application)
     demoNotification(sandbox, 'application', '체험 심사 완료', `${restaurantName} 먹투 성장성 예비평가 ${score}점 · 결과 ${creditAssessment.grade}`, '/owner')
     return res.status(201).json({ message: '체험 심사가 끝났어요. 결과는 저장되지 않습니다.', application, ephemeral: true, demoNotice: DEMO_NOTICE })
@@ -2548,7 +2636,7 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
 app.get('/api/owner', auth('owner'), (req: AuthedRequest, res) => {
   if (req.user!.sessionMode === 'demo') {
     // 체험 사장님에게는 샘플 식당 하나를 빌려주고, 변경분은 샌드박스에만 남긴다.
-    const sandbox = sandboxFor(req.user!.id, 'owner')
+    const sandbox = demoSandbox(req.user!.id, 'owner')
     const sample = db.restaurants[0]
     const sampleFund = sample && db.funds.find((item) => item.restaurantId === sample.id)
     return res.json({
