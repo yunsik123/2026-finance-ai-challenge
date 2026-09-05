@@ -1262,10 +1262,17 @@ async function handleDemoMutation(req: AuthedRequest, res: Response, user: Sessi
     return done({ message: '알림을 모두 읽음 처리했어요.', unreadNotifications: 0 })
   }
 
-  /* 매출 공개 토글 */
+  /* 매출 공개 토글. 화면은 { public } 로 보내고, 예전 { salesDisclosure } 본문도 함께 받는다. */
   if (method === 'PATCH' && /^\/api\/owner\/restaurants\/[^/]+\/sales-disclosure$/.test(pathname)) {
-    sandbox.salesDisclosure = body.salesDisclosure === true
+    sandbox.salesDisclosure = body.public === true || body.salesDisclosure === true
     return done({ message: sandbox.salesDisclosure ? '월매출을 공개로 바꿨어요.' : '월매출을 비공개로 바꿨어요.', salesDisclosure: sandbox.salesDisclosure })
+  }
+
+  /* 식당 감사 쿠폰 발송. 체험 식당의 투자자는 공유 원장의 실제 사용자라서 쿠폰을 실제로 발행하지 않는다. */
+  const dividend = match(/^\/api\/owner\/funds\/([^/]+)\/dividend$/)
+  if (dividend && method === 'POST') {
+    const discount = Math.max(5, Math.min(30, Number(body.discount || 10)))
+    return done({ message: `체험 모드라 실제 투자자에게는 보내지 않았어요. 실제 계정에서는 이 순간 투자자 지갑에 ${discount}% 식당 감사 쿠폰이 들어갑니다.` })
   }
 
   /* 심사 접수는 실제 채점 로직을 그대로 쓰기 위해 실제 라우터로 넘긴다.

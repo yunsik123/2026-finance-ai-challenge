@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { NavLink } from 'react-router-dom'
-import { ArrowLeft, BadgeCheck, Banknote, Building2, Check, Database, Download, Eraser, FileSpreadsheet, FolderDown, Landmark, Link2, LockKeyhole, PlugZap, ReceiptText, ShieldCheck, Sparkles, Store, UploadCloud, UserCheck, Users, type LucideIcon } from 'lucide-react'
+import { BadgeCheck, Banknote, Building2, Check, ChevronRight, Database, Download, Eraser, FileSpreadsheet, FolderDown, Landmark, Link2, LockKeyhole, PlugZap, ReceiptText, ShieldCheck, Sparkles, Store, UploadCloud, UserCheck, Users, type LucideIcon } from 'lucide-react'
 import { api } from './lib/api.ts'
-import OwnerDashboard from './OwnerDashboard.tsx'
 import CouponVerify from './CouponVerify.tsx'
 import VerificationReport from './VerificationReport.tsx'
 import CreditGradePanel from './CreditGradePanel.tsx'
@@ -24,7 +23,6 @@ type UploadOption = {
   /** 같은 문서의 PDF 판. 실제 발급 서류가 대부분 PDF라서 함께 제공한다. */
   samplePdfUrl?: string
 }
-
 const uploadOptions: UploadOption[] = [
   { id: 'business', icon: Building2, title: '사업자등록 자료', exact: '사업자등록증명 또는 사업자등록증 사본 1부', columns: '확인 항목: 상호, 대표자, 개업일, 사업장 주소, 업태·종목', accept: '.pdf,.jpg,.jpeg,.png', required: true, sampleUrl: '/samples/meoktu-business-sample.png', sampleLabel: 'PNG 샘플', samplePdfUrl: '/samples/meoktu-business-sample.pdf' },
   { id: 'license', icon: BadgeCheck, title: '영업신고 자료', exact: '일반·휴게음식점 영업신고증 사본 1부', columns: '확인 항목: 신고번호, 영업소 명칭·주소, 영업 종류, 대표자', accept: '.pdf,.jpg,.jpeg,.png', required: true, sampleUrl: '/samples/meoktu-license-sample.png', sampleLabel: 'PNG 샘플', samplePdfUrl: '/samples/meoktu-license-sample.pdf' },
@@ -95,32 +93,6 @@ async function fetchSampleFile(option: UploadOption): Promise<File> {
   return new File([blob], name, { type: sampleMimeTypes[extension] || blob.type || 'application/octet-stream' })
 }
 
-/** 감사 로그의 내부 동작 코드를 사장님이 읽을 말로 바꾼다. */
-const auditActions: Record<string, string> = {
-  'application.analyzed': '예비심사 실행',
-  'application.credit_graded': '먹투 성장성 예비평가 산정',
-  'application.business_verified': '사업자 진위확인',
-  'application.financial_orchestrated': '제출자료 대조',
-  'data_connection.connected': '기관 연결',
-  'data_connection.revoked': '기관 연결 해제',
-  'coupon.dividend_issued': '식당 감사 쿠폰 발송',
-  'coupon.list': '쿠폰 교환장 등록',
-  'coupon.unlist': '쿠폰 교환장 등록 취소',
-  'coupon.listing_updated': '교환 조건 수정',
-  'coupon.offer': '교환 제안',
-  'coupon.offer_declined': '교환 제안 거절',
-  'coupon.offer_withdrawn': '교환 제안 철회',
-  'coupon.swap': '쿠폰 교환 체결',
-  'coupon.redeem_requested': '쿠폰 사용 요청',
-  'coupon.redeemed': '쿠폰 사용 확인',
-  'favorite.created': '관심 식당 등록',
-  'favorite.deleted': '관심 식당 해제',
-  'ocr.analyzed': 'AI 문서 확인',
-  'support.created': '1:1 문의 접수',
-  'auth.supabase_profile_created': '계정 생성',
-}
-const auditActionLabel = (action: string) => auditActions[action] || action.split('.').pop()?.replace(/_/g, ' ') || action
-
 const metricLabels: Record<string, string> = {
   recent12MonthAverageSales: '최근 12개월 평균매출', recent12MonthSalesGrowth: '최근 12개월 성장률', estimatedMonthlyOperatingCashflow: '추정 월 영업현금흐름', salesVolatility: '매출 변동성', repeatRate: '재방문율', averageTicket: '객단가', deliverySalesShare: '배달매출 비중', rentToSalesRatio: '임차료/매출', debtServiceToCashflowRatio: '원리금상환/현금흐름', operatingYears: '검증 업력', staffTrend: '직원 추이', districtSalesGrowth: '상권 매출 성장률', relativeSalesGrowth: '상권 대비 초과성장', salesReconciliationRate: '매출 교차검증 일치도'
 }
@@ -131,7 +103,6 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
   const owner = me?.user.role === 'owner'
   const demoMode = me?.user.sessionMode === 'demo'
   const [ownerData, setOwnerData] = useState<any>(null)
-  const [showForm, setShowForm] = useState(!owner)
   const [uploadedFiles, setUploadedFiles] = useState<Record<string, string>>({})
   const [selectedFiles, setSelectedFiles] = useState<Record<string, File>>({})
   const [documentMetadata, setDocumentMetadata] = useState<Record<string, DocumentMetadata>>({})
@@ -153,10 +124,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
 
   useEffect(() => { if (owner) api<any>('/api/owner').then(setOwnerData).catch(() => undefined) }, [owner, me?.applications.length])
   const restaurant = ownerData?.restaurants?.[0]
-  // 가장 최근 심사의 신용등급. 대시보드와 결과 화면에서 같은 카드를 쓴다.
-  const latestApplication = ownerData?.applications?.length ? ownerData.applications[ownerData.applications.length - 1] : undefined
-  const latestCredit = latestApplication?.data?.creditAssessment
-  const latestCombined = latestApplication?.data?.combinedAssessment
+  const fund = ownerData?.funds?.[0]
   const metrics = result?.data?.derivedMetrics || {}
   const confidence = result?.data?.dataConfidence || 0
   const uploadedCount = useMemo(() => Object.keys(uploadedFiles).length, [uploadedFiles])
@@ -173,14 +141,8 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
     setAgreedDocuments([])
     setResult(null)
   }
-  const beginApplication = () => {
-    resetApplication()
-    setShowForm(true)
-  }
-  const goBack = () => {
-    resetApplication()
-    setShowForm(false)
-  }
+  /** 결과 화면에서 다시 신청 화면으로 돌아온다. 사장님 센터의 기본 화면은 항상 펀딩 신청이다. */
+  const goBack = () => resetApplication()
   const selectFile = async (sourceId: string, event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (file && file.size > 10 * 1024 * 1024) {
@@ -279,15 +241,6 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
     } catch (error) { notify((error as Error).message) }
     finally { setAnalyzingSource('') }
   }
-  const sendDividend = async (fundId: string) => {
-    try { const response = await api<{ message: string }>(`/api/owner/funds/${fundId}/dividend`, { method: 'POST', body: JSON.stringify({ discount: 10 }) }); notify(response.message); setOwnerData(await api<any>('/api/owner')); await refresh() }
-    catch (error) { notify((error as Error).message) }
-  }
-  const toggleDisclosure = async () => {
-    if (!restaurant) return
-    try { const response = await api<{ message: string }>(`/api/owner/restaurants/${restaurant.id}/sales-disclosure`, { method: 'PATCH', body: JSON.stringify({ public: !restaurant.salesDisclosure }) }); notify(response.message); setOwnerData(await api<any>('/api/owner')); await refresh() }
-    catch (error) { notify((error as Error).message) }
-  }
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!owner) { onLogin(); return }
@@ -329,14 +282,18 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
       <div className="review-flow data-flow"><b>펀딩 등록 흐름</b>{['사업자·대표자 인증','직접 업로드/기관연동 선택','최소 필수 동의 확인','35지표 먹투 성장성 예비평가','결측·위험 관리자 확인','펀딩 등록과 공개범위 선택'].map((title,index) => <div key={title}><span>{index+1}</span><p>{title}</p><Check /></div>)}</div>
     </section>
     <div className="owner-body">
-      {owner && restaurant && !showForm && !result && <>
-        <OwnerDashboard data={ownerData} onDividend={sendDividend} onNewFund={beginApplication} />
-        {/* 심사 결과 화면에 들어가지 않아도 현재 등급을 항상 볼 수 있게 대시보드에도 올린다. */}
-        {latestCredit && <CreditGradePanel credit={latestCredit} combined={latestCombined} />}
-        <CouponVerify refresh={refresh} notify={notify} />
-        <section className="sales-disclosure-control"><div><span><BarChartIcon /></span><div><b>투자자 매출 데이터 공개</b><p>보너스 산정 결과는 항상 공개하고, 정확한 월매출 그래프는 사장님이 선택합니다.</p></div></div><button className={restaurant.salesDisclosure ? 'active' : ''} onClick={toggleDisclosure}><i />{restaurant.salesDisclosure ? '월매출 공개 중' : '월매출 비공개'}</button></section>
-        {ownerData?.auditEvents?.length > 0 && <section className="owner-audit"><div><span className="eyebrow">AUDIT TRAIL</span><h2>내 계정 변경 이력</h2><p>심사 접수, 자료 연결, 등급 산정처럼 중요한 변경을 시간과 함께 남겨둡니다.</p></div><div>{ownerData.auditEvents.slice(0, 8).map((event: any) => <article key={event.id}><span><Check /></span><div><b>{event.summary}</b><small>{new Date(event.createdAt).toLocaleString('ko-KR')} · {auditActionLabel(event.action)}</small></div></article>)}</div></section>}
-      </>}
+      {owner && restaurant && !result && <section className="owner-funding-status">
+        <div className="owner-funding-status-head">
+          <div><span className="eyebrow coral"><Store /> 운영 중인 펀딩</span><h2>{restaurant.name}{fund ? ` · ${fund.round}차 라운드` : ''}</h2><p>모집 현황과 AI 경영 리포트, 검증 결과는 마이페이지에서 확인하고 이곳에서는 다음 펀딩을 신청하세요.</p></div>
+          <NavLink className="button secondary" to="/owner/my">내 펀드 현황 보기 <ChevronRight /></NavLink>
+        </div>
+        {fund && <div className="owner-funding-status-metrics">
+          <div><span>모인 투자금</span><b>{won(fund.raised)}</b><small>목표 {won(fund.goal)} · {Math.round(fund.raised / fund.goal * 100)}%</small></div>
+          <div><span>참여 투자자</span><b>{fund.investorCount}명</b><small>현재 라운드 기준</small></div>
+          <div><span>검증 상태</span><b>{restaurant.verificationStatus === 'rejected' ? '보완 필요' : restaurant.verificationStatus === 'submitted' ? '운영자 확인 중' : '공개 검증 완료'}</b><small>상세 근거는 마이페이지</small></div>
+        </div>}
+      </section>}
+      {owner && restaurant && !result && <CouponVerify refresh={refresh} notify={notify} />}
 
       {demoMode && <section className="demo-mode-banner"><ShieldCheck /><div><b>사장님 체험 모드 · 저장되지 않아요</b><p>기관 연결, 샘플 자료 업로드, AI 문서 확인, 심사 접수, 먹투 성장성 예비평가 확인까지 실제와 똑같이 눌러볼 수 있어요. 이 체험 기록은 다른 사용자에게 보이지 않고 브라우저를 닫으면 사라집니다.</p></div></section>}
 
@@ -352,14 +309,11 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
         <div className="result-explanation"><b>심사 설명</b><p>{result.explanation}</p><span>AI 제안 한도 {won(result.approvedLimit)}{result.requestedLimit ? ` · 희망 ${won(result.requestedLimit)}` : ''} · 운영자 확정 전 참고값</span></div>
         {/* 초기 MVP에 있던 안내. 점수가 낮게 나왔을 때 사장님이 가장 먼저 궁금해하는 것이라 되살렸다. */}
         <div className="result-why"><b>왜 바로 탈락시키지 않았나요?</b><p>먹투는 기존 신용점수만으로 판단하지 않습니다. 실제 고객의 재방문과 최근 성장 흐름이 보이면 조건부 승인이나 사람의 추가 검토 기회를 드려요. 자료가 부족하다는 이유만으로 자동 거절하지 않습니다.</p></div>
-        <div className="owner-result-actions"><NavLink className="button" to="/owner/my">마이페이지에서 결과 확인</NavLink><button className="button secondary" onClick={goBack}>사장님 센터로 돌아가기</button></div>
-      </section> : (!owner || showForm || !restaurant) && <form ref={formRef} className={`application-form source-application ${!owner ? 'locked' : ''}`} onSubmit={submit}>
+        <div className="owner-result-actions"><NavLink className="button" to="/owner/my">마이페이지에서 결과 확인</NavLink><button className="button secondary" onClick={goBack}>새 펀딩 신청서 작성</button></div>
+      </section> : <form ref={formRef} className={`application-form source-application ${!owner ? 'locked' : ''}`} onSubmit={submit}>
         {!owner && <div className="owner-lock-overlay"><LockKeyhole /><h2>사장님 계정 전용 기능이에요</h2><p>상호명과 자료 업로드를 포함한 모든 입력은 소상공인 계정으로 로그인한 뒤 사용할 수 있습니다.</p><button type="button" className="button" onClick={onLogin}>{me ? '소상공인 계정으로 다시 로그인' : '로그인·회원가입'}</button></div>}
         <fieldset disabled={!owner}>
-          {owner && restaurant && showForm && <>
-            <button type="button" className="application-back" onClick={goBack}><ArrowLeft /> 사장님 센터로 돌아가기</button>
-            <div className="additional-fund-intro"><span>ADDITIONAL FUNDING</span><h2>추가 펀딩을 준비해볼까요?</h2><p>기존 운영 순서와 다운로드 자료는 그대로 유지하면서, 최근 자료만 갱신해 다음 라운드의 한도와 조건을 다시 확인합니다.</p></div>
-          </>}
+          {owner && restaurant && <div className="additional-fund-intro"><span>ADDITIONAL FUNDING</span><h2>추가 펀딩을 준비해볼까요?</h2><p>기존 운영 순서와 다운로드 자료는 그대로 유지하면서, 최근 자료만 갱신해 다음 라운드의 한도와 조건을 다시 확인합니다.</p></div>}
           <div className="form-heading"><span>원천데이터 기반 예비심사</span><h2>필요한 자료를 하나씩 제출해주세요</h2><p>매출액·성장률·재방문율은 직접 입력하지 않습니다. 각 자료의 정확한 범위와 항목을 확인하고 파일을 선택하면 먹투가 계산합니다.</p></div>
 
           <section className="form-section">
@@ -455,5 +409,3 @@ function DocumentUploadCard({ option, fileName, metadata, required, onChange }: 
     <label className="document-action"><UploadCloud />{fileName ? '다시 선택' : '파일 선택'}<input type="file" name={`document-${option.id}`} accept={option.accept} required={required && !fileName} onChange={onChange} /></label>
   </div>
 }
-
-function BarChartIcon() { return <Database /> }

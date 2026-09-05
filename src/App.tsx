@@ -7,7 +7,6 @@ import {
   ScrollText, ShieldCheck, Sparkles, Store, Ticket, TrendingUp, UserRound, Users, WalletCards, X,
 } from 'lucide-react'
 import { api, clearToken, getToken, setToken } from './lib/api.ts'
-import OwnerDashboard from './OwnerDashboard.tsx'
 import MarketPage from './MarketPage.tsx'
 import CouponWallet from './CouponWallet.tsx'
 import NotificationBell from './NotificationBell.tsx'
@@ -119,7 +118,7 @@ function App() {
         <Routes>
           {ownerOnly ? <>
             <Route path="/owner" element={<OwnerCenter me={me} onLogin={() => setAuthOpen(true)} refresh={refresh} notify={notify} />} />
-            <Route path="/owner/my" element={<OwnerMyPage me={me} />} />
+            <Route path="/owner/my" element={<OwnerMyPage me={me} refresh={refresh} notify={notify} />} />
             <Route path="/legal" element={<LegalCenter me={me} />} />
             <Route path="/legal/:documentId" element={<LegalCenter me={me} />} />
             <Route path="/support" element={<SupportPage me={me} state={state} onLogin={() => setAuthOpen(true)} notify={notify} />} />
