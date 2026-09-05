@@ -13,7 +13,7 @@ import type { Application, Coupon, CouponListing, CouponOffer, CouponTrade, Data
 import { LEGAL_VERSION, checkConsent, legalDocument, legalSummaries, requiredDocumentIds, type LegalContext } from './legal.ts'
 import { answerGraphProcessQuestion, assessRestaurant, buildKnowledgeGraph, normalizeOcrBoxes, retrieveKnowledgeSubgraph } from './trust.ts'
 import { answerNavigationQuestion, isNavigationQuestion, matchUiTasks, navigationBrief, pageForRoute } from './sitemap.ts'
-import { deriveMetricsFromUploads, type RawUpload } from './metrics.ts'
+import { deriveMetricsFromUploads, parseCsv, type RawUpload } from './metrics.ts'
 import {
   assessCredit, combineAssessments, creditModelVersion, creditReferences, deriveCreditInput,
   featureSpecs, industries, industryProfiles, toIndustry, type CreditAssessment,
@@ -121,6 +121,10 @@ function tokenFor(user: User) {
   return `${payload}.${signature}`
 }
 
+const demoSessionName: Record<Role, string> = {
+  owner: '사장님 체험자', investor: '투자자 체험자', admin: '운영자 체험자',
+}
+
 function demoTokenFor(role: Role) {
   // 체험 세션마다 다른 id를 준다. 그래야 각자의 체험 원장이 섞이지 않는다.
   const sub = `demo-${role}-${crypto.randomBytes(6).toString('hex')}`
@@ -139,9 +143,9 @@ function userFromToken(value?: string) {
   try {
     const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString()) as { sub: string; exp: number; mode?: string; role?: Role }
     if (parsed.exp < Date.now()) return undefined
-    if (parsed.mode === 'demo' && (parsed.role === 'owner' || parsed.role === 'investor')) {
+    if (parsed.mode === 'demo' && (parsed.role === 'owner' || parsed.role === 'investor' || parsed.role === 'admin')) {
       return {
-        id: parsed.sub, email: `${parsed.role}@demo-session.meoktu`, name: parsed.role === 'owner' ? '사장님 체험자' : '투자자 체험자',
+        id: parsed.sub, email: `${parsed.role}@demo-session.meoktu`, name: demoSessionName[parsed.role],
         role: parsed.role, passwordHash: 'demo-session', cash: 0, createdAt: now(), sessionMode: 'demo',
       } satisfies SessionUser
     }
@@ -826,7 +830,12 @@ function publishApprovedApplication(application: Application) {
   const monthlySales = number('recent12MonthAverageSales', 0)
   const growth = number('recent12MonthSalesGrowth', 0)
   const repeatRate = number('repeatRate', 0)
-  let restaurant = db.restaurants.find((item) => item.ownerId === application.userId && (item.name === application.restaurantName || Boolean(item.sourceApplicationId)))
+  // 같은 사장님의 '이 신청' 또는 '같은 상호'만 기존 식당으로 본다.
+  // 예전에는 sourceApplicationId 가 있기만 하면 아무 식당이나 골라 덮어썼다.
+  // 그래서 두 번째 가게를 승인하면 첫 번째 가게가 두 번째 이름으로 바뀌어 사라졌고,
+  // 사장님 계정은 영원히 펀드를 하나만 가질 수 있었다.
+  let restaurant = db.restaurants.find((item) => item.ownerId === application.userId
+    && (item.sourceApplicationId === application.id || item.name === application.restaurantName))
   if (!restaurant) {
     restaurant = {
       id: id('restaurant'), ownerId: application.userId, sourceApplicationId: application.id, verificationStatus: 'verified',
@@ -1291,6 +1300,51 @@ async function handleDemoMutation(req: AuthedRequest, res: Response, user: Sessi
      (그 핸들러 안에서 체험 세션이면 원장 대신 샌드박스에 저장한다.) */
   if (method === 'POST' && pathname === '/api/applications') return false
 
+  /* 운영자 체험의 상태 변경. 원장은 그대로 두고 이 세션의 덮개에만 기록한다.
+     그래서 동시에 여러 명이 체험해도 서로의 화면과 실제 원장이 흔들리지 않는다. */
+  if (method === 'PATCH' && user.role === 'admin' && pathname.startsWith('/api/admin/')) {
+    const overrides = sandbox.adminOverrides
+    const adminMatch = /^\/api\/admin\/(users|restaurants|funds|applications|reviews|support|coupons)\/([^/]+)$/.exec(pathname)
+    if (!adminMatch) { res.status(403).json({ error: '이 기능은 운영자 체험에서 아직 준비되지 않았어요.' }); return }
+    const [, kind, targetId] = adminMatch
+    const note = '운영자 체험이라 이 변경은 내 화면에서만 적용되고 실제 원장은 그대로예요.'
+    if (kind === 'users') {
+      if (db.users.find((item) => item.id === targetId)?.role === 'admin') { res.status(400).json({ error: '관리자 계정은 변경할 수 없어요.' }); return }
+      overrides.users[targetId] = body.accountStatus === 'suspended' ? 'suspended' : 'active'
+      return done({ message: note, accountStatus: overrides.users[targetId] })
+    }
+    if (kind === 'restaurants') {
+      const current = overrides.restaurants[targetId] ?? db.restaurants.find((item) => item.id === targetId)?.salesDisclosure ?? false
+      overrides.restaurants[targetId] = 'salesDisclosure' in body ? Boolean(body.salesDisclosure) : !current
+      return done({ message: note, salesDisclosure: overrides.restaurants[targetId] })
+    }
+    if (kind === 'funds') {
+      if (!['funding', 'trading', 'closed'].includes(body.status)) { res.status(400).json({ error: '바꿀 수 있는 펀드 상태가 아니에요.' }); return }
+      overrides.funds[targetId] = body.status
+      return done({ message: note, status: body.status })
+    }
+    if (kind === 'applications') {
+      if (!['approved', 'conditional', 'manual_review', 'rejected'].includes(body.status)) { res.status(400).json({ error: '바꿀 수 있는 심사 상태가 아니에요.' }); return }
+      overrides.applications[targetId] = body.status
+      return done({ message: note, status: body.status })
+    }
+    if (kind === 'reviews') {
+      overrides.reviews[targetId] = body.status === 'hidden' ? 'hidden' : 'published'
+      return done({ message: note, status: overrides.reviews[targetId] })
+    }
+    if (kind === 'coupons') {
+      if (!['available', 'used', 'expired'].includes(body.status)) { res.status(400).json({ error: '바꿀 수 있는 쿠폰 상태가 아니에요.' }); return }
+      overrides.coupons[targetId] = body.status
+      return done({ message: note, status: body.status })
+    }
+    // support: 답변을 실제로 보내지 않는다. 문의한 사람은 공유 원장의 실제 회원이다.
+    const answer = String(body.answer || '').trim()
+    overrides.support[targetId] = answer
+      ? { status: 'answered', answer: answer.slice(0, 2000), answeredAt: now() }
+      : { status: body.status === 'closed' ? 'closed' : 'in_review' }
+    return done({ message: answer ? `${note} 실제 계정에서는 이 답변이 문의하신 분에게 전달됩니다.` : note, ...overrides.support[targetId] })
+  }
+
   res.status(403).json({ error: '이 기능은 체험 모드에서 아직 준비되지 않았어요. 회원가입하면 바로 이용할 수 있어요.' })
 }
 
@@ -1512,13 +1566,20 @@ app.post('/api/auth/signup', async (req, res) => {
 })
 
 app.post('/api/auth/demo', (req, res) => {
-  const role: Role = req.body?.role === 'owner' ? 'owner' : 'investor'
+  // 운영자 체험도 여기로 온다. 예전에는 진짜 운영자 계정으로 로그인시켰는데,
+  // 그러면 체험자가 실제 회원을 정지시키고 실제 심사를 승인·거절할 수 있었고
+  // 여러 명이 동시에 들어오면 서로의 변경까지 덮어썼다.
+  const requested = req.body?.role
+  const role: Role = requested === 'owner' || requested === 'admin' ? requested : 'investor'
   // 누를 때마다 무작위 sub가 든 새 토큰을 발급한다. 이전 체험 샌드박스를 이어 쓰지 않는다.
   const user: SessionUser = {
-    id: `demo-${role}`, email: `${role}@demo-session.meoktu`, name: role === 'owner' ? '사장님 체험자' : '투자자 체험자',
+    id: `demo-${role}`, email: `${role}@demo-session.meoktu`, name: demoSessionName[role],
     role, passwordHash: 'demo-session', cash: 0, createdAt: now(), sessionMode: 'demo',
   }
-  res.json({ token: demoTokenFor(role), user: publicUser(user), provider: 'ephemeral-demo', capabilities: ['public-read', 'graph-rag', ...(role === 'owner' ? ['local-upload', 'ocr-preview'] : [])] })
+  const capabilities = ['public-read', 'graph-rag',
+    ...(role === 'owner' ? ['local-upload', 'ocr-preview'] : []),
+    ...(role === 'admin' ? ['review-read', 'sandboxed-review-write'] : [])]
+  res.json({ token: demoTokenFor(role), user: publicUser(user), provider: 'ephemeral-demo', capabilities })
 })
 
 app.post('/api/auth/login', async (req, res) => {
@@ -1584,34 +1645,58 @@ app.get('/api/me', auth(), async (req: AuthedRequest, res) => {
   res.json({ user: publicUser(user), positions, orders, coupons, applications, visitVerifications, walletTransactions, favoriteRestaurantIds, ocrAnalyses, dataConnections, notifications, unreadNotifications: notifications.filter((item) => !item.read).length, exchange, rules: EXCHANGE_RULES, legalConsents, legalVersion: LEGAL_VERSION })
 })
 
-app.get('/api/admin/dashboard', auth('admin'), (_req, res) => {
-  const applications = [...db.applications].sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))
+app.get('/api/admin/dashboard', auth('admin'), (req: AuthedRequest, res) => {
+  // 운영자 체험 세션은 자기 덮개를 얹은 사본을 본다. 공유 원장은 건드리지 않는다.
+  const overrides = req.user!.sessionMode === 'demo' ? demoSandbox(req.user!.id, 'admin').adminOverrides : undefined
+  const applications = [...db.applications]
+    .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))
+    .map((application) => {
+      const status = overrides?.applications[application.id]
+      return status ? { ...application, status: status as Application['status'] } : application
+    })
+  const users = db.users.filter((user) => user.role !== 'admin')
+    .map((user) => (overrides?.users[user.id] ? { ...user, accountStatus: overrides.users[user.id] } : user))
+  const restaurants = db.restaurants.map((restaurant) => (restaurant.id in (overrides?.restaurants || {})
+    ? { ...restaurant, salesDisclosure: overrides!.restaurants[restaurant.id] } : restaurant))
+  const funds = db.funds.map((fund) => {
+    const status = overrides?.funds[fund.id]
+    return status ? { ...fund, status: status as Fund['status'] } : fund
+  })
+  const reviews = db.reviews.map((review) => {
+    const status = overrides?.reviews[review.id]
+    return status ? { ...review, status } : review
+  })
+  const coupons = db.coupons.map((coupon) => {
+    const status = overrides?.coupons[coupon.id]
+    return status ? { ...coupon, status: status as Coupon['status'] } : coupon
+  })
+  const support = [...(db.supportRequests || [])]
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .map((request) => {
+      const patch = overrides?.support[request.id]
+      return patch ? { ...request, ...patch, status: patch.status as SupportRequest['status'] } : request
+    })
   res.json({
     stats: {
-      users: db.users.filter((user) => user.role !== 'admin').length,
-      owners: db.users.filter((user) => user.role === 'owner').length,
+      users: users.length,
+      owners: users.filter((user) => user.role === 'owner').length,
       pendingApplications: applications.filter((application) => application.status === 'manual_review').length,
-      activeFunds: db.funds.filter((fund) => fund.status !== 'closed').length,
-      funded: db.funds.reduce((sum, fund) => sum + fund.raised, 0),
-      openSupport: (db.supportRequests || []).filter((request) => !['answered', 'closed'].includes(request.status)).length,
-      coupons: db.coupons.length,
+      activeFunds: funds.filter((fund) => fund.status !== 'closed').length,
+      funded: funds.reduce((sum, fund) => sum + fund.raised, 0),
+      openSupport: support.filter((request) => !['answered', 'closed'].includes(request.status)).length,
+      coupons: coupons.length,
     },
-    users: db.users
-      .filter((user) => user.role !== 'admin')
-      .map((user) => ({
-        ...publicUser(user),
-        positions: db.positions.filter((position) => position.userId === user.id && position.amount > 0).length,
-        applications: db.applications.filter((application) => application.userId === user.id).length,
-      })),
+    users: users.map((user) => ({
+      ...publicUser(user),
+      positions: db.positions.filter((position) => position.userId === user.id && position.amount > 0).length,
+      applications: db.applications.filter((application) => application.userId === user.id).length,
+    })),
     applications: applications.map((application) => {
       const owner = db.users.find((user) => user.id === application.userId)
       return { ...safeApplication(application), owner: owner ? publicUser(owner) : undefined }
     }),
-    restaurants: db.restaurants,
-    funds: db.funds,
-    reviews: db.reviews,
-    support: [...(db.supportRequests || [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
-    coupons: db.coupons,
+    restaurants, funds, reviews, support, coupons,
+    demo: overrides ? { notice: DEMO_NOTICE, sandboxed: true } : undefined,
   })
 })
 
@@ -1640,8 +1725,12 @@ app.patch('/api/admin/funds/:id', auth('admin'), async (req: AuthedRequest, res)
 })
 
 app.get('/api/admin/applications/:id', auth('admin'), (req: AuthedRequest, res) => {
-  const application = db.applications.find((item) => item.id === req.params.id)
-  if (!application) return res.status(404).json({ error: '심사를 찾지 못했어요.' })
+  const stored = db.applications.find((item) => item.id === req.params.id)
+  if (!stored) return res.status(404).json({ error: '심사를 찾지 못했어요.' })
+  // 운영자 체험에서 바꾼 상태는 원장이 아니라 그 세션의 덮개에 있다.
+  const demoStatus = req.user!.sessionMode === 'demo'
+    ? demoSandbox(req.user!.id, 'admin').adminOverrides.applications[stored.id] : undefined
+  const application = demoStatus ? { ...stored, status: demoStatus as Application['status'] } : stored
   const owner = db.users.find((item) => item.id === application.userId)
   const restaurant = db.restaurants.find((item) => item.sourceApplicationId === application.id)
   const fund = restaurant && db.funds.find((item) => item.restaurantId === restaurant.id)
@@ -2525,6 +2614,52 @@ app.delete('/api/data-connections/:sourceId', auth('owner'), async (req: AuthedR
   res.json({ message: '데이터 연결을 해제했어요. 이후 심사에는 연결 자료를 사용하지 않습니다.' })
 })
 
+/**
+ * 심사 화면에서 "자료를 눌러 내용 보기"를 하려면 운영자가 볼 본문이 있어야 한다.
+ * 원본 파일은 계속 보관하지 않는다. 대신 표 자료는 상단 일부 행만 잘라 미리보기로 남긴다.
+ * (전체 본문을 남기면 12개월 POS 원장이 그대로 저장되고, 그건 원래 하지 않기로 한 일이다.)
+ */
+const PREVIEW_ROWS = 60
+const PREVIEW_COLUMNS = 24
+const PREVIEW_CELL = 120
+
+type DocumentPreview = {
+  kind: 'table'
+  headers: string[]
+  rows: string[][]
+  totalRows: number
+  truncated: boolean
+}
+
+function buildDocumentPreview(name: string, text: string): DocumentPreview | undefined {
+  if (!/\.csv$/i.test(name) || !text) return undefined
+  const { headers, rows } = parseCsv(text)
+  if (!headers.length) return undefined
+  const columns = headers.slice(0, PREVIEW_COLUMNS)
+  return {
+    kind: 'table',
+    headers: columns.map((header) => header.slice(0, PREVIEW_CELL)),
+    rows: rows.slice(0, PREVIEW_ROWS).map((row) => columns.map((header) => String(row[header] ?? '').slice(0, PREVIEW_CELL))),
+    totalRows: rows.length,
+    truncated: rows.length > PREVIEW_ROWS,
+  }
+}
+
+/**
+ * public/samples 의 공개 샘플 파일 목록.
+ * 이미지·PDF 는 서버로 올라오지 않아 운영자가 원본을 볼 방법이 없는데,
+ * 샘플 자료로 접수한 신청만은 그 공개 파일을 그대로 열어볼 수 있다.
+ * (사장님이 올린 실제 문서가 아니라 저장소에 있는 공개 자산이라 보관 정책과 무관하다.)
+ */
+const publicSampleFiles = new Set([
+  'meoktu-account-sample.csv', 'meoktu-business-sample.pdf', 'meoktu-business-sample.png',
+  'meoktu-card-settlement-sample.csv', 'meoktu-customer-sample.csv', 'meoktu-debt-sample.csv',
+  'meoktu-delivery-sample.csv', 'meoktu-lease-sample.pdf', 'meoktu-lease-sample.png',
+  'meoktu-license-sample.pdf', 'meoktu-license-sample.png', 'meoktu-monthly-summary-sample.csv',
+  'meoktu-pos-sample.csv', 'meoktu-staff-sample.csv', 'meoktu-tax-sample.pdf', 'meoktu-tax-sample.png',
+])
+const sampleUrlFor = (name: string) => (publicSampleFiles.has(name) ? `/samples/${name}` : undefined)
+
 app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => {
   const data = req.body as Record<string, unknown>
   const restaurantName = String(data.restaurantName || '').trim()
@@ -2547,12 +2682,17 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
   )
   const documentMetadata = Object.fromEntries(uploadedSources.map((source) => {
     const raw = rawMetadata[source] || {}
+    const name = String(uploadedDocuments[source]).slice(0, 255)
     return [source, {
-      name: String(uploadedDocuments[source]).slice(0, 255),
+      name,
       size: Math.max(0, Math.min(10 * 1024 * 1024, Number(raw.size) || 0)),
       type: String(raw.type || '').slice(0, 100),
       rowCount: Math.max(0, Math.min(1000000, Number(raw.rowCount) || 0)),
       headers: Array.isArray(raw.headers) ? raw.headers.slice(0, 40).map((item) => String(item).slice(0, 80)) : [],
+      // 운영자가 심사 화면에서 자료를 눌러 실제 내용을 확인하기 위한 값.
+      // 표는 상단 일부 행만, 공개 샘플로 접수했다면 그 원본 파일 주소를 함께 남긴다.
+      preview: buildDocumentPreview(name, rawContents[source] || ''),
+      sampleUrl: sampleUrlFor(name),
     }]
   }))
   const sourceProvenance = {
@@ -3104,7 +3244,8 @@ function answerAccountStatusQuestion(question: string, account?: ConsultationAcc
   return parts.join(' ')
 }
 
-type OwnerLedger = {
+/** 사장님 가게 한 곳의 운영 수치. */
+type OwnerStoreLedger = {
   restaurantName: string
   fundStatus?: FundStatus
   round: number
@@ -3117,6 +3258,12 @@ type OwnerLedger = {
   redeemingCoupons: number
   usedCoupons: number
   salesDisclosure: boolean
+}
+
+type OwnerLedger = {
+  /** 등록된 가게 전부. 사장님은 가게를 두 곳 이상 열 수 있다. */
+  stores: OwnerStoreLedger[]
+  /* 아래는 가게가 아니라 계정 단위 값이라 가게별로 나누지 않는다. */
   applicationStatus?: string
   unreadNotifications: number
   openSupport: number
@@ -3129,27 +3276,37 @@ type OwnerLedger = {
  */
 function ownerLedgerFor(user?: SessionUser): OwnerLedger | undefined {
   if (!user || user.role !== 'owner') return undefined
-  const restaurant = user.sessionMode === 'demo'
-    ? db.restaurants[0]
-    : db.restaurants.find((item) => item.ownerId === user.id)
-  if (!restaurant) return undefined
-  const fund = db.funds.find((item) => item.restaurantId === restaurant.id)
-  const coupons = db.coupons.filter((item) => item.restaurantId === restaurant.id)
+  // 예전에는 find() 로 가게 하나만 집었다. 그래서 가게를 두 곳 등록해도
+  // 상담 챗봇은 늘 원장에서 먼저 나오는 가게 수치만 답했고,
+  // 사장님은 다른 가게가 빠졌다는 사실조차 알 수 없었다.
+  const restaurants = user.sessionMode === 'demo'
+    ? db.restaurants.slice(0, 1)
+    : db.restaurants.filter((item) => item.ownerId === user.id)
+  if (!restaurants.length) return undefined
+  const stores = restaurants.map((restaurant) => {
+    // 한 가게에 라운드가 여러 개면 진행 중인 라운드를 먼저 본다. 마이페이지와 같은 규칙.
+    const fund = db.funds.filter((item) => item.restaurantId === restaurant.id)
+      .sort((a, b) => Number(a.status === 'closed') - Number(b.status === 'closed') || b.round - a.round)[0]
+    const coupons = db.coupons.filter((item) => item.restaurantId === restaurant.id)
+    return {
+      restaurantName: restaurant.name,
+      fundStatus: fund?.status,
+      round: fund?.round || 0,
+      goal: fund?.goal || 0,
+      raised: fund?.raised || 0,
+      investorCount: fund?.investorCount || 0,
+      couponIssuedWon: fund?.totalCouponIssued || 0,
+      couponUsedWon: fund?.totalCouponUsed || 0,
+      // 아직 쓰이지 않은 쿠폰의 최대 할인액이 다음 달에 실제로 나갈 수 있는 부담이다.
+      outstandingCouponWon: coupons.filter((item) => ['available', 'listed', 'offered', 'redeeming'].includes(item.status)).reduce((sum, item) => sum + item.maxDiscountWon, 0),
+      redeemingCoupons: coupons.filter((item) => item.status === 'redeeming').length,
+      usedCoupons: coupons.filter((item) => item.status === 'used').length,
+      salesDisclosure: Boolean(restaurant.salesDisclosure),
+    }
+  })
   const application = [...db.applications].reverse().find((item) => item.userId === user.id)
   return {
-    restaurantName: restaurant.name,
-    fundStatus: fund?.status,
-    round: fund?.round || 0,
-    goal: fund?.goal || 0,
-    raised: fund?.raised || 0,
-    investorCount: fund?.investorCount || 0,
-    couponIssuedWon: fund?.totalCouponIssued || 0,
-    couponUsedWon: fund?.totalCouponUsed || 0,
-    // 아직 쓰이지 않은 쿠폰의 최대 할인액이 다음 달에 실제로 나갈 수 있는 부담이다.
-    outstandingCouponWon: coupons.filter((item) => ['available', 'listed', 'offered', 'redeeming'].includes(item.status)).reduce((sum, item) => sum + item.maxDiscountWon, 0),
-    redeemingCoupons: coupons.filter((item) => item.status === 'redeeming').length,
-    usedCoupons: coupons.filter((item) => item.status === 'used').length,
-    salesDisclosure: Boolean(restaurant.salesDisclosure),
+    stores,
     applicationStatus: application?.status,
     unreadNotifications: db.notifications.filter((item) => item.userId === user.id && !item.read).length,
     openSupport: (db.supportRequests || []).filter((item) => item.userId === user.id && !['answered', 'closed'].includes(item.status)).length,
@@ -3165,11 +3322,18 @@ const applicationStatusLabel: Record<string, string> = {
  * 사장님은 "투자자 몇 명이야?"처럼 주어 없이 가게 수치를 묻는다.
  * 투자자용 판별식은 "내/보유"를 요구해서 이런 질문을 놓치므로 사장님용을 따로 둔다.
  */
+const ownerLedgerTopic = /(모금|모집|모인|모였|목표|펀드|펀딩|투자자|투자금|쿠폰|매출|부담|배당|정산)/
+const ownerLedgerAsk = /(몇|얼마|현황|상태|됐|남았|어때|알려줘|어떻게돼)/
 function isOwnerLedgerQuestion(question: string) {
   const text = question.replace(/\s/g, '')
   return isAccountStatusQuestion(question)
-    // "목표금액이랑 모인 금액 얼마야?"처럼 목표·모금액을 직접 묻는 문장도 운영 원장 질문이다.
-    || /(모금|모집|모인|모였|목표|펀드|펀딩|투자자|쿠폰|매출|부담|배당|정산).*(몇|얼마|현황|상태|됐|남았)/.test(text)
+    // 주제어와 물음말이 둘 다 있으면 운영 원장 질문으로 본다.
+    //
+    // 예전에는 "주제어 다음에 물음말"이라는 순서를 요구했다. 그런데 한국어는
+    // "얼마나 모였어?"처럼 물음말이 먼저 오는 게 더 자연스러워서, 사장님이
+    // 가장 흔하게 던지는 문장이 그대로 빠져나갔다. 빠져나간 질문은 생성형이 받았고,
+    // 자기 가게가 아닌 다른 식당의 모금액을 answer 에 지어내 넣었다.
+    || (ownerLedgerTopic.test(text) && ownerLedgerAsk.test(text))
     || /몇(명|곳)/.test(text)
 }
 
@@ -3178,14 +3342,23 @@ function answerOwnerLedgerQuestion(question: string, ledger?: OwnerLedger) {
   if (!ledger) return '아직 등록된 가게가 없어요. 상단 “사장님 센터”에서 펀딩 신청을 먼저 진행하면 운영 현황을 안내해드릴 수 있어요.'
   const text = question.replace(/\s/g, '')
   const money = (value: number) => `${Math.round(value).toLocaleString('ko-KR')}원`
+  // 질문에 가게 이름이 있으면 그 가게만, 없으면 등록된 가게 전부를 답한다.
+  const named = ledger.stores.filter((store) => text.includes(store.restaurantName.replace(/\s/g, '')))
+  const stores = named.length ? named : ledger.stores
   const parts: string[] = []
-  if (/(쿠폰|몇장)/.test(text)) parts.push(`${ledger.restaurantName}에서 발급된 쿠폰의 최대 할인액은 ${money(ledger.couponIssuedWon)}이고 실제 사용된 금액은 ${money(ledger.couponUsedWon)}이에요. 아직 사용되지 않은 쿠폰 부담은 ${money(ledger.outstandingCouponWon)}, 지금 매장 확인을 기다리는 쿠폰은 ${ledger.redeemingCoupons}장입니다.`)
-  if (/(모금|펀드|펀딩|투자금|투자자|목표)/.test(text)) parts.push(`${ledger.round}회차 펀드는 ${ledger.fundStatus ? fundStatusLabel[ledger.fundStatus] : '준비 중'} 상태이고, 목표 ${money(ledger.goal)} 중 ${money(ledger.raised)}이 모였어요. 함께하는 투자자는 ${ledger.investorCount}명입니다.`)
+  if (stores.length > 1) parts.push(`등록하신 가게가 ${stores.length}곳이라 가게별로 알려드릴게요.`)
+  for (const store of stores) {
+    const said: string[] = []
+    if (/(쿠폰|몇장)/.test(text)) said.push(`${store.restaurantName}에서 발급된 쿠폰의 최대 할인액은 ${money(store.couponIssuedWon)}이고 실제 사용된 금액은 ${money(store.couponUsedWon)}이에요. 아직 사용되지 않은 쿠폰 부담은 ${money(store.outstandingCouponWon)}, 지금 매장 확인을 기다리는 쿠폰은 ${store.redeemingCoupons}장입니다.`)
+    if (/(모금|펀드|펀딩|투자금|투자자|목표)/.test(text)) said.push(`${store.restaurantName}의 ${store.round}회차 펀드는 ${store.fundStatus ? fundStatusLabel[store.fundStatus] : '준비 중'} 상태이고, 목표 ${money(store.goal)} 중 ${money(store.raised)}이 모였어요. 함께하는 투자자는 ${store.investorCount}명입니다.`)
+    if (/(매출|공개)/.test(text)) said.push(`${store.restaurantName}의 월매출은 현재 투자자에게 ${store.salesDisclosure ? '공개' : '비공개'} 상태예요.`)
+    if (!said.length) said.push(`${store.restaurantName}의 ${store.round}회차 펀드는 목표 ${money(store.goal)} 중 ${money(store.raised)}이 모였고 투자자는 ${store.investorCount}명이에요. 아직 사용되지 않은 쿠폰 부담은 ${money(store.outstandingCouponWon)}입니다.`)
+    parts.push(said.join(' '))
+  }
+  // 심사·알림·문의는 가게가 아니라 계정 단위라 한 번만 답한다.
   if (/(심사|승인|신청)/.test(text)) parts.push(ledger.applicationStatus ? `최근 심사 결과는 “${applicationStatusLabel[ledger.applicationStatus] || ledger.applicationStatus}”예요.` : '아직 제출한 심사 신청이 없어요.')
-  if (/(매출|공개)/.test(text)) parts.push(`월매출은 현재 투자자에게 ${ledger.salesDisclosure ? '공개' : '비공개'} 상태예요.`)
   if (/알림/.test(text)) parts.push(`읽지 않은 알림은 ${ledger.unreadNotifications}건이에요.`)
   if (/(문의|신고)/.test(text)) parts.push(`처리 중인 내 문의는 ${ledger.openSupport}건이에요.`)
-  if (!parts.length) parts.push(`${ledger.restaurantName}의 ${ledger.round}회차 펀드는 목표 ${money(ledger.goal)} 중 ${money(ledger.raised)}이 모였고 투자자는 ${ledger.investorCount}명이에요. 아직 사용되지 않은 쿠폰 부담은 ${money(ledger.outstandingCouponWon)}입니다.`)
   parts.push('자세한 운영 현황은 상단 “사장님 센터”의 운영 대시보드에서 확인할 수 있어요.')
   return parts.join(' ')
 }
@@ -3419,7 +3592,7 @@ app.post('/api/ai/owner-report', auth('owner'), async (req: AuthedRequest, res) 
       const texts = [report.headline, report.salesCause.body, report.repeatPlan.body, report.couponPlan.body, report.costCheck.body, report.watchout, ...report.tasks]
       if (!safeAdvisoryText(texts)) throw new Error('owner report tripped advisory policy')
       if (leaksFieldName(texts)) throw new Error('owner report leaked internal field names')
-      if (!demo) audit(req.user!.id, 'ai.owner_report', 'restaurant', restaurant.id, `${facts.reportMonth} 경영 리포트 생성 · ${model}`)
+      if (!demo) audit(req.user!.id, 'ai.owner_report', 'restaurant', restaurant.id, `${facts.reportMonth} 경영 리포트 생성`)
       return { value: report, model }
     })
     const { value: report, model } = generated
@@ -3458,7 +3631,7 @@ app.post('/api/ai/anomaly-detection', auth('owner'), async (req: AuthedRequest, 
       const { parsed, model } = await callAiJson(ANOMALY_EXPLANATION_SYSTEM, anomalyExplanationPrompt(detected), { maxTokens: 500 })
       const result = applyAnomalyExplanation(detected, parsed)
       if (!result || !safeAdvisoryText([result.summary, ...result.nextChecks])) throw new Error('anomaly explanation failed validation')
-      if (!demo) audit(req.user!.id, 'ai.anomaly_detection', 'restaurant', restaurant.id, `매출 이상탐지 ${detected.status} · ${model}`)
+      if (!demo) audit(req.user!.id, 'ai.anomaly_detection', 'restaurant', restaurant.id, `매출 이상탐지 ${detected.status}`)
       return { value: result, model }
     })
     res.json({ result: generated.value, provider: 'openai', model: generated.model, generatedAt: now(), cached: false })
@@ -3609,14 +3782,18 @@ app.post('/api/ai/chat', async (req: AuthedRequest, res) => {
   const accountQuestion = ownerRole ? isOwnerLedgerQuestion(effectiveQuestion) : isAccountStatusQuestion(effectiveQuestion)
   if (accountQuestion && (account || ownerLedger)) {
     knowledgeGraph.nodes.push({
-      id: 'viewer:account', type: 'AccountSummary', label: ownerRole ? '내 가게 운영 현황' : '내 투자자 계정 현황',
+      id: 'viewer:account', type: 'AccountSummary',
+      label: ownerRole ? `내 가게 운영 현황${ownerLedger && ownerLedger.stores.length > 1 ? ` (${ownerLedger.stores.length}곳)` : ''}` : '내 투자자 계정 현황',
       source: 'MEOKTU_ACCOUNT_LEDGER', properties: ownerLedger ? {
-        role: 'owner', restaurantName: ownerLedger.restaurantName, fundRound: ownerLedger.round,
-        fundStatus: ownerLedger.fundStatus || 'none', goal: ownerLedger.goal, raised: ownerLedger.raised,
-        investorCount: ownerLedger.investorCount, couponIssuedWon: ownerLedger.couponIssuedWon,
-        couponUsedWon: ownerLedger.couponUsedWon, outstandingCouponWon: ownerLedger.outstandingCouponWon,
-        redeemingCoupons: ownerLedger.redeemingCoupons, usedCoupons: ownerLedger.usedCoupons,
-        salesDisclosure: ownerLedger.salesDisclosure, applicationStatus: ownerLedger.applicationStatus || 'none',
+        role: 'owner', storeCount: ownerLedger.stores.length,
+        // 그래프 속성은 값 하나짜리만 담을 수 있어서 가게마다 한 줄로 편다.
+        // 이렇게 해야 AI가 "두 가게 중 어느 쪽"인지 구분해서 답할 수 있다.
+        ...Object.fromEntries(ownerLedger.stores.map((store, index) => [`store${index + 1}`,
+          `${store.restaurantName} · ${store.round}회차 ${store.fundStatus ? fundStatusLabel[store.fundStatus] : '준비 중'}`
+          + ` · 목표 ${store.goal}원 중 ${store.raised}원 모금 · 투자자 ${store.investorCount}명`
+          + ` · 발급쿠폰 ${store.couponIssuedWon}원 중 ${store.couponUsedWon}원 사용 · 미사용 쿠폰부담 ${store.outstandingCouponWon}원`
+          + ` · 확인대기 ${store.redeemingCoupons}장 · 사용완료 ${store.usedCoupons}장 · 월매출 ${store.salesDisclosure ? '공개' : '비공개'}`])),
+        applicationStatus: ownerLedger.applicationStatus || 'none',
         unreadNotifications: ownerLedger.unreadNotifications, openSupport: ownerLedger.openSupport,
       } : {
         role: account!.role, cash: account!.cash, invested: account!.invested, positions: account!.positions,

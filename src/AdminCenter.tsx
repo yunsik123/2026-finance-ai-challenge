@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState, type ReactElement } from 'react'
 import {
   AlertTriangle, Bot, CheckCircle2, CircleDollarSign, ClipboardCheck, FileText, Gift, LayoutDashboard, LifeBuoy, LogOut,
-  MessageSquareWarning, RefreshCw, Search, ShieldCheck, Star, Store, Users, X,
+  Eye, MessageSquareWarning, RefreshCw, Search, ShieldCheck, Star, Store, Users, X,
 } from 'lucide-react'
 import { api } from './lib/api.ts'
+import { DocumentModal, SubmittedDocumentViewer, fileSizeLabel, type SubmittedDocument } from './DocumentViewer.tsx'
 import type { ApplicationResult, Coupon, Fund, LegalConsentRecord, MeState, OcrAnalysis, Restaurant, Review, User } from './types.ts'
 
 const won = (value: number) => `${Math.round(value).toLocaleString('ko-KR')}원`
@@ -35,10 +36,6 @@ const sourceLabel: Record<string, string> = {
   account: '사업용 계좌', card: '카드·VAN 정산', delivery: '배달 플랫폼', tax: '홈택스 신고',
   customer: '재방문 산정자료', lease: '임대차계약서', debt: '대출·상환 증빙', staff: '직원·급여 증빙',
 }
-const fileSize = (value: unknown) => {
-  const bytes = Number(value) || 0
-  return bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)}MB` : `${Math.max(1, Math.round(bytes / 1024))}KB`
-}
 const tabItems: Array<{ id: Tab; label: string; icon: typeof LayoutDashboard }> = [
   { id: 'overview', label: '운영 현황', icon: LayoutDashboard },
   { id: 'applications', label: '심사 관리', icon: ClipboardCheck },
@@ -63,6 +60,8 @@ export default function AdminCenter({ me, onLogin, onLogout, notify }: { me: MeS
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [detail, setDetail] = useState<AdminApplicationDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState('')
+  /** 심사 화면에서 지금 열어 본 제출 자료의 출처 id. */
+  const [openedDocument, setOpenedDocument] = useState('')
 
   const load = async () => {
     if (me?.user.role !== 'admin') return
@@ -82,6 +81,7 @@ export default function AdminCenter({ me, onLogin, onLogout, notify }: { me: MeS
 
   const openApplication = async (id: string) => {
     setDetailLoading(id)
+    setOpenedDocument('')
     try { setDetail(await api<AdminApplicationDetail>(`/api/admin/applications/${id}`)) }
     catch (error) { notify((error as Error).message) }
     finally { setDetailLoading('') }
@@ -148,17 +148,29 @@ export default function AdminCenter({ me, onLogin, onLogout, notify }: { me: MeS
   const documents = Object.entries((detailData?.documentMetadata || {}) as Record<string, Record<string, any>>)
   const financial = detailData?.financialVerification
   const credit = detailData?.creditAssessment
+  const openedDocumentData = documents.find(([source]) => source === openedDocument)?.[1] as SubmittedDocument | undefined
   return <div className="admin-hub">
-    <aside className="admin-sidebar"><div className="admin-brand"><span className="brand-mark">묵</span><div><b>먹투 운영센터</b><small>MEOKTU ADMIN</small></div></div><nav>{tabItems.map((item) => { const Icon = item.icon; return <button key={item.id} className={tab === item.id ? 'active' : ''} onClick={() => { setTab(item.id); setQuery('') }}><Icon />{item.label}{item.id === 'support' && dashboard.stats.openSupport > 0 && <em>{dashboard.stats.openSupport}</em>}</button> })}</nav><div className="admin-profile"><ShieldCheck /><div><b>{me.user.name}</b><span>{me.user.email}</span></div></div></aside>
-    <main className="admin-main"><header className="admin-topbar"><div><span>운영센터 / {current.label}</span><h1>{current.label}</h1></div><div className="admin-tools">{tab !== 'overview' && tab !== 'ai' && <label><Search /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="이름·내용 검색" /></label>}<button onClick={load} aria-label="새로고침"><RefreshCw /></button><button className="admin-logout" onClick={onLogout} aria-label="운영센터 로그아웃"><LogOut /></button></div></header>{content[tab]}</main>
+    <aside className="admin-sidebar"><div className="admin-brand"><span className="brand-mark">먹</span><div><b>먹투 운영센터</b><small>MEOKTU ADMIN</small></div></div><nav>{tabItems.map((item) => { const Icon = item.icon; return <button key={item.id} className={tab === item.id ? 'active' : ''} onClick={() => { setTab(item.id); setQuery('') }}><Icon />{item.label}{item.id === 'support' && dashboard.stats.openSupport > 0 && <em>{dashboard.stats.openSupport}</em>}</button> })}</nav><div className="admin-profile"><ShieldCheck /><div><b>{me.user.name}</b><span>{me.user.email}</span></div></div></aside>
+    <main className="admin-main"><header className="admin-topbar"><div><span>운영센터 / {current.label}</span><h1>{current.label}</h1></div><div className="admin-tools">{tab !== 'overview' && tab !== 'ai' && <label><Search /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="이름·내용 검색" /></label>}<button onClick={load} aria-label="새로고침"><RefreshCw /></button><button className="admin-logout" onClick={onLogout} aria-label="운영센터 로그아웃"><LogOut /></button></div></header>{me.user.sessionMode === 'demo' && <div className="admin-demo-banner"><ShieldCheck /><div><b>운영자 체험 모드 · 실제 원장은 바뀌지 않아요</b><p>심사 상태 변경, 계정 정지, 문의 답변까지 실제와 똑같이 눌러볼 수 있지만 결과는 이 체험 세션에만 남습니다. 여러 명이 동시에 체험해도 서로의 화면과 실제 회원 자료가 영향을 받지 않아요.</p></div></div>}{content[tab]}</main>
     {detail && <div className="admin-review-backdrop" onMouseDown={() => setDetail(null)}><article className="admin-review-modal" onMouseDown={(event) => event.stopPropagation()}>
       <button className="admin-review-close" onClick={() => setDetail(null)} aria-label="상세 검토 닫기"><X /></button>
       <header className="admin-review-head"><div><span><ShieldCheck /> AI 심사 완료 · 운영자 최종 검토</span><h2>{detail.application.restaurantName}</h2><p>{detail.owner?.name || '사장님'} · {detail.owner?.email || '-'} · {date(detail.application.submittedAt)}</p></div><div><small>먹투 성장성 예비평가</small><b>{detail.application.score}<em>/100</em></b><span>제안 한도 {won(detail.application.approvedLimit)}</span></div></header>
       <section className="admin-review-section"><h3>신청 내용</h3><div className="admin-review-facts"><span><small>사업자등록번호</small><b>{detailData?.businessNumber || '-'}</b></span><span><small>영업신고번호</small><b>{detailData?.licenseNumber || '-'}</b></span><span><small>사업장 주소</small><b>{detailData?.address || '-'}</b></span><span><small>희망 펀딩액</small><b>{won(Number(detail.application.requestedLimit) || 0)}</b></span></div><div className="admin-plan-grid"><article><b>자금 사용계획</b><p>{detailData?.fundPurpose || '-'}</p></article><article><b>사업계획·차별성</b><p>{detailData?.businessPlan || '-'}</p></article><article><b>예상 효과</b><p>{detailData?.expectedEffect || '-'}</p></article></div></section>
-      <section className="admin-review-section"><h3>제출된 자료 <small>{documents.length}개 직접 업로드 · {(detailData?.sourceProvenance?.partnerConnections || []).length}개 기관 연결</small></h3><div className="admin-document-grid">{documents.map(([source, metadata]) => <article key={source}><FileText /><div><b>{sourceLabel[source] || source}</b><span>{metadata.name}</span><small>{fileSize(metadata.size)} · {metadata.type || '형식 미확인'}{metadata.rowCount ? ` · ${metadata.rowCount.toLocaleString()}행` : ''}</small>{metadata.headers?.length ? <em>열: {metadata.headers.join(', ')}</em> : null}</div></article>)}</div>{!documents.length && <p className="admin-review-empty">직접 업로드 파일 메타데이터가 없습니다.</p>}<div className="admin-partner-list">{(detailData?.sourceProvenance?.partnerConnections || []).map((item: any) => <span key={item.sourceId}><CheckCircle2 /><b>{sourceLabel[item.sourceId] || item.sourceId}</b> {item.provider} · {item.recordCount?.toLocaleString()}건 · {date(item.lastSyncedAt)}</span>)}</div></section>
+      <section className="admin-review-section"><h3>제출된 자료 <small>{documents.length}개 직접 업로드 · {(detailData?.sourceProvenance?.partnerConnections || []).length}개 기관 연결 · 자료를 누르면 내용을 열어봅니다</small></h3><div className="admin-document-grid">{documents.map(([source, metadata]) => <article key={source}><FileText /><div><b>{sourceLabel[source] || source}</b><span>{metadata.name}</span><small>{fileSizeLabel(metadata.size)} · {metadata.type || '형식 미확인'}{metadata.rowCount ? ` · ${metadata.rowCount.toLocaleString()}행` : ''}</small>{metadata.headers?.length ? <em>열: {metadata.headers.join(', ')}</em> : null}<button type="button" className="doc-open-button" onClick={() => setOpenedDocument(source)}><Eye /> 내용 열어보기</button></div></article>)}</div>{!documents.length && <p className="admin-review-empty">직접 업로드 파일 메타데이터가 없습니다.</p>}<div className="admin-partner-list">{(detailData?.sourceProvenance?.partnerConnections || []).map((item: any) => <span key={item.sourceId}><CheckCircle2 /><b>{sourceLabel[item.sourceId] || item.sourceId}</b> {item.provider} · {item.recordCount?.toLocaleString()}건 · {date(item.lastSyncedAt)}</span>)}</div></section>
       <section className="admin-review-section"><h3>AI 문서 판독 <small>원본 이미지는 저장하지 않고 구조화 결과만 보관</small></h3><div className="admin-ocr-grid">{detail.ocrAnalyses.map((item) => <article key={item.id}><div><b>{item.filename}</b><span className={item.status}>{item.status === 'ai_extracted' ? 'AI 구조화 완료' : '수동 확인 필요'}</span></div><p>{item.result.documentType || sourceLabel[item.sourceId] || item.sourceId} · 신뢰도 {Math.round((item.result.confidence || 0) * 100)}%</p>{item.result.businessNumber && <small>사업자번호 {item.result.businessNumber}</small>}{item.result.total ? <small>판독 금액 {won(item.result.total)}</small> : null}{item.result.warnings?.map((warning) => <em key={warning}><AlertTriangle /> {warning}</em>)}</article>)}</div>{!detail.ocrAnalyses.length && <p className="admin-review-empty">이 신청에 연결된 AI 이미지 판독 기록이 없습니다. CSV는 아래 산출지표와 교차검증에서 확인합니다.</p>}</section>
       <section className="admin-review-section"><h3>AI 평가와 교차검증 근거</h3><div className="admin-evaluation-summary"><article><small>데이터 신뢰도</small><b>{detailData?.dataConfidence || 0}%</b></article><article><small>35지표 등급</small><b>{credit?.grade || '미산정'}</b><span>{credit ? `${credit.measuredCount}/${credit.totalCount}개 산정` : ''}</span></article><article><small>사업자 확인</small><b>{detailData?.businessVerification?.verified ? '통과' : '확인 필요'}</b></article><article><small>문서 대조</small><b>{financial?.readyForAdminReview ? '최종 검토 가능' : '추가 확인'}</b><span>{financial ? `${financial.documentCount}건 · 평균 ${Math.round(financial.averageConfidence * 100)}%` : ''}</span></article></div><p className="admin-ai-explanation">{detail.application.explanation}</p><div className="admin-review-columns"><div><b>확인된 강점</b>{detail.application.strengths.map((item) => <p key={item}><CheckCircle2 /> {item}</p>)}</div><div><b>확인·보완 항목</b>{detail.application.improvements.map((item) => <p key={item}><AlertTriangle /> {item}</p>)}</div></div>{financial?.steps?.length ? <div className="admin-verification-steps">{financial.steps.map((step: any) => <article className={step.status} key={step.code}><b>{step.label}</b><span>{step.detail}</span></article>)}</div> : null}</section>
       <footer className="admin-review-footer"><div><b>최종 결정은 운영자가 원본과 위 근거를 확인한 뒤 선택합니다.</b><span>AI 판독과 예비평가는 자동 승인·자동 거절을 하지 않습니다.</span></div><select disabled={busy === detail.application.id} value={detail.application.status} onChange={async (event) => { await mutate(detail.application.id, `/api/admin/applications/${detail.application.id}`, { status: event.target.value }, '최종 심사 상태를 변경했어요.'); setDetail(null) }}><option value="manual_review">최종 검토 대기</option><option value="approved">최종 승인</option><option value="conditional">조건부 승인</option><option value="rejected">보완 요청</option></select></footer>
     </article></div>}
+    {openedDocumentData && <DocumentModal
+      title={sourceLabel[openedDocument] || openedDocument}
+      filename={openedDocumentData.name}
+      meta={`${detail?.application.restaurantName || ''} · ${fileSizeLabel(openedDocumentData.size)} · ${openedDocumentData.type || '형식 미확인'}`}
+      onClose={() => setOpenedDocument('')}
+    >
+      <SubmittedDocumentViewer
+        document={openedDocumentData}
+        ocr={detail?.ocrAnalyses.find((item) => item.sourceId === openedDocument)}
+      />
+    </DocumentModal>}
   </div>
 }

@@ -1,19 +1,24 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Activity, AlertTriangle, BarChart3, Bot, CalendarDays, Check, Gift, ReceiptText, RefreshCw, Repeat2, Store, Ticket, TrendingUp, Users } from 'lucide-react'
+import { Activity, AlertTriangle, BarChart3, Bot, CalendarDays, Check, ReceiptText, RefreshCw, Repeat2, Store, Ticket, TrendingUp, Users } from 'lucide-react'
 import { api } from './lib/api.ts'
-import type { AnomalyDetectionResponse, OwnerReportResponse } from './types.ts'
+import type { AnomalyDetectionResponse, Fund, OwnerReportResponse, Restaurant } from './types.ts'
 import './owner-dashboard.css'
 
-type Props = { data: any; onDividend: (fundId: string) => void }
+/**
+ * 선택한 펀드 하나의 운영 현황.
+ *
+ * 예전에는 원장 전체를 받아 restaurants[0]·funds[0] 만 읽었다.
+ * 그래서 사장님이 가게를 두 곳 등록해도 화면에는 늘 첫 번째 가게만 나왔다.
+ * 이제 어느 가게·펀드를 볼지는 마이페이지가 정하고, 이 화면은 받은 한 쌍만 그린다.
+ */
+type Props = { restaurant: Restaurant; fund: Fund }
 const won = (value: number) => `${Math.round(value).toLocaleString('ko-KR')}원`
 
-export default function OwnerDashboard({ data, onDividend }: Props) {
-  const restaurant = data.restaurants[0]
-  const fund = data.funds[0]
+export default function OwnerDashboard({ restaurant, fund }: Props) {
   const history = restaurant.salesHistory || []
   const current = history.at(-1)
   const previous = history.at(-2)
-  const salesChange = current?.growthRate ?? (previous?.sales ? ((current.sales - previous.sales) / previous.sales * 100) : restaurant.salesGrowth)
+  const salesChange = current?.growthRate ?? (current && previous?.sales ? ((current.sales - previous.sales) / previous.sales * 100) : restaurant.salesGrowth)
   const reportMonth = current?.month || new Date().toISOString().slice(0, 7)
   const useRate = fund.totalCouponIssued ? Math.round(fund.totalCouponUsed / fund.totalCouponIssued * 100) : 0
   const outstanding = Math.max(0, fund.totalCouponIssued - fund.totalCouponUsed)
@@ -88,7 +93,7 @@ export default function OwnerDashboard({ data, onDividend }: Props) {
         </div>
         <div className="next-actions"><div><Check /><span><b>다음 달 실행 과제</b><small>실행 후 결과를 다음 리포트에서 비교합니다.</small></span></div><ol>{report.tasks.map((task) => <li key={task}>{task}</li>)}</ol></div>
         <div className="report-warning"><AlertTriangle /><p>{report.watchout}</p></div>
-        <p className="report-provenance">{aiGenerated ? `${analysis!.model} 모델이 위 원장 수치만 받아 해석했습니다.` : '외부 AI 연결 전이라 같은 원장 수치로 만든 규칙 기반 요약을 표시했습니다.'} · 기준 시각 {new Date(analysis!.generatedAt).toLocaleString('ko-KR')}{analysis!.cached ? ' · 자료가 바뀌지 않아 직전 분석을 재사용했습니다.' : ''}</p>
+        <p className="report-provenance">{aiGenerated ? 'AI가 위 원장 수치만 받아 해석했습니다.' : '연결된 원장 수치로 규칙 기반 요약을 표시했습니다.'} · 기준 시각 {new Date(analysis!.generatedAt).toLocaleString('ko-KR')}{analysis!.cached ? ' · 자료가 바뀌지 않아 직전 분석을 재사용했습니다.' : ''}</p>
       </> : null}
     </section>
 
@@ -105,10 +110,10 @@ export default function OwnerDashboard({ data, onDividend }: Props) {
         <div className="anomaly-baseline"><span>분석 표본 <b>{anomalyResult.sampleSize}개월</b></span><span>평소 월 변화 <b>{anomalyResult.baselineChangeRate >= 0 ? '+' : ''}{anomalyResult.baselineChangeRate}%</b></span><span>예상 범위 <b>{anomalyResult.expectedRange.min}% ~ {anomalyResult.expectedRange.max}%</b></span></div>
         {anomalyResult.anomalies.length > 0 && <div className="anomaly-events">{anomalyResult.anomalies.map((item) => <article className={item.severity} key={item.month}><AlertTriangle /><div><b>{item.month.replace('-', '년 ')}월 · {item.changeRate >= 0 ? '+' : ''}{item.changeRate}%</b><p>{item.reason}</p></div><strong>{won(item.sales)}</strong></article>)}</div>}
         <div className="anomaly-checks"><b>사람이 확인할 순서</b><ol>{anomalyResult.nextChecks.map((item) => <li key={item}>{item}</li>)}</ol></div>
-        <p className="report-provenance">수치 판정은 {anomalyResult.method} 통계 엔진이 수행했습니다. {anomaly?.provider === 'openai' ? `${anomaly.model} 모델은 판정을 바꾸지 않고 설명만 작성했습니다.` : '외부 AI 미연결 상태에서는 통계 결과와 고정 확인 절차를 표시합니다.'}</p>
+        <p className="report-provenance">수치 판정은 {anomalyResult.method} 통계 엔진이 수행했습니다. {anomaly?.provider === 'openai' ? 'AI는 판정을 바꾸지 않고 설명만 작성했습니다.' : '통계 결과와 고정 확인 절차를 표시합니다.'}</p>
       </>}
     </section>
 
-    <div className="owner-dashboard-grid"><section className="coupon-health"><div className="subheading"><div><span>쿠폰 손익 안전선</span><h2>이번 달 예상 쿠폰 부담</h2></div></div><div className="health-amount"><b>{won(outstanding)}</b><span>아직 사용되지 않은 최대 할인액</span></div><div className="health-track"><i style={{ width: `${exposure}%` }} /></div><div className="health-labels"><span>월매출 대비 {exposure}%</span><b>{exposure < 8 ? '안정' : exposure < 15 ? '관찰' : '주의'}</b></div><p>최대 할인액 기준의 보수적인 수치입니다. 실제 사용률이 높아지면 다음 쿠폰의 할인율과 발급 범위를 조정해보세요.</p></section><section className="fund-control"><div className="subheading"><div><span>투자자 관계</span><h2>식당 감사 쿠폰</h2></div><Gift /></div><p>매출이 좋은 달에는 투자자에게 식당 감사 쿠폰을 보낼 수 있습니다. 현재 예상 쿠폰 부담을 먼저 확인하세요.</p><div className="dividend-preview"><TrendingUp /><div><b>식당 감사 쿠폰 10%</b><span>최대 {won(restaurant.maxMenuPrice * .1)} × {fund.investorCount}명</span></div></div><button className="button full" onClick={() => onDividend(fund.id)}>10% 식당 감사 쿠폰 보내기</button></section></div>
+    <div className="owner-dashboard-grid owner-dashboard-grid-single"><section className="coupon-health"><div className="subheading"><div><span>쿠폰 손익 안전선</span><h2>이번 달 예상 쿠폰 부담</h2></div></div><div className="health-amount"><b>{won(outstanding)}</b><span>아직 사용되지 않은 최대 할인액</span></div><div className="health-track"><i style={{ width: `${exposure}%` }} /></div><div className="health-labels"><span>월매출 대비 {exposure}%</span><b>{exposure < 8 ? '안정' : exposure < 15 ? '관찰' : '주의'}</b></div><p>최대 할인액 기준의 보수적인 수치입니다. 실제 사용률이 높아지면 다음 쿠폰의 할인율과 발급 범위를 조정해보세요.</p></section></div>
   </div>
 }

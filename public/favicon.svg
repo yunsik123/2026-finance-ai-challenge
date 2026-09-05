@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- 헤더 로고(.brand-mark)와 같은 모양: 코랄 배경에 흰 '먹', 왼쪽 아래만 각진 라운드. -->
+  <path d="M4 22C4 12.06 12.06 4 22 4h20c9.94 0 18 8.06 18 18v20c0 9.94-8.06 18-18 18H11a7 7 0 0 1-7-7V22Z" fill="#ff6948"/>
+  <text x="32" y="33" fill="#fff" font-family="'Jua','Apple SD Gothic Neo','Noto Sans KR',sans-serif"
+        font-size="38" font-weight="700" text-anchor="middle" dominant-baseline="central">먹</text>
+</svg>

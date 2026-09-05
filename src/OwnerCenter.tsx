@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { NavLink } from 'react-router-dom'
-import { BadgeCheck, Banknote, Building2, Check, Database, Download, Eraser, FileSpreadsheet, FolderDown, Landmark, Link2, LockKeyhole, PlugZap, ReceiptText, ShieldCheck, Sparkles, Store, UploadCloud, UserCheck, Users, type LucideIcon } from 'lucide-react'
+import { BadgeCheck, Banknote, Building2, Check, Database, Download, Eraser, Eye, FileSpreadsheet, FolderDown, Landmark, Link2, LockKeyhole, PlugZap, ReceiptText, ShieldCheck, Sparkles, Store, UploadCloud, UserCheck, Users, type LucideIcon } from 'lucide-react'
 import { api } from './lib/api.ts'
+import { DocumentModal, LocalFileViewer, fileSizeLabel } from './DocumentViewer.tsx'
 import VerificationReport from './VerificationReport.tsx'
 import CreditGradePanel from './CreditGradePanel.tsx'
 import { LegalConsentReader, useLegalIndex } from './LegalCenter.tsx'
@@ -111,6 +112,8 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
   const [result, setResult] = useState<ApplicationResult | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [fillingSamples, setFillingSamples] = useState(false)
+  /** 지금 열어 본 업로드 자료의 출처 id. 파일은 브라우저 안에만 있고 서버로 보내지 않는다. */
+  const [openedDocument, setOpenedDocument] = useState('')
   const legal = useLegalIndex()
   const [agreedDocuments, setAgreedDocuments] = useState<string[]>([])
   const formRef = useRef<HTMLFormElement | null>(null)
@@ -128,8 +131,10 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
   const activeConnections = ownerData?.dataConnections || me?.dataConnections || []
   const connectedIds = useMemo(() => new Set<string>(activeConnections.map((item: any) => item.sourceId)), [activeConnections])
   const evidenceCount = new Set([...Object.keys(uploadedFiles), ...connectedIds]).size
+  const openedFile = openedDocument ? selectedFiles[openedDocument] : undefined
 
   const resetApplication = () => {
+    setOpenedDocument('')
     setUploadedFiles({})
     setSelectedFiles({})
     setDocumentMetadata({})
@@ -208,6 +213,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
   }
   /** 샘플로 채운 업로드만 비운다. 입력한 사업체 정보는 그대로 둔다. */
   const clearUploads = () => {
+    setOpenedDocument('')
     setUploadedFiles({})
     setSelectedFiles({})
     setDocumentMetadata({})
@@ -317,7 +323,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
 
             <div className="evidence-lane partner-lane"><div className="evidence-lane-heading"><PlugZap /><div><b>A. 제휴기관·마이데이터형 연결</b><p>동의 범위·제공기관·동기화 시각이 함께 기록됩니다. 현재 버튼은 실제 기관 API 대신 시연 어댑터를 사용합니다.</p></div></div><div className="partner-connection-grid">{partnerOptions.map((option) => { const Icon = option.icon; const connection = activeConnections.find((item: any) => item.sourceId === option.id); return <article className={connection ? 'connected' : ''} key={option.id}><Icon /><div><b>{option.title}</b><span>{option.provider}</span><small>{option.scope}</small>{connection && <em><Check /> {connection.recordCount.toLocaleString()}건 · {new Date(connection.lastSyncedAt).toLocaleDateString('ko-KR')}</em>}</div><button type="button" disabled={Boolean(connection)} onClick={() => connectPartner(option.id)}>{connection ? '연결됨' : '동의하고 연결'}</button></article> })}</div></div>
 
-            <div className="evidence-lane upload-lane"><div className="evidence-lane-heading"><UploadCloud /><div><b>B. 소상공인 직접 업로드</b><p>사업자·영업신고·임대차처럼 직접 보유한 문서 또는 기관 연결이 어려울 때의 대체 파일입니다. CSV는 브라우저에서 열·행 수를 확인합니다.</p></div></div><SamplePack /><div className="document-upload-grid">{uploadOptions.map((option) => <DocumentUploadCard key={option.id} option={option} fileName={uploadedFiles[option.id]} metadata={documentMetadata[option.id]} required={Boolean(option.required && !connectedIds.has(option.id))} onChange={(event) => selectFile(option.id, event)} />)}</div>{owner && <SampleAutoFill filling={fillingSamples} uploadedCount={uploadedCount} onFill={fillWithSamples} onClear={clearUploads} />}</div>
+            <div className="evidence-lane upload-lane"><div className="evidence-lane-heading"><UploadCloud /><div><b>B. 소상공인 직접 업로드</b><p>사업자·영업신고·임대차처럼 직접 보유한 문서 또는 기관 연결이 어려울 때의 대체 파일입니다. CSV는 브라우저에서 열·행 수를 확인합니다.</p></div></div><SamplePack /><div className="document-upload-grid">{uploadOptions.map((option) => <DocumentUploadCard key={option.id} option={option} fileName={uploadedFiles[option.id]} metadata={documentMetadata[option.id]} required={Boolean(option.required && !connectedIds.has(option.id))} onChange={(event) => selectFile(option.id, event)} onOpen={() => setOpenedDocument(option.id)} />)}</div>{owner && <SampleAutoFill filling={fillingSamples} uploadedCount={uploadedCount} onFill={fillWithSamples} onClear={clearUploads} />}</div>
             {Object.entries(selectedFiles).some(([, file]) => /^image\/(png|jpeg|webp)$/.test(file.type)) && <div className="ocr-workbench"><div><Database /><div><b>AI 문서 자동 확인</b><p>올리신 이미지 서류에서 사업자번호·날짜·금액을 읽어 서로 맞는지 대조합니다. 확인 결과는 승인 결정이 아니며, 원본 이미지는 저장하지 않습니다.</p></div></div>{Object.entries(selectedFiles).filter(([, file]) => /^image\/(png|jpeg|webp)$/.test(file.type)).map(([sourceId, file]) => { const analysis = ocrResults[sourceId]; const result = analysis?.result; return <article key={sourceId}><div><b>{file.name}</b><span>{uploadOptions.find((option) => option.id === sourceId)?.title}</span></div>{analysis ? <div className="ocr-result"><strong>{analysis.status === 'ai_extracted' ? 'AI 구조화 완료' : '수동 검토 대기'}</strong><span>{result.documentType || '문서 종류 미확인'} · 신뢰도 {Math.round((result.confidence || 0) * 100)}%</span>{result.businessNumber && <small>사업자번호 {result.businessNumber}</small>}{result.total ? <small>판독 금액 {won(result.total)}</small> : null}{result.warnings?.map((warning) => <small className="warning" key={warning}>{warning}</small>)}</div> : <button type="button" disabled={Boolean(analyzingSource)} onClick={() => analyzeDocument(sourceId)}>{analyzingSource === sourceId ? 'AI가 문서를 읽는 중...' : 'AI 문서 판독'}</button>}</article> })}</div>}
             <p className="mvp-source-note">MVP는 직접 업로드 파일의 이름·크기·형식과 CSV 열·행 수를 검증해 심사 출처로 기록합니다. 이미지에서 ‘AI 문서 판독’을 누른 경우에만 서버 AI로 전송하며 원본 이미지는 저장하지 않습니다. 실제 기관 연결은 현재 모의 어댑터이고, 운영 전 기관 OAuth·전자서명·암호화 보관으로 교체해야 합니다.</p>
           </section>
@@ -342,6 +348,14 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
         </fieldset>
       </form>}
     </div>
+    {openedFile && <DocumentModal
+      title={uploadOptions.find((option) => option.id === openedDocument)?.title || '제출 자료'}
+      filename={openedFile.name}
+      meta={`${fileSizeLabel(openedFile.size)} · ${openedFile.type || '형식 미확인'}${documentMetadata[openedDocument]?.rowCount ? ` · ${documentMetadata[openedDocument].headers.length}열 ${documentMetadata[openedDocument].rowCount.toLocaleString('ko-KR')}행` : ''} · 내 브라우저에서만 열립니다`}
+      onClose={() => setOpenedDocument('')}
+    >
+      <LocalFileViewer file={openedFile} />
+    </DocumentModal>}
   </div>
 }
 
@@ -356,7 +370,7 @@ function SampleAutoFill({ filling, uploadedCount, onFill, onClear }: { filling: 
     <span className="sample-autofill-icon"><Sparkles /></span>
     <div className="sample-autofill-copy">
       <b>샘플 자료 {total}종 한 번에 올리기</b>
-      <p>파일을 하나씩 고르지 않아도 <em>샘플식당</em>의 원자료를 위 카드에 자동으로 채우고, 1단계 사업체 정보와 4단계 작성란·대표자 인증까지 함께 완료합니다. 3단계 필수 고지는 전문을 확인한 뒤 직접 동의해주세요.</p>
+      <p>파일을 하나씩 고르지 않아도 <em>샘플식당</em>의 원자료를 위 카드에 자동으로 채우고, 1단계 사업체 정보와 4단계 작성란·대표자 인증까지 함께 완료합니다. 채워진 자료는 각 카드의 <b>올린 자료 열어보기</b>로 내용을 바로 확인할 수 있어요. 3단계 필수 고지는 전문을 확인한 뒤 직접 동의해주세요.</p>
       {uploadedCount > 0 && <strong><Check /> 현재 {uploadedCount}종의 자료가 올라가 있어요.</strong>}
     </div>
     <div className="sample-autofill-actions">
@@ -383,16 +397,21 @@ function SamplePack() {
     <ul className="sample-pack-hint">
       <li><Check /> 1단계에는 <b>샘플식당 · 김소담 · 123-45-67891 · 서울특별시 마포구 망원동 12-3</b>을 그대로 입력하면 문서 판독값과 일치해요.</li>
       <li><Check /> 각 자료 카드의 <b>샘플 다운로드</b> 버튼으로 필요한 파일만 따로 받을 수도 있어요.</li>
+      <li><Check /> 자료를 올린 뒤에는 <b>올린 자료 열어보기</b>로 내려받지 않고 그 자리에서 내용을 확인할 수 있어요.</li>
       <li><Check /> 문서 자료는 <b>PNG와 PDF</b>를 함께 제공하고, 모두 ‘실제 제출 불가’ 표시가 들어간 가상 문서입니다.</li>
     </ul>
   </div>
 }
 
-function DocumentUploadCard({ option, fileName, metadata, required, onChange }: { option: UploadOption; fileName?: string; metadata?: DocumentMetadata; required: boolean; onChange: (event: ChangeEvent<HTMLInputElement>) => void }) {
+function DocumentUploadCard({ option, fileName, metadata, required, onChange, onOpen }: { option: UploadOption; fileName?: string; metadata?: DocumentMetadata; required: boolean; onChange: (event: ChangeEvent<HTMLInputElement>) => void; onOpen: () => void }) {
   const Icon = option.icon
   return <div className={`document-upload-card ${fileName ? 'uploaded' : ''}`}>
     <span className="document-icon"><Icon /></span>
-    <div className="document-copy"><span className={required ? 'required' : 'optional'}>{required ? '필수 제출' : option.required ? '기관연동 대체 가능' : '선택 제출'}</span><b>{option.title}</b><p>{option.exact}</p><small>{option.columns}</small>{fileName && <strong><Check /> {fileName}{metadata?.rowCount ? ` · ${metadata.headers.length}열 ${metadata.rowCount}행` : ''}</strong>}{option.sampleUrl && <a className="sample-download" href={option.sampleUrl} download><Download /> {option.sampleLabel} 다운로드</a>}{option.samplePdfUrl && <a className="sample-download" href={option.samplePdfUrl} download><Download /> PDF 샘플 다운로드</a>}</div>
+    <div className="document-copy"><span className={required ? 'required' : 'optional'}>{required ? '필수 제출' : option.required ? '기관연동 대체 가능' : '선택 제출'}</span><b>{option.title}</b><p>{option.exact}</p><small>{option.columns}</small>{fileName && <strong><Check /> {fileName}{metadata?.rowCount ? ` · ${metadata.headers.length}열 ${metadata.rowCount}행` : ''}</strong>}
+      {/* 올린 자료는 내려받지 않고 이 자리에서 바로 열어본다. 샘플로 한 번에 채웠을 때
+          무엇이 올라갔는지 확인할 방법이 파일명뿐이던 문제를 없앤다. */}
+      {fileName && <button type="button" className="doc-open-button" onClick={onOpen}><Eye /> 올린 자료 열어보기</button>}
+      {option.sampleUrl && <a className="sample-download" href={option.sampleUrl} download><Download /> {option.sampleLabel} 다운로드</a>}{option.samplePdfUrl && <a className="sample-download" href={option.samplePdfUrl} download><Download /> PDF 샘플 다운로드</a>}</div>
     <label className="document-action"><UploadCloud />{fileName ? '다시 선택' : '파일 선택'}<input type="file" name={`document-${option.id}`} accept={option.accept} required={required && !fileName} onChange={onChange} /></label>
   </div>
 }

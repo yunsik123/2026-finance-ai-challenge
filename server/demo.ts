@@ -48,7 +48,33 @@ export type DemoSandbox = {
   salesDisclosure?: boolean
   /** 가입 축하 쿠폰을 이미 넣어줬는지. 세션당 한 번만 넣는다. */
   welcomed?: boolean
+  /**
+   * 운영자 체험에서 누른 상태 변경.
+   *
+   * 관리자 화면은 투자자·사장님 화면과 달리 '공유 원장 그 자체'를 다룬다.
+   * 그래서 예전처럼 진짜 운영자 계정으로 체험 로그인을 시키면,
+   * 체험하러 들어온 사람이 실제 회원을 이용정지시키고 실제 심사를 승인·거절해버린다.
+   * 여러 명이 동시에 들어오면 서로의 변경을 덮어쓰기까지 한다.
+   * 그래서 체험 운영자의 변경은 원장에 쓰지 않고 이 덮개에만 담아,
+   * 그 세션의 화면에서만 반영된 것처럼 보이게 한다.
+   */
+  adminOverrides: AdminOverrides
 }
+
+/** 체험 운영자가 바꾼 값. 키는 각 항목의 id 다. */
+export type AdminOverrides = {
+  applications: Record<string, string>
+  users: Record<string, 'active' | 'suspended'>
+  restaurants: Record<string, boolean>
+  funds: Record<string, string>
+  reviews: Record<string, 'published' | 'hidden'>
+  coupons: Record<string, string>
+  support: Record<string, { status: string; answer?: string; answeredAt?: string }>
+}
+
+const emptyAdminOverrides = (): AdminOverrides => ({
+  applications: {}, users: {}, restaurants: {}, funds: {}, reviews: {}, coupons: {}, support: {},
+})
 
 const sandboxes = new Map<string, DemoSandbox>()
 
@@ -77,6 +103,7 @@ export function sandboxFor(id: string, role: Role): DemoSandbox {
     reviews: [], visits: [], favorites: [], connections: [],
     applications: [], notifications: [], walletTransactions: [], consents: [],
     fundDeltas: {},
+    adminOverrides: emptyAdminOverrides(),
   }
   sandboxes.set(id, created)
   return created

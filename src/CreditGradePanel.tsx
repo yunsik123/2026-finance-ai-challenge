@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { BookOpen, ChevronDown, Gauge, Layers, TrendingDown, TrendingUp } from 'lucide-react'
+import { ChevronDown, Gauge, Layers, TrendingDown, TrendingUp } from 'lucide-react'
 import type { CombinedAssessment, CreditAssessment } from './types.ts'
 
 const gradeTone: Record<string, string> = { 'A+': 'best', A: 'good', 'B+': 'good', B: 'fair', C: 'watch', D: 'risk' }
@@ -20,7 +20,6 @@ const formatValue = (value: number | null, unit: string) => {
  */
 export default function CreditGradePanel({ credit, combined }: { credit: CreditAssessment; combined?: CombinedAssessment }) {
   const [openAll, setOpenAll] = useState(false)
-  const [openRefs, setOpenRefs] = useState(false)
 
   return <section className="credit-panel">
     <div className="credit-head">
@@ -97,19 +96,6 @@ export default function CreditGradePanel({ credit, combined }: { credit: CreditA
         <span>{feature.weight}%</span>
       </div>)}
     </div>}
-
-    <button type="button" className="credit-toggle" onClick={() => setOpenRefs((current) => !current)}>
-      이 모델이 참고한 연구 <ChevronDown className={openRefs ? 'rotated' : ''} />
-    </button>
-    {openRefs && <ul className="credit-references">
-      {credit.references.map((reference) => <li key={reference.id}>
-        <b><BookOpen /> {reference.authors}</b>
-        <em>{reference.title}</em>
-        <p>적용: {reference.use}</p>
-        {reference.excluded && <p className="excluded">제외: {reference.excluded}</p>}
-        <a href={reference.url} target="_blank" rel="noreferrer">원문 보기</a>
-      </li>)}
-    </ul>}
 
     <p className="credit-disclaimer">{credit.methodology.disclaimer} 평가 구간: {credit.methodology.gradeBands}.</p>
   </section>
