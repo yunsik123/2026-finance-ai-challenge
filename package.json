@@ -17,14 +17,20 @@
     "test:ai-analysis": "tsx tests/ai-analysis.ts",
     "db:check": "node scripts/apply-db.mjs --test",
     "db:apply": "node scripts/apply-db.mjs",
-    "db:migrate": "node scripts/apply-db.mjs --import"
+    "db:migrate": "node scripts/apply-db.mjs --import",
+    "db:cloud:check": "node scripts/apply-cloudsql.mjs --test",
+    "db:cloud:apply": "node scripts/apply-cloudsql.mjs",
+    "db:cloud:seed": "node scripts/apply-cloudsql.mjs --seed"
   },
   "dependencies": {
+    "@types/pg": "^8.23.1",
     "@vitejs/plugin-react": "latest",
     "concurrently": "latest",
     "cors": "latest",
     "express": "latest",
     "lucide-react": "latest",
+    "neo4j-driver": "^6.2.0",
+    "pg": "^8.23.0",
     "react": "latest",
     "react-dom": "latest",
     "react-router-dom": "latest",

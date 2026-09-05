@@ -141,6 +141,13 @@ const ownerAi = await ok('/api/ai/chat', { method: 'POST', body: JSON.stringify(
 assert(ownerAi.sources?.length && ownerAi.retrieval?.graphVersion === 'meoktu-role-graph-v2', '소상공인 AI가 GraphRAG 근거와 버전을 반환해야 합니다.')
 assert(ownerAi.answer.includes('사장님') || ownerAi.answer.includes('업로드'), '소상공인 역할 절차로 답해야 합니다.')
 const investorAi = await ok('/api/ai/chat', { method: 'POST', body: JSON.stringify({ role: 'investor', restaurantId: 'r-mokhwa', question: '투자금 회수 절차를 알려줘' }) }, investorAccount.token)
-assert(investorAi.sources?.length && investorAi.answer.includes('투자자'), '투자자 역할 그래프에서 회수 절차를 답해야 합니다.')
+// 생성형 답변은 같은 근거로도 표현이 매번 달라진다. 특정 단어로 검사하면
+// 기능이 멀쩡해도 실행마다 실패한다(실제로 표현만 바뀌어 3회 중 1회 실패했다).
+// 그래서 검사 대상을 "무엇을 근거로 골랐는가"로 옮긴다. 이 값은 그래프와 질문이 같으면
+// 항상 같고, 검색이 깨지면 바로 달라지므로 오히려 더 강한 검사다.
+assert(investorAi.sources?.length, '투자자 상담이 GraphRAG 근거를 반환해야 합니다.')
+assert(investorAi.sources.some((source: any) => source.type === 'GuideStep'),
+  '투자자 역할 그래프에서 회수 절차 노드를 근거로 골라야 합니다.')
+assert(/회수|매칭|예약/.test(investorAi.answer), '회수 질문에 회수 절차로 답해야 합니다.')
 
 console.log('PASS: 체험 샌드박스(충전·투자·쿠폰·리뷰·기관연결) | 공유 원장 무변경 | 세션 간 격리 | 직접 업로드/제휴 출처 | 샘플 다운로드 | 역할별 지식그래프')

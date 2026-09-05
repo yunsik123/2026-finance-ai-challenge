@@ -5,7 +5,9 @@
 1. Node.js 20 이상을 설치합니다.
 2. 이 폴더에서 `npm install`을 실행합니다.
 3. `.env.example`을 복사해 `.env`를 만들고 `APP_SECRET`을 입력합니다.
-4. 생성형 AI를 사용하려면 `OPENAI_API_KEY`에 본인의 OpenAI 키를 입력합니다. 보안을 위해 실제 키는 이 공유본에 포함하지 않았습니다.
+4. 생성형 AI를 사용하려면 Google Cloud 인증만 하면 됩니다(API 키 없음).
+   `gcloud auth application-default login` 을 실행하고 `.env` 의 `GOOGLE_CLOUD_PROJECT` 에
+   본인 GCP 프로젝트 ID를 넣으세요. 인증 없이도 규칙 엔진으로 모든 화면이 동작합니다.
 5. `npm run dev`를 실행합니다.
 6. 브라우저에서 `http://localhost:5173`을 엽니다.
 

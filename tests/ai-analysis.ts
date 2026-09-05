@@ -21,8 +21,8 @@ assert(syntheticDetection.anomalies.some((item) => item.month === '2026-08' && i
 const health = await call('/api/health')
 const aiConfigured = health.body.ai === 'configured'
 const expectProvider = (provider: string, where: string) => {
-  assert(['openai', 'meoktu-rule-engine'].includes(provider), `알 수 없는 ${where} 생성 경로: ${provider}`)
-  if (aiConfigured) assert(provider === 'openai', `AI 키가 설정됐는데 ${where}가 규칙 폴백으로 내려왔습니다.`)
+  assert(['google-vertex-ai', 'meoktu-rule-engine'].includes(provider), `알 수 없는 ${where} 생성 경로: ${provider}`)
+  if (aiConfigured) assert(provider === 'google-vertex-ai', `AI 키가 설정됐는데 ${where}가 규칙 폴백으로 내려왔습니다.`)
 }
 console.log(aiConfigured ? `AI 연결됨(${health.body.aiModel}) — 생성형 경로를 검사합니다.` : 'AI 키 없음 — 규칙 폴백 경로를 검사합니다.')
 
@@ -66,8 +66,8 @@ assert(anonymous.status === 401, '로그인 없이 경영 리포트를 볼 수 �
 
 const anomaly = await call('/api/ai/anomaly-detection', { method: 'POST', body: JSON.stringify({}) }, ownerToken)
 assert(anomaly.ok, `이상탐지 호출 실패: ${anomaly.body.error}`)
-assert(['openai', 'meoktu-statistical-engine'].includes(anomaly.body.provider), '이상탐지 생성 경로를 표시해야 합니다.')
-if (aiConfigured && anomaly.body.result.status !== 'insufficient_data') assert(anomaly.body.provider === 'openai', 'AI 키가 설정됐는데 이상탐지 설명이 생성형 경로를 타지 않았습니다.')
+assert(['google-vertex-ai', 'meoktu-statistical-engine'].includes(anomaly.body.provider), '이상탐지 생성 경로를 표시해야 합니다.')
+if (aiConfigured && anomaly.body.result.status !== 'insufficient_data') assert(anomaly.body.provider === 'google-vertex-ai', 'AI 키가 설정됐는데 이상탐지 설명이 생성형 경로를 타지 않았습니다.')
 assert(anomaly.body.result.method === 'robust-mad-v1', '이상탐지는 강건 MAD 알고리즘 버전을 공개해야 합니다.')
 assert(anomaly.body.result.sampleSize >= 6, '체험 식당은 이상탐지에 충분한 월별 자료가 있어야 합니다.')
 assert(Number.isFinite(anomaly.body.result.baselineChangeRate), '평소 월 변화 기준값이 숫자여야 합니다.')

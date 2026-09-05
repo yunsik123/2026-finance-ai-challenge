@@ -64,7 +64,7 @@ export default function OwnerDashboard({ restaurant, fund }: Props) {
   useEffect(() => { void loadAnomalies() }, [loadAnomalies, current?.month, current?.sales])
 
   const report = analysis?.report
-  const aiGenerated = analysis?.provider === 'openai'
+  const aiGenerated = analysis?.provider === 'google-vertex-ai'
   const anomalyResult = anomaly?.result
 
   return <div className="owner-dashboard">
@@ -101,7 +101,7 @@ export default function OwnerDashboard({ restaurant, fund }: Props) {
       <div className="anomaly-heading">
         <div><span><Activity /> 매출 이상탐지</span><h2>평소 흐름을 벗어난 달을 확인해요</h2><p>월별 변화의 중앙값과 MAD를 사용해 한 번의 급등락에도 기준선이 흔들리지 않게 계산합니다.</p></div>
         <div className="report-actions">
-          <b className={anomaly?.provider === 'openai' ? 'ai' : ''}>{anomalyLoading ? '탐지 중' : anomaly?.provider === 'openai' ? <><Bot /> AI 설명 완료</> : '통계 엔진 분석'}</b>
+          <b className={anomaly?.provider === 'google-vertex-ai' ? 'ai' : ''}>{anomalyLoading ? '탐지 중' : anomaly?.provider === 'google-vertex-ai' ? <><Bot /> AI 설명 완료</> : '통계 엔진 분석'}</b>
           <button type="button" onClick={() => void loadAnomalies(true)} disabled={anomalyLoading}><RefreshCw className={anomalyLoading ? 'spin' : ''} /> 다시 탐지</button>
         </div>
       </div>
@@ -110,7 +110,7 @@ export default function OwnerDashboard({ restaurant, fund }: Props) {
         <div className="anomaly-baseline"><span>분석 표본 <b>{anomalyResult.sampleSize}개월</b></span><span>평소 월 변화 <b>{anomalyResult.baselineChangeRate >= 0 ? '+' : ''}{anomalyResult.baselineChangeRate}%</b></span><span>예상 범위 <b>{anomalyResult.expectedRange.min}% ~ {anomalyResult.expectedRange.max}%</b></span></div>
         {anomalyResult.anomalies.length > 0 && <div className="anomaly-events">{anomalyResult.anomalies.map((item) => <article className={item.severity} key={item.month}><AlertTriangle /><div><b>{item.month.replace('-', '년 ')}월 · {item.changeRate >= 0 ? '+' : ''}{item.changeRate}%</b><p>{item.reason}</p></div><strong>{won(item.sales)}</strong></article>)}</div>}
         <div className="anomaly-checks"><b>사람이 확인할 순서</b><ol>{anomalyResult.nextChecks.map((item) => <li key={item}>{item}</li>)}</ol></div>
-        <p className="report-provenance">수치 판정은 {anomalyResult.method} 통계 엔진이 수행했습니다. {anomaly?.provider === 'openai' ? 'AI는 판정을 바꾸지 않고 설명만 작성했습니다.' : '통계 결과와 고정 확인 절차를 표시합니다.'}</p>
+        <p className="report-provenance">수치 판정은 {anomalyResult.method} 통계 엔진이 수행했습니다. {anomaly?.provider === 'google-vertex-ai' ? 'AI는 판정을 바꾸지 않고 설명만 작성했습니다.' : '통계 결과와 고정 확인 절차를 표시합니다.'}</p>
       </>}
     </section>
 

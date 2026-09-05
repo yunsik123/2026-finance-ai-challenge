@@ -1,0 +1,16 @@
+node_modules
+dist
+# data/ 는 통째로 빼면 안 된다. commercial-areas.json 같은 정적 데이터가 여기 있고
+# server/commercial.ts 가 기동 중에 읽는다. 원장 파일만 제외한다(운영 원장은 Cloud SQL).
+data/db.json
+data/db.json.tmp
+.git
+.env
+.env.*
+!.env.example
+*.log
+tests
+scripts/sample-docs
+**/*.tsbuildinfo
+*.hwpx
+*.png

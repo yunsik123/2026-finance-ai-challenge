@@ -48,7 +48,7 @@ export interface OwnerReportFacts {
 
 export interface OwnerReportResponse {
   facts: OwnerReportFacts; report: OwnerReport
-  provider: 'openai' | 'meoktu-rule-engine'; model: string; generatedAt: string; cached: boolean
+  provider: 'google-vertex-ai' | 'meoktu-rule-engine'; model: string; generatedAt: string; cached: boolean
 }
 
 export interface SalesAnomaly {
@@ -72,7 +72,7 @@ export interface AnomalyDetectionResponse {
     summary: string
     nextChecks: string[]
   }
-  provider: 'openai' | 'meoktu-statistical-engine'
+  provider: 'google-vertex-ai' | 'meoktu-statistical-engine'
   model: string
   generatedAt: string
   cached: boolean
@@ -82,7 +82,7 @@ export interface InsightCard { id: string; name: string; traits: string[]; cauti
 
 export interface InsightSummaryResponse {
   summary: { cards: InsightCard[]; comparison: string }
-  provider: 'openai' | 'meoktu-rule-engine'; model: string; generatedAt: string; cached: boolean
+  provider: 'google-vertex-ai' | 'meoktu-rule-engine'; model: string; generatedAt: string; cached: boolean
 }
 
 export interface PublicState {

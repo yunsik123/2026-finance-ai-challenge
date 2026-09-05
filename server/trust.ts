@@ -337,7 +337,11 @@ const queryAliases: Record<string, string[]> = {
   단위: ['1,000원', '한도', '회수'],
 }
 
-export function retrieveKnowledgeSubgraph(graph: KnowledgeGraph, question: string, limit = 6) {
+/**
+ * 질문에서 검색어와 의도를 뽑는다.
+ * 인메모리 검색과 Neo4j 검색이 같은 규칙을 써야 답이 갑자기 달라지지 않는다.
+ */
+export function questionTerms(question: string) {
   const normalized = question.toLocaleLowerCase('ko').replace(/\s+/g, ' ').trim()
   const baseTerms = normalized.split(/[^\p{L}\p{N}]+/u).filter((term) => term.length > 1)
   const matchedAliases = Object.entries(queryAliases)
@@ -347,6 +351,11 @@ export function retrieveKnowledgeSubgraph(graph: KnowledgeGraph, question: strin
   // "제한이 몇 %야", "쓸 수 있어?", "얼마나 쌓여" 처럼 규칙을 묻는 문장은
   // 절차 단계보다 서비스 규칙 노드를 먼저 봐야 한다. 안 그러면 생성형이 규칙을 지어낸다.
   const asksRule = /(제한|조건|규칙|몇\s*%|몇\s*퍼센트|얼마나|되나요|되나|수\s*있|가능한가|가능해|공식|기준)/.test(normalized)
+  return { normalized, terms, asksRule }
+}
+
+export function retrieveKnowledgeSubgraph(graph: KnowledgeGraph, question: string, limit = 6) {
+  const { normalized, terms, asksRule } = questionTerms(question)
   const scored = graph.nodes.map((node, index) => {
     const haystack = `${node.label} ${JSON.stringify(node.properties)}`.toLocaleLowerCase('ko')
     const exactLabel = normalized.includes(node.label.toLocaleLowerCase('ko')) ? 5 : 0

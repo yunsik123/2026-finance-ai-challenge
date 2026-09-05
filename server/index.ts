@@ -11,7 +11,7 @@ import { Server } from 'socket.io'
 import { articles as seedArticles, createSeed, funds as seedFunds, restaurants as seedRestaurants, reviews as seedReviews } from './seed.ts'
 import type { Application, Coupon, CouponListing, CouponOffer, CouponTrade, DataConnection, Database, Fund, FundStatus, LegalConsent, Notification, Order, Position, Restaurant, Review, Role, SupportRequest, User } from './types.ts'
 import { LEGAL_VERSION, checkConsent, legalDocument, legalSummaries, requiredDocumentIds, type LegalContext } from './legal.ts'
-import { answerGraphProcessQuestion, assessRestaurant, buildKnowledgeGraph, normalizeOcrBoxes, retrieveKnowledgeSubgraph } from './trust.ts'
+import { answerGraphProcessQuestion, assessRestaurant, buildKnowledgeGraph, normalizeOcrBoxes, questionTerms, retrieveKnowledgeSubgraph } from './trust.ts'
 import { answerNavigationQuestion, isNavigationQuestion, matchUiTasks, navigationBrief, pageForRoute } from './sitemap.ts'
 import { deriveMetricsFromUploads, parseCsv, type RawUpload } from './metrics.ts'
 import {
@@ -21,7 +21,7 @@ import {
 import { DEMO_NOTICE, demoId, demoNotification, sandboxFor, type DemoSandbox } from './demo.ts'
 import {
   answerOwnerStatusQuestion, answerSupportQuestion, defaultSupportPrograms, isOwnerStatusQuestion, isSupportQuestion,
-  knowledgeAsOf, matchSupportPrograms, ownerSituation, ownerSituationGraph, supportProgramNodes,
+  knowledgeAsOf, matchSupportPrograms, ownerSituation, ownerSituationGraph, supportProgramNodes, supportPrograms,
 } from './knowledge.ts'
 import { COMMERCIAL_NOTE, COMMERCIAL_SOURCE, commercialInsight, findCommercialArea } from './commercial.ts'
 import {
@@ -33,7 +33,9 @@ import {
 } from './ai-analysis.ts'
 import { orchestrateFinancialVerification, verifyBusiness } from './verification.ts'
 import { checkSwap, couponUsable, daysLeft, EXCHANGE_RULES, normalizePreferences, sweepExpired } from './exchange.ts'
-import { FileStateStore, SupabaseStateStore, TableStateStore, type StateStore } from './store.ts'
+import { FileStateStore, PostgresStateStore, SupabaseStateStore, TableStateStore, type StateStore } from './store.ts'
+import { aiChatModel, aiCredentialSource, aiEndpoint, aiJsonExtras, aiOcrModel, aiProviderLabel, aiReady, aiToken, aiTokenBudget, initAiProvider, setAiProvider } from './ai-provider.ts'
+import { eligibilityFromSituation, graphDbEnabled, graphDbStatus, initGraphDb, ownerEligibility, retrieveSubgraph, syncKnowledge, syncOwnerSituation } from './graph-db.ts'
 
 const scrypt = promisify(crypto.scrypt)
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -58,8 +60,9 @@ const supabasePublishableKey = String(process.env.SUPABASE_PUBLISHABLE_KEY || pr
 const supabaseServiceKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim()
 const supabaseAuthDisabled = /^(1|true|yes)$/i.test(String(process.env.SUPABASE_AUTH_DISABLED || '').trim())
 const supabaseAuthConfigured = Boolean(supabaseUrl && supabasePublishableKey) && !supabaseAuthDisabled
-const aiApiUrl = String(process.env.OPENAI_BASE_URL ? `${String(process.env.OPENAI_BASE_URL).replace(/\/$/, '')}/chat/completions` : (process.env.AI_API_URL || 'https://api.openai.com/v1/chat/completions')).trim()
-const aiApiKey = String(process.env.OPENAI_API_KEY || process.env.AI_API_KEY || '').trim()
+// 생성형 자격증명은 server/ai-provider.ts 가 관리한다.
+// Vertex AI 토큰은 1시간마다 바뀌므로 부팅 때 고정하는 "값"이 아니라
+// 호출 직전에 물어보는 "함수"여야 한다. aiReady()/aiEndpoint()/aiToken() 을 쓴다.
 
 type SessionUser = User & { sessionMode: 'account' | 'demo' }
 type AuthedRequest = Request & { user?: SessionUser }
@@ -77,6 +80,13 @@ function accountSession(user: User) {
 const stateStoreMode = String(process.env.STATE_STORE || '').trim().toLowerCase()
 // STATE_STORE=tables 는 meoktu 스키마의 정규화 테이블 24개에 저장한다(운영 목표 구조).
 // STATE_STORE=supabase 는 app_state.data JSONB 한 칸에 저장한다(이전 구조, 호환용).
+// STATE_STORE=postgres 는 Cloud SQL 에 직접 붙는다(운영 기본값).
+// 연결 정보가 없으면 조용히 파일 저장소로 떨어지지 않고 기동을 멈춘다.
+// 그래야 "배포됐는데 각 인스턴스가 자기 파일에 쓰고 있는" 상태를 초기에 잡는다.
+const postgresConfigured = Boolean(String(process.env.DATABASE_URL || '').trim() || String(process.env.INSTANCE_CONNECTION_NAME || '').trim())
+if (stateStoreMode === 'postgres' && !postgresConfigured) {
+  throw new Error('STATE_STORE=postgres requires DATABASE_URL or INSTANCE_CONNECTION_NAME')
+}
 if ((stateStoreMode === 'supabase' || stateStoreMode === 'tables') && (!supabaseUrl || !supabaseServiceKey)) {
   const missing = [
     !supabaseUrl && 'SUPABASE_URL (or VITE_SUPABASE_URL)',
@@ -89,11 +99,13 @@ const useSharedState = stateStoreMode === 'supabase' || stateStoreMode === 'tabl
 // 정규화 테이블은 반드시 STATE_STORE=tables 로 명시해야 켜진다.
 // 미지정이면 예전대로 app_state 를 쓴다. 이미 떠 있는 배포가 meoktu 스키마를
 // 적용하기 전에 자동으로 갈아타면 기동 자체가 실패하기 때문이다(npm run db:migrate 선행 필요).
-const store: StateStore = useSharedState && supabaseUrl && supabaseServiceKey
-  ? (stateStoreMode === 'tables'
-      ? new TableStateStore(supabaseUrl, supabaseServiceKey)
-      : new SupabaseStateStore(supabaseUrl, supabaseServiceKey, process.env.STATE_ROW_ID || 'meoktu'))
-  : new FileStateStore(dbPath)
+const store: StateStore = stateStoreMode === 'postgres'
+  ? new PostgresStateStore()
+  : (useSharedState && supabaseUrl && supabaseServiceKey
+      ? (stateStoreMode === 'tables'
+          ? new TableStateStore(supabaseUrl, supabaseServiceKey)
+          : new SupabaseStateStore(supabaseUrl, supabaseServiceKey, process.env.STATE_ROW_ID || 'meoktu'))
+      : new FileStateStore(dbPath))
 let stateVersion = 0
 let lockOwner: string | undefined
 let lastVersionCheck = 0
@@ -315,7 +327,7 @@ async function loadDatabase() {
     const investorHash = await hashPassword('demo1234!')
     db = createSeed(ownerHash, investorHash)
     normalizeDatabase()
-    if (store instanceof SupabaseStateStore || store instanceof TableStateStore) {
+    if (store instanceof SupabaseStateStore || store instanceof TableStateStore || store instanceof PostgresStateStore) {
       // 첫 기동에서만 심는다. 다른 인스턴스가 이미 심었으면 그쪽 값을 그대로 쓴다.
       const seeded = await store.seed(db)
       if (seeded) { db = seeded.data; stateVersion = seeded.version }
@@ -352,10 +364,11 @@ async function saveDatabase() {
  * 이 경로에서는 saveDatabase() 를 부르면 안 된다.
  * 낡은 메모리를 통째로 다시 써서 RPC 가 바꾼 내용을 지워버리기 때문이다.
  */
-const ledgerRpcEnabled = store.kind === 'tables'
+// 정규화 테이블에 실제로 사는 저장소만 거래 함수를 쓸 수 있다.
+const ledgerRpcEnabled = store.kind === 'tables' || store.kind === 'postgres'
 
 async function runLedgerRpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
-  const result = await (store as TableStateStore).callRpc<T>(fn, args)
+  const result = await (store as TableStateStore | PostgresStateStore).callRpc<T>(fn, args)
   // 버전 비교를 건너뛰고 무조건 다시 읽는다. RPC 직후에는 반드시 달라져 있다.
   const snapshot = await store.read()
   if (snapshot) {
@@ -594,8 +607,54 @@ function rateLimitHit(key: string) {
   rateBuckets.set(key, hits)
 }
 
+/**
+ * 요청 한도 설정.
+ *
+ * 한도는 두 종류다.
+ *   · 도배 방지 — 한 계정이 교환장이나 가입을 도배하는 것을 막는다. 비용과 무관.
+ *   · 비용 방어 — 생성형 호출 한 번이 곧 요금이다. 새로고침 연타로 돈이 새지 않게 막는다.
+ *
+ * 원래 값은 시연 규모(동시 수십 명)에 맞춰 아주 빡빡했다. 실제 서비스에서는
+ * 정상 사용자도 걸린다. 그래서 기본값을 크게 올리고, 전부 환경변수로 뺐다.
+ * **재배포 없이** 늘릴 수 있어야 장애 상황에서 대응할 수 있기 때문이다.
+ *
+ *   LIMIT_AI_CHAT=0     → 그 한도만 끈다(0 이하는 무제한)
+ *   LIMIT_AI_CHAT=500   → 분당 500회로 올린다
+ *
+ * 주의: 생성형 한도를 끄면 악의적 반복 호출이 그대로 Vertex AI 요금이 된다.
+ * 끄기보다 넉넉히 올려 두는 편을 권한다.
+ */
+function limitFromEnv(name: string, fallback: number) {
+  const raw = process.env[`LIMIT_${name}`]
+  if (raw === undefined || raw.trim() === '') return fallback
+  const value = Number(raw)
+  if (!Number.isFinite(value)) return fallback
+  // 0 이하 = 제한 없음.
+  return value <= 0 ? Infinity : value
+}
+
+const LIMITS = {
+  /** 도배 방지 (분당) */
+  signup: limitFromEnv('SIGNUP', 60),
+  couponList: limitFromEnv('COUPON_LIST', 120),
+  swap: limitFromEnv('SWAP', 120),
+  offer: limitFromEnv('OFFER', 120),
+  verify: limitFromEnv('VERIFY', 300),
+  /** 비용 방어 — 생성형 (분당) */
+  ocr: limitFromEnv('OCR', 60),
+  aiChat: limitFromEnv('AI_CHAT', 120),
+  /** 비용 방어 — 생성형 분석 (시간당). 화면 새로고침마다 부르는 자리라 넉넉해야 한다. */
+  ownerReport: limitFromEnv('OWNER_REPORT', 200),
+  anomaly: limitFromEnv('ANOMALY', 200),
+  insight: limitFromEnv('INSIGHT', 300),
+  /** 업로드 크기. 요즘 휴대폰 사진은 6MB 를 쉽게 넘는다. */
+  uploadMb: Number(process.env.LIMIT_UPLOAD_MB || 12),
+}
+
 /** 아주 가벼운 슬라이딩 윈도 제한. 여러 사람이 붙었을 때 한 계정이 교환장을 도배하는 걸 막는다. */
 function rateLimit(key: string, limit: number, windowMs: number) {
+  // Infinity 는 "이 한도를 끈다"는 뜻이다. 버킷에 쌓지도 않는다.
+  if (!Number.isFinite(limit) || limit <= 0) return true
   const at = Date.now()
   const hits = (rateBuckets.get(key) || []).filter((time) => time > at - windowMs)
   if (hits.length >= limit) return false
@@ -919,7 +978,26 @@ function publicState(viewerId?: string) {
   }
 }
 
+// 생성형 자격증명을 먼저 확정한다. Vertex 는 메타데이터 서버·서비스 계정·ADC 를
+// 차례로 확인해야 하므로 요청 처리 중이 아니라 부팅에서 한 번만 판단한다.
+setAiProvider(await initAiProvider())
+console.log(`생성형 공급자: ${aiProviderLabel()}${aiReady() ? ` (${aiCredentialSource()}, ${aiChatModel()})` : ' — 규칙 엔진으로만 응답합니다'}`)
+
 await loadDatabase()
+
+// 지식그래프를 Neo4j 에 올린다. 절차·규칙·제도·화면지도처럼 사용자와 무관하게
+// 고정된 지식만 여기에 상주하고, 사장님 개인 상태는 상담 요청마다 얹는다.
+// 연결에 실패해도 서버는 뜬다. 그때는 서버 내장 그래프로만 답한다.
+if (await initGraphDb()) {
+  for (const graphRole of ['owner', 'investor'] as const) {
+    const staticGraph = buildKnowledgeGraph(graphRole)
+    staticGraph.nodes.push(...supportProgramNodes())
+    await syncKnowledge(graphRole, staticGraph.graphVersion, staticGraph.nodes, staticGraph.edges)
+  }
+  console.log(`지식그래프: Neo4j 연결됨 (${graphDbStatus()})`)
+} else {
+  console.log(`지식그래프: 서버 내장 그래프 사용 — ${graphDbStatus()}`)
+}
 syncCouponLedger()
 for (const fund of db.funds) {
   matchOrders(fund.id)
@@ -933,7 +1011,9 @@ const io = new Server(httpServer, { cors: { origin: true, credentials: true } })
 const changed = () => io.emit('state:changed', { at: now() })
 
 app.use(cors({ origin: true, credentials: true }))
-app.use(express.json({ limit: '8mb' }))
+// base64 는 원본보다 약 33% 커진다. 이미지 상한(LIMITS.uploadMb)보다 넉넉해야
+// "6MB 이하" 안내를 보고 올린 파일이 본문 크기에서 먼저 막히는 일이 없다.
+app.use(express.json({ limit: `${Math.ceil(LIMITS.uploadMb * 1.4)}mb` }))
 
 /**
  * 공유 원장을 쓸 때만 동작한다.
@@ -1454,8 +1534,13 @@ app.get('/api/health', (_req, res) => res.json({
   stateVersion: store.kind === 'file' ? undefined : stateVersion,
   // 키 자체는 절대 노출하지 않고 '생성형이 붙어 있는지'만 알린다.
   // 이게 있어야 배포본이 조용히 규칙 폴백으로만 도는 상황을 밖에서 잡아낼 수 있다.
-  ai: aiApiUrl && aiApiKey ? 'configured' : 'off',
-  aiModel: aiApiUrl && aiApiKey ? (process.env.OPENAI_CHAT_MODEL || process.env.AI_MODEL || 'gpt-4o-mini') : undefined,
+  ai: aiReady() ? 'configured' : 'off',
+  aiProvider: aiProviderLabel(),
+  // 자격증명이 어디서 왔는지만 알린다(값은 절대 내보내지 않는다).
+  // 배포본이 키 없이 조용히 규칙 폴백으로 도는 상황을 밖에서 잡아내기 위한 것이다.
+  aiCredential: aiCredentialSource(),
+  aiModel: aiReady() ? aiChatModel() : undefined,
+  knowledgeGraph: graphDbEnabled() ? 'neo4j' : 'in-memory',
 }))
 app.get('/api/public', async (req: AuthedRequest, res) => {
   const viewer = await userFromAuthorization(req.headers.authorization).catch(() => undefined)
@@ -1527,7 +1612,7 @@ app.get('/api/legal/:documentId', (req, res) => {
 })
 
 app.post('/api/auth/signup', async (req, res) => {
-  if (!rateLimit(`signup:${callerIp(req)}`, 20, 60_000)) return res.status(429).json({ error: '가입 시도가 너무 많아요. 잠시 후 다시 시도해주세요.' })
+  if (!rateLimit(`signup:${callerIp(req)}`, LIMITS.signup, 60_000)) return res.status(429).json({ error: '가입 시도가 너무 많아요. 잠시 후 다시 시도해주세요.' })
   const { email, password, name, role } = req.body as { email?: string; password?: string; name?: string; role?: Role }
   if (!email || !/^\S+@\S+\.\S+$/.test(email)) return res.status(400).json({ error: '올바른 이메일을 입력해주세요.' })
   if (!password || password.length < 8) return res.status(400).json({ error: '비밀번호는 8자 이상이어야 해요.' })
@@ -2195,7 +2280,7 @@ app.get('/api/market/mine', auth(), (req: AuthedRequest, res) => {
 /** 쿠폰을 교환장에 올린다. 올리는 순간 쿠폰은 잠기고 다른 곳에 못 쓴다. */
 app.post('/api/coupons/:couponId/list', auth(), async (req: AuthedRequest, res) => {
   const me = req.user!
-  if (!rateLimit(`list:${me.id}`, 20, 60_000)) return res.status(429).json({ error: '잠시 후 다시 시도해주세요.' })
+  if (!rateLimit(`list:${me.id}`, LIMITS.couponList, 60_000)) return res.status(429).json({ error: '잠시 후 다시 시도해주세요.' })
   const result = await withExchangeLock(async () => {
     sweepExchange()
     const coupon = db.coupons.find((item) => item.id === req.params.couponId && item.userId === me.id)
@@ -2301,7 +2386,7 @@ app.delete('/api/listings/:listingId', auth(), async (req: AuthedRequest, res) =
 /** 즉시 교환. 등록자가 자동 수락을 켜둔 매물에서만 가능하다. */
 app.post('/api/listings/:listingId/swap', auth(), async (req: AuthedRequest, res) => {
   const me = req.user!
-  if (!rateLimit(`swap:${me.id}`, 30, 60_000)) return res.status(429).json({ error: '잠시 후 다시 시도해주세요.' })
+  if (!rateLimit(`swap:${me.id}`, LIMITS.swap, 60_000)) return res.status(429).json({ error: '잠시 후 다시 시도해주세요.' })
   const result = await withExchangeLock(async () => {
     sweepExchange()
     const listing = db.couponListings.find((item) => item.id === req.params.listingId && item.status === 'open')
@@ -2336,7 +2421,7 @@ app.post('/api/listings/:listingId/swap', auth(), async (req: AuthedRequest, res
 /** 교환 제안 보내기. 제안한 쿠폰은 그 자리에서 잠겨(에스크로) 이중 제안이 막힌다. */
 app.post('/api/listings/:listingId/offers', auth(), async (req: AuthedRequest, res) => {
   const me = req.user!
-  if (!rateLimit(`offer:${me.id}`, 30, 60_000)) return res.status(429).json({ error: '잠시 후 다시 시도해주세요.' })
+  if (!rateLimit(`offer:${me.id}`, LIMITS.offer, 60_000)) return res.status(429).json({ error: '잠시 후 다시 시도해주세요.' })
   const result = await withExchangeLock(async () => {
     sweepExchange()
     const listing = db.couponListings.find((item) => item.id === req.params.listingId && item.status === 'open')
@@ -2528,7 +2613,7 @@ app.post('/api/coupons/:couponId/redeem', auth(), async (req: AuthedRequest, res
 /** 사장님이 손님 코드를 확인해 실제 사용 처리. 내 가게 쿠폰만 확인할 수 있다. */
 app.post('/api/owner/coupons/verify', auth('owner'), async (req: AuthedRequest, res) => {
   const me = req.user!
-  if (!rateLimit(`verify:${me.id}`, 60, 60_000)) return res.status(429).json({ error: '잠시 후 다시 시도해주세요.' })
+  if (!rateLimit(`verify:${me.id}`, LIMITS.verify, 60_000)) return res.status(429).json({ error: '잠시 후 다시 시도해주세요.' })
   const result = await withExchangeLock(async () => {
     sweepExchange()
     const code = String(req.body.code || '').trim().toUpperCase()
@@ -3042,13 +3127,15 @@ app.post('/api/owner/funds/:fundId/dividend', auth('owner'), async (req: AuthedR
 })
 
 app.post('/api/ai/ocr', auth('owner'), async (req: AuthedRequest, res) => {
-  if (!rateLimit(`ocr:${req.user!.id}`, 20, 60_000)) return res.status(429).json({ error: '문서 판독 요청이 너무 많아요. 잠시 후 다시 시도해주세요.' })
+  if (!rateLimit(`ocr:${req.user!.id}`, LIMITS.ocr, 60_000)) return res.status(429).json({ error: '문서 판독 요청이 너무 많아요. 잠시 후 다시 시도해주세요.' })
   const image = String(req.body.image || '')
   const match = image.match(/^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=\s]+)$/)
   if (!match) return res.status(400).json({ error: 'PNG, JPG 또는 WebP 이미지만 AI 판독할 수 있어요.' })
   const encoded = match[2].replace(/\s/g, '')
   const estimatedBytes = Math.floor(encoded.length * .75)
-  if (!estimatedBytes || estimatedBytes > 6 * 1024 * 1024) return res.status(400).json({ error: '이미지는 6MB 이하여야 해요.' })
+  if (!estimatedBytes || estimatedBytes > LIMITS.uploadMb * 1024 * 1024) {
+    return res.status(400).json({ error: `이미지는 ${LIMITS.uploadMb}MB 이하여야 해요.` })
+  }
   const filename = String(req.body.filename || 'document').slice(0, 255)
   const sourceId = String(req.body.sourceId || 'other').slice(0, 40)
   const plan = String(req.body.plan || '등록된 사용계획 없음').slice(0, 2000)
@@ -3059,17 +3146,20 @@ app.post('/api/ai/ocr', auth('owner'), async (req: AuthedRequest, res) => {
   }
   let model = 'meoktu-manual-review-v1'
   let status: 'ai_extracted' | 'manual_review' = 'manual_review'
-  const apiUrl = aiApiUrl
-  const apiKey = aiApiKey
+  const apiUrl = aiEndpoint()
+  const apiKey = aiReady() ? await aiToken().catch(() => '') : ''
   if (apiUrl && apiKey) {
     try {
-      const requestedModel = process.env.OPENAI_OCR_MODEL || process.env.AI_OCR_MODEL || process.env.MOA_OCR_MODEL || process.env.OPENAI_CHAT_MODEL || process.env.AI_MODEL || 'gpt-4o-mini'
+      const requestedModel = aiOcrModel()
       const response = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
         signal: AbortSignal.timeout(45_000),
         body: JSON.stringify({
           model: requestedModel,
+          ...aiJsonExtras(),
+          // 판독 결과가 길어도 잘리지 않게 넉넉히 준다. bbox 배열이 들어가면 금방 커진다.
+          max_tokens: aiTokenBudget(2000),
           messages: [
             { role: 'system', content: '당신은 한국 소상공인 사업 증빙 OCR 보조자입니다. 이미지에서 보이는 값만 구조화하고 승인 여부를 결정하지 않습니다.' },
             { role: 'user', content: [
@@ -3478,24 +3568,37 @@ app.post('/api/ai/management-credit-diagnosis', auth('owner'), async (req: Authe
  * 여기서는 항상 JSON 객체 하나만 받아 파싱한다. 실패는 예외로 올려 호출부가 폴백을 쓰게 한다.
  */
 async function callAiJson(system: string, user: string, options: { model?: string; maxTokens?: number } = {}) {
-  if (!aiApiUrl || !aiApiKey) throw new Error('AI API not configured')
-  const model = options.model || process.env.OPENAI_CHAT_MODEL || process.env.AI_MODEL || process.env.MOA_CHAT_MODEL || 'gpt-4o-mini'
-  const response = await fetch(aiApiUrl, {
+  if (!aiReady()) throw new Error('AI API not configured')
+  const model = options.model || aiChatModel()
+  const token = await aiToken()
+  const response = await fetch(aiEndpoint(), {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${aiApiKey}` },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     signal: AbortSignal.timeout(45_000),
     body: JSON.stringify({
       model,
+      ...aiJsonExtras(),
       messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
       response_format: { type: 'json_object' },
       temperature: .3,
-      max_tokens: options.maxTokens || 1200,
+      max_tokens: aiTokenBudget(options.maxTokens || 1200),
     }),
   })
   if (!response.ok) throw new Error(`AI API ${response.status}`)
-  const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }>; model?: string }
-  const parsed = jsonObject(payload.choices?.[0]?.message?.content || '')
-  if (!Object.keys(parsed).length) throw new Error('AI API returned an empty object')
+  const payload = await response.json() as {
+    choices?: Array<{ message?: { content?: string }; finish_reason?: string }>
+    model?: string
+    usage?: { completion_tokens?: number; completion_tokens_details?: { reasoning_tokens?: number } }
+  }
+  const choice = payload.choices?.[0]
+  const content = choice?.message?.content || ''
+  const parsed = jsonObject(content)
+  if (!Object.keys(parsed).length) {
+    // 왜 비었는지가 중요하다. finish_reason=length 면 생각 토큰이 예산을 먹어 본문이 잘린 것이고,
+    // content 가 있는데 파싱이 안 되면 JSON 형식이 깨진 것이다. 둘은 고치는 방법이 다르다.
+    const reasoning = payload.usage?.completion_tokens_details?.reasoning_tokens
+    throw new Error(`AI API returned an empty object (finish_reason=${choice?.finish_reason ?? 'none'}, content=${content.length}자, reasoning=${reasoning ?? '-'})`)
+  }
   return { parsed, model: payload.model || model }
 }
 
@@ -3574,15 +3677,15 @@ app.post('/api/ai/owner-report', auth('owner'), async (req: AuthedRequest, res) 
   const cacheKey = `owner-report:${restaurant.id}:${factsFingerprint(facts)}`
   const refresh = Boolean(req.body?.refresh)
   const cached = refresh ? undefined : cachedAnalysis<OwnerReport>(cacheKey)
-  if (cached) return res.json({ facts, report: cached.value, provider: 'openai', model: cached.model, generatedAt: new Date(cached.at).toISOString(), cached: true })
+  if (cached) return res.json({ facts, report: cached.value, provider: aiProviderLabel(), model: cached.model, generatedAt: new Date(cached.at).toISOString(), cached: true })
 
   const fallback = () => res.json({
     facts, report: ownerReportFallback(facts), provider: 'meoktu-rule-engine',
     model: 'meoktu-owner-report-rules-v1', generatedAt: now(), cached: false,
   })
-  if (!aiApiUrl || !aiApiKey) return fallback()
+  if (!aiReady()) return fallback()
   // 분석 한 번이 곧 외부 호출 한 번이다. 새로고침 연타로 비용이 새지 않게 계정 단위로 막는다.
-  if (!rateLimit(`owner-report:${req.user!.id}`, 12, 3600_000)) return fallback()
+  if (!rateLimit(`owner-report:${req.user!.id}`, LIMITS.ownerReport, 3600_000)) return fallback()
 
   try {
     const generated = await generateAnalysisOnce<OwnerReport>(cacheKey, async () => {
@@ -3596,7 +3699,7 @@ app.post('/api/ai/owner-report', auth('owner'), async (req: AuthedRequest, res) 
       return { value: report, model }
     })
     const { value: report, model } = generated
-    res.json({ facts, report, provider: 'openai', model, generatedAt: now(), cached: false })
+    res.json({ facts, report, provider: aiProviderLabel(), model, generatedAt: now(), cached: false })
   } catch (error) {
     console.error('AI owner report failed:', error instanceof Error ? error.message : error)
     fallback()
@@ -3617,14 +3720,14 @@ app.post('/api/ai/anomaly-detection', auth('owner'), async (req: AuthedRequest, 
   const cacheKey = `anomaly:${restaurant.id}:${factsFingerprint({ history: restaurant.salesHistory, detected })}`
   const refresh = Boolean(req.body?.refresh)
   const cached = refresh ? undefined : cachedAnalysis<AnomalyDetection>(cacheKey)
-  if (cached) return res.json({ result: cached.value, provider: 'openai', model: cached.model, generatedAt: new Date(cached.at).toISOString(), cached: true })
+  if (cached) return res.json({ result: cached.value, provider: aiProviderLabel(), model: cached.model, generatedAt: new Date(cached.at).toISOString(), cached: true })
 
   const fallback = () => res.json({
     result: detected, provider: 'meoktu-statistical-engine', model: detected.method,
     generatedAt: now(), cached: false,
   })
-  if (!aiApiUrl || !aiApiKey || detected.status === 'insufficient_data') return fallback()
-  if (!rateLimit(`anomaly:${req.user!.id}`, 12, 3600_000)) return fallback()
+  if (!aiReady() || detected.status === 'insufficient_data') return fallback()
+  if (!rateLimit(`anomaly:${req.user!.id}`, LIMITS.anomaly, 3600_000)) return fallback()
 
   try {
     const generated = await generateAnalysisOnce<AnomalyDetection>(cacheKey, async () => {
@@ -3634,7 +3737,7 @@ app.post('/api/ai/anomaly-detection', auth('owner'), async (req: AuthedRequest, 
       if (!demo) audit(req.user!.id, 'ai.anomaly_detection', 'restaurant', restaurant.id, `매출 이상탐지 ${detected.status}`)
       return { value: result, model }
     })
-    res.json({ result: generated.value, provider: 'openai', model: generated.model, generatedAt: now(), cached: false })
+    res.json({ result: generated.value, provider: aiProviderLabel(), model: generated.model, generatedAt: now(), cached: false })
   } catch (error) {
     console.error('AI anomaly explanation failed:', error instanceof Error ? error.message : error)
     fallback()
@@ -3668,15 +3771,15 @@ app.post('/api/ai/insight-summary', async (req: AuthedRequest, res) => {
 
   const cacheKey = `insight:${factsFingerprint(facts)}`
   const cached = cachedAnalysis<InsightSummary>(cacheKey)
-  if (cached) return res.json({ summary: cached.value, provider: 'openai', model: cached.model, generatedAt: new Date(cached.at).toISOString(), cached: true })
+  if (cached) return res.json({ summary: cached.value, provider: aiProviderLabel(), model: cached.model, generatedAt: new Date(cached.at).toISOString(), cached: true })
 
   const fallback = () => res.json({
     summary: insightFallback(facts), provider: 'meoktu-rule-engine',
     model: 'meoktu-insight-rules-v1', generatedAt: now(), cached: false,
   })
-  if (!aiApiUrl || !aiApiKey) return fallback()
+  if (!aiReady()) return fallback()
   const caller = (await userFromAuthorization(req.headers.authorization).catch(() => undefined))?.id || callerIp(req)
-  if (!rateLimit(`insight:${caller}`, 20, 3600_000)) return fallback()
+  if (!rateLimit(`insight:${caller}`, LIMITS.insight, 3600_000)) return fallback()
 
   try {
     const generated = await generateAnalysisOnce<InsightSummary>(cacheKey, async () => {
@@ -3689,7 +3792,7 @@ app.post('/api/ai/insight-summary', async (req: AuthedRequest, res) => {
       return { value: summary, model }
     })
     const { value: summary, model } = generated
-    res.json({ summary, provider: 'openai', model, generatedAt: now(), cached: false })
+    res.json({ summary, provider: aiProviderLabel(), model, generatedAt: now(), cached: false })
   } catch (error) {
     console.error('AI insight summary failed:', error instanceof Error ? error.message : error)
     fallback()
@@ -3741,7 +3844,7 @@ app.post('/api/ai/chat', async (req: AuthedRequest, res) => {
   // 로그인 없이도 상담은 열어두되, 외부 AI 호출 비용이 무제한으로 새지 않도록 IP 단위로 제한한다.
   const caller = asker?.id
     || String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'anonymous').split(',')[0].trim()
-  if (!rateLimit(`ai:${caller}`, 20, 60_000)) return res.status(429).json({ error: 'AI 상담 요청이 너무 많아요. 잠시 후 다시 시도해주세요.' })
+  if (!rateLimit(`ai:${caller}`, LIMITS.aiChat, 60_000)) return res.status(429).json({ error: 'AI 상담 요청이 너무 많아요. 잠시 후 다시 시도해주세요.' })
   const normalizedQuestion = effectiveQuestion.replace(/\s/g, '').toLocaleLowerCase('ko')
   if (isInvestmentAdviceRequest(effectiveQuestion)) return res.json({
     answer: INVESTMENT_ADVICE_REFUSAL,
@@ -3843,6 +3946,52 @@ app.post('/api/ai/chat', async (req: AuthedRequest, res) => {
   if (matchedPrograms.length) knowledgeGraph.nodes.push(...supportProgramNodes(matchedPrograms))
 
   const retrievedGraph = retrieveKnowledgeSubgraph(knowledgeGraph, effectiveQuestion)
+
+  // Neo4j 가 붙어 있으면 같은 질문을 그래프 DB 에서 2홉까지 다시 훑는다.
+  // 인메모리 결과를 버리지 않고 합친다. 라이브 상태(내 가게·내 계정) 노드는
+  // 그래프 DB 에 없고, 반대로 2홉 근거는 인메모리에 없기 때문이다.
+  if (graphDbEnabled()) {
+    const { terms, asksRule } = questionTerms(effectiveQuestion)
+    // 사장님 본인 상담이면 현재 상태를 그래프에 반영하고 제도 자격 관계를 다시 잇는다.
+    if (ownerRole && asker && situation) {
+      await syncOwnerSituation({
+        ownerId: asker.id, role, situation,
+        eligibility: eligibilityFromSituation(situation, supportPrograms),
+      }).catch(() => undefined)
+    }
+    const deep = await retrieveSubgraph({ role, question: effectiveQuestion, terms, asksRule, ownerId: asker?.id })
+    if (deep) {
+      for (const node of deep.nodes) {
+        if (!retrievedGraph.nodes.some((item) => item.id === node.id)) retrievedGraph.nodes.push(node)
+      }
+      for (const edge of deep.edges) {
+        if (!retrievedGraph.edges.some((item) => item.from === edge.from && item.to === edge.to && item.relation === edge.relation)) {
+          retrievedGraph.edges.push(edge)
+        }
+      }
+      retrievedGraph.graphVersion = deep.graphVersion
+    }
+    // "나 지금 뭐 받을 수 있어?"는 제도 이름이 질문에 없어 문자열 검색으로는 안 걸린다.
+    // 그래서 자격 관계를 직접 읽어 근거로 넣는다.
+    if (ownerRole && asker) {
+      const eligibility = await ownerEligibility(asker.id, role).catch(() => undefined)
+      if (eligibility?.length) {
+        const open = eligibility.filter((item) => item.relation === 'MAY_QUALIFY_FOR')
+        const blocked = eligibility.filter((item) => item.relation === 'BLOCKED_BY_MISSING_DATA')
+        retrievedGraph.nodes.push({
+          id: 'owner:eligibility', type: 'ProgramEligibility',
+          label: '내 상태 기준 지원제도 가능 여부', source: 'KNOWLEDGE_GRAPH_TRAVERSAL',
+          properties: {
+            상담가능: open.map((item) => item.programLabel).join(', ') || '없음',
+            자료부족으로막힘: blocked.map((item) => item.programLabel).join(', ') || '없음',
+            막힌이유: blocked[0]?.reason || '없음',
+            기준일: knowledgeAsOf,
+          },
+        })
+        retrievedGraph.sources.unshift({ id: 'owner:eligibility', label: '내 상태 기준 지원제도 가능 여부', type: 'ProgramEligibility' })
+      }
+    }
+  }
   if (accountQuestion && (account || ownerLedger) && !retrievedGraph.nodes.some((node) => node.id === 'viewer:account')) {
     const accountNode = knowledgeGraph.nodes.find((node) => node.id === 'viewer:account')
     if (accountNode) retrievedGraph.nodes.push(accountNode)
@@ -3895,8 +4044,8 @@ app.post('/api/ai/chat', async (req: AuthedRequest, res) => {
     sources: retrievedGraph.sources,
     retrieval: { strategy: 'private-ledger-summary', graphVersion: retrievedGraph.graphVersion },
   })
-  const apiUrl = aiApiUrl
-  const apiKey = aiApiKey
+  const apiUrl = aiEndpoint()
+  const apiKey = aiReady() ? await aiToken().catch(() => '') : ''
   if (!apiUrl || !apiKey) return res.json({
     answer: enforceInvestmentAdvicePolicy(localAnswer),
     mode: 'graph-rag-local',
@@ -3905,7 +4054,7 @@ app.post('/api/ai/chat', async (req: AuthedRequest, res) => {
     retrieval: { strategy: 'symbolic-keyword-plus-one-hop', graphVersion: retrievedGraph.graphVersion },
   })
   try {
-    const model = process.env.OPENAI_CHAT_MODEL || process.env.AI_MODEL || process.env.MOA_CHAT_MODEL || 'gpt-4o-mini'
+    const model = aiChatModel()
     const context = restaurantView().map((r) => ({
       name: r.name,
       region: r.neighborhood,
@@ -4012,10 +4161,10 @@ app.post('/api/ai/chat', async (req: AuthedRequest, res) => {
     if (!response.ok) throw new Error(`OpenAI API ${response.status}`)
     const result = await response.json() as { choices?: Array<{ message?: { content?: string } }> }
     const answer = result.choices?.[0]?.message?.content?.trim()
-    if (!answer) throw new Error('OpenAI API returned an empty answer')
-    res.json({ answer: enforceInvestmentAdvicePolicy(answer), mode: 'graph-rag-generative', provider: 'openai', model, sources: retrievedGraph.sources, retrieval: { strategy: 'symbolic-keyword-plus-one-hop', graphVersion: retrievedGraph.graphVersion } })
+    if (!answer) throw new Error('생성형 응답이 비어 있습니다')
+    res.json({ answer: enforceInvestmentAdvicePolicy(answer), mode: 'graph-rag-generative', provider: aiProviderLabel(), model, sources: retrievedGraph.sources, retrieval: { strategy: 'symbolic-keyword-plus-one-hop', graphVersion: retrievedGraph.graphVersion } })
   } catch (error) {
-    console.error('OpenAI API request failed:', error instanceof Error ? error.message : error)
+    console.error('생성형 호출 실패:', error instanceof Error ? error.message : error)
     res.json({ answer: enforceInvestmentAdvicePolicy(localAnswer), mode: 'graph-rag-fallback', provider: 'local-knowledge-graph', sources: retrievedGraph.sources, retrieval: { strategy: 'symbolic-keyword-plus-one-hop', graphVersion: retrievedGraph.graphVersion } })
   }
 })

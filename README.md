@@ -264,14 +264,37 @@ AI 시스템 프롬프트도 "고객센터가 없다"에서 "1:1 문의 화면�
 
 ## AI 연결
 
-현재 서버는 OpenAI의 Chat Completions API(`gpt-4o-mini` 등)를 통해 실제 생성형 AI 답변과 영수증/증빙 OCR을 처리합니다. 설정은 프로젝트 루트의 `.env` 또는 `.env.local`에서만 읽으며, 브라우저에는 API 키가 전달되지 않습니다.
+현재 서버는 **Google Vertex AI (Gemini)** 로 생성형 답변과 영수증·증빙 OCR을 처리합니다.
+Vertex 의 OpenAI 호환 엔드포인트를 쓰기 때문에 요청 형식은 Chat Completions 그대로이고,
+JSON 응답 강제(`response_format`)와 이미지 입력(`image_url`)도 동일하게 동작합니다.
 
-- `OPENAI_API_KEY`: OpenAI API 키
-- `OPENAI_BASE_URL`: 기본값 `https://api.openai.com/v1`
-- `OPENAI_CHAT_MODEL`: AI 상담원 모델 (기본값 `gpt-4o-mini`)
-- `OPENAI_OCR_MODEL`: 사업자 증빙/영수증 판독 모델 (기본값 `gpt-4o-mini`)
+**API 키가 없습니다.** Vertex 는 수명 1시간짜리 OAuth 토큰을 쓰며, `server/ai-provider.ts` 가
+아래 순서로 자격증명을 자동으로 찾아 토큰을 갱신합니다.
 
-다른 PC나 서버에 배포할 때는 `.env.example`을 복사해 값을 설정하세요. `.env`는 Git 제외 대상으로 유지하고, 채팅이나 화면에 노출된 키는 재발급하는 편이 안전합니다.
+1. **메타데이터 서버** — Cloud Run·GCE 안에서 서비스 계정이 자동으로 붙습니다. 배포본에는 키 파일이 아예 없습니다.
+2. `GOOGLE_APPLICATION_CREDENTIALS` — 서비스 계정 키 파일(JWT 서명 후 교환)
+3. **로컬 ADC** — `gcloud auth application-default login` 으로 만든 사용자 자격증명
+
+로컬 준비는 이 한 줄이면 됩니다.
+
+```bash
+gcloud auth application-default login
+```
+
+환경변수(전부 선택, 기본값으로 동작):
+
+- `GOOGLE_CLOUD_PROJECT`: GCP 프로젝트 ID (없으면 자격증명에서 자동 추론)
+- `VERTEX_LOCATION`: 기본값 `global` — **리전 엔드포인트는 모델에 따라 404가 납니다. 바꾸지 마세요.**
+- `VERTEX_CHAT_MODEL`: 상담 모델 (기본값 `gemini-3-flash-preview`)
+- `VERTEX_OCR_MODEL`: 증빙 판독 모델 (기본값 `gemini-3-flash-preview`)
+- `VERTEX_THINKING_BUDGET`: 생각 토큰 상한 (기본값 `512`)
+
+> **생각 토큰 주의**: Gemini 3 는 답을 쓰기 전 "생각"에 토큰을 쓰고 그 토큰도 `max_tokens`
+> 예산에서 나갑니다. 상한을 걸지 않으면 생각만 하다 본문이 잘려 JSON 파싱이 실패합니다
+> (실제로 1,400 예산 중 2,495를 생각에 써서 리포트가 끊겼습니다). `server/ai-provider.ts` 의
+> `aiJsonExtras()` 가 `thinking_budget` 하드 캡을, `aiTokenBudget()` 이 예산 여유를 함께 겁니다.
+
+`GET /api/health` 의 `aiProvider`·`aiCredential`·`aiModel` 로 현재 연결 상태를 확인할 수 있습니다.
 
 이미지 OCR은 사장님이 문서별 **AI 문서 판독**을 직접 누른 경우에만 서버를 통해 호출됩니다. 원본 이미지는 로컬 JSON DB에 저장하지 않고 구조화된 판독 결과와 감사 이력만 남깁니다. AI 설정이 없거나 호출에 실패하면 자동 승인하지 않고 `manual_review`로 기록합니다.
 
@@ -384,12 +407,16 @@ npm run test:integration
 
 `api/index.ts`가 Express 서버리스 함수 진입점이고, `vercel.json`이 `/api/*` 요청을 함수로 전달하고 나머지 경로를 Vite SPA로 연결합니다. 필요한 Vercel 환경변수는 다음과 같습니다.
 
-- `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`
-- `STATE_STORE=supabase`, `STATE_ROW_ID=meoktu`
-- `OPENAI_API_KEY`
-- `OPENAI_BASE_URL` (선택, 기본: `https://api.openai.com/v1`)
-- `OPENAI_CHAT_MODEL`, `OPENAI_OCR_MODEL` (선택, 기본: `gpt-4o-mini`)
+- `STATE_STORE=postgres`
+- `INSTANCE_CONNECTION_NAME` (Cloud Run), 또는 `DATABASE_URL` (로컬·스키마 적용)
+- `DB_USER`, `DB_PASSWORD`, `DB_NAME`
+- `GOOGLE_CLOUD_PROJECT`, `VERTEX_LOCATION=global`
+- `VERTEX_CHAT_MODEL`, `VERTEX_OCR_MODEL` (선택, 기본: `gemini-3-flash-preview`)
+- `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD` (선택 — 없으면 서버 내장 그래프로 동작)
 - `APP_SECRET`
+
+암호는 전부 Secret Manager 에 두고 Cloud Run 이 `--set-secrets` 로 주입받습니다.
+저장소에도 이미지에도 평문 암호가 남지 않습니다.
 
 운영 Vercel은 `STATE_STORE=supabase`로 Supabase의 `app_state` 한 행을 공유 원장으로 사용합니다. `STATE_STORE=supabase`인데 URL 또는 service role 키가 없으면 파일 원장으로 조용히 후퇴하지 않고 시작 단계에서 오류를 냅니다. `db/postgres-schema.sql`의 정규화 테이블과 트랜잭션 RPC는 후속 확장용 설계이며, 현재 MVP의 운영 쓰기는 `app_state` compare-and-set 잠금으로 직렬화됩니다.
 
