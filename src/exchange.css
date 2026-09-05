@@ -33,7 +33,8 @@
 .match-badge{border-radius:99px;padding:5px 11px;font-size:11px;font-weight:800;background:var(--mint);color:#12604a}
 .listing-card.enhanced.matchable{border-color:rgba(255,105,72,.45);box-shadow:0 12px 30px rgba(255,105,72,.11)}
 .listing-note{margin:0;font-size:12px;color:var(--ink-soft);background:var(--surface-soft);border-radius:10px;padding:9px 12px;line-height:1.6}
-.listing-offers-count{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:800;color:var(--coral-dark)}
+.listing-offers-count{display:flex;align-items:center;gap:6px;border:0;background:transparent;padding:0;font-size:11px;font-weight:800;color:var(--coral-dark)}
+button.listing-offers-count{text-decoration:underline;text-underline-offset:3px}
 .listing-card.enhanced>.button{margin-top:auto}
 .swap-wants em{font-style:normal;color:var(--coral-dark);font-weight:800}
 .coupon-ticket.compact{padding:10px 12px}
@@ -110,6 +111,8 @@
 .wallet-banner{display:flex;align-items:center;gap:11px;background:#fff1ec;border:1px solid rgba(255,105,72,.3);border-radius:16px;padding:13px 16px;margin-bottom:14px;font-size:13px;font-weight:700;color:var(--coral-dark)}
 .wallet-banner>span{flex:1}
 .wallet-banner svg{width:18px}
+.my-page-offer-banner{margin-top:-14px;margin-bottom:22px}
+.my-page-offer-banner small{display:block;margin-top:2px;color:var(--ink-soft);font-weight:600}
 .my-coupon.expiring{border-color:rgba(255,200,87,.7)}
 .my-coupon .coupon-warn{display:flex;align-items:center;gap:5px;margin:5px 0 0;font-size:11px;font-weight:700;color:#a86a00}
 .coupon-actions{display:flex;flex-direction:column;gap:6px;flex-shrink:0}

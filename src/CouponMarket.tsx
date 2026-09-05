@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { NavLink } from 'react-router-dom'
+import { NavLink, useSearchParams } from 'react-router-dom'
 import { ArrowRight, ArrowLeftRight, Check, Clock3, Filter, Handshake, Inbox, Plus, RotateCcw, Search, Send, Ticket, TriangleAlert, WalletCards, X } from 'lucide-react'
 import { api } from './lib/api.ts'
 import { ListingComposer } from './CouponWallet.tsx'
@@ -112,7 +112,8 @@ export default function CouponMarket({ state, me, requireLogin, refresh, notify 
   notify: (message: string) => void
 }) {
   const rules = state.exchange.rules
-  const [tab, setTab] = useState<'browse' | 'mine'>('browse')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tab = searchParams.get('view') === 'mine' ? 'mine' : 'browse'
   const [busyId, setBusyId] = useState<string | null>(null)
   const [composing, setComposing] = useState<Listing | null>(null)
   const [listingPickerOpen, setListingPickerOpen] = useState(false)
@@ -120,12 +121,23 @@ export default function CouponMarket({ state, me, requireLogin, refresh, notify 
   const [mine, setMine] = useState<MarketMine | null>(null)
   const [filters, setFilters] = useState({ category: '', region: '', matchable: false, query: '' })
 
+  const setTab = (nextTab: 'browse' | 'mine') => {
+    if (nextTab === 'mine' && !requireLogin()) return
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current)
+      if (nextTab === 'mine') next.set('view', 'mine')
+      else next.delete('view')
+      return next
+    })
+  }
+
   const loadMine = useCallback(async () => {
     if (!me) { setMine(null); return }
     try { setMine(await api<MarketMine>('/api/market/mine')) }
     catch (error) { notify((error as Error).message) }
   }, [me])
 
+  useEffect(() => { if (tab === 'mine' && !me) requireLogin() }, [tab, me])
   useEffect(() => { loadMine() }, [loadMine, state])
 
   const run = async (id: string, task: () => Promise<{ message: string }>) => {
@@ -208,7 +220,7 @@ export default function CouponMarket({ state, me, requireLogin, refresh, notify 
 
     <div className="market-tabs">
       <button className={tab === 'browse' ? 'active' : ''} onClick={() => setTab('browse')}><Search /> 교환장 둘러보기</button>
-      <button className={tab === 'mine' ? 'active' : ''} onClick={() => { if (requireLogin()) setTab('mine') }}>
+      <button className={tab === 'mine' ? 'active' : ''} onClick={() => setTab('mine')}>
         <Inbox /> 내 교환
         {receivedOffers.length > 0 && <i className="tab-badge">{receivedOffers.length}</i>}
       </button>
@@ -249,7 +261,9 @@ export default function CouponMarket({ state, me, requireLogin, refresh, notify 
             <span>{listing.userName}님의 제안</span>
             <small>최대 {won(listing.coupon?.maxDiscountWon || 0)} 할인 · {shortDate(listing.expiresAt)}까지</small>
           </div>
-          {listing.offerCount > 0 && <div className="listing-offers-count"><Inbox size={14} /> 받은 제안 {listing.offerCount}건</div>}
+          {listing.offerCount > 0 && (listing.mine
+            ? <button className="listing-offers-count" onClick={() => setTab('mine')}><Inbox size={14} /> 받은 제안 {listing.offerCount}건 확인</button>
+            : <div className="listing-offers-count"><Inbox size={14} /> 받은 제안 {listing.offerCount}건</div>)}
 
           {listing.mine
             ? <button className="button full cancel-listing" disabled={busyId === listing.id}

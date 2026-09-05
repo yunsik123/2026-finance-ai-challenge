@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { ArrowLeftRight, CandlestickChart } from 'lucide-react'
 import CouponMarket from './CouponMarket.tsx'
 import FundOrderbook from './FundOrderbook.tsx'
@@ -20,6 +21,14 @@ export default function MarketPage(props: {
   notify: (message: string) => void
 }) {
   const [tab, setTab] = useState<'coupon' | 'fund'>('coupon')
+  const [searchParams] = useSearchParams()
+
+  // 알림이나 마이페이지에서 받은 제안으로 바로 들어오면, 이전에 펀드 탭을
+  // 보고 있었더라도 쿠폰 응답 화면을 확실히 연다.
+  useEffect(() => {
+    if (searchParams.get('view') === 'mine') setTab('coupon')
+  }, [searchParams])
+
   return <div className="market-shell">
     <div className="market-mode-tabs" role="tablist">
       <button role="tab" aria-selected={tab === 'coupon'} className={tab === 'coupon' ? 'active' : ''} onClick={() => setTab('coupon')}>

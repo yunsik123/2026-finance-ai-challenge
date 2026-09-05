@@ -145,7 +145,7 @@ export default function CouponWallet({ me, state, refresh, notify }: {
       </div>
     </div>
 
-    {(me.exchange.offersReceived > 0 || me.exchange.offersSent > 0) && <NavLink to="/market" className="wallet-banner">
+    {(me.exchange.offersReceived > 0 || me.exchange.offersSent > 0) && <NavLink to="/market?view=mine" className="wallet-banner">
       <ArrowLeftRight />
       <span>
         {me.exchange.offersReceived > 0 && <b>받은 교환 제안 {me.exchange.offersReceived}건</b>}
@@ -172,7 +172,7 @@ export default function CouponWallet({ me, state, refresh, notify }: {
         </div>
         {coupon.status === 'redeeming' && code
           ? <div className="redeem-code"><QrCode /><b>{code}</b><small>사장님께 보여주세요<br />{rules.redeemHoldMinutes}분 내 미확인 시 반환</small></div>
-          : ['listed', 'offered'].includes(coupon.status) ? <div className="coupon-actions coupon-exchange-state"><ArrowLeftRight /><b>{coupon.status === 'listed' ? '교환 제안을 기다리는 중' : '보낸 교환 제안 처리 중'}</b><small>교환이 끝나거나 취소될 때까지 쿠폰이 안전하게 잠깁니다.</small><NavLink to="/market">교환 현황 보기 <ChevronRight /></NavLink></div>
+          : ['listed', 'offered'].includes(coupon.status) ? <div className="coupon-actions coupon-exchange-state"><ArrowLeftRight /><b>{coupon.status === 'listed' ? '교환 제안을 기다리는 중' : '보낸 교환 제안 처리 중'}</b><small>교환이 끝나거나 취소될 때까지 쿠폰이 안전하게 잠깁니다.</small><NavLink to="/market?view=mine">교환 현황 보기 <ChevronRight /></NavLink></div>
           : <div className="coupon-actions">
               <button disabled={coupon.status !== 'available' || busyId === coupon.id} onClick={() => redeem(coupon)}>
                 <Check size={14} /> 사용하기

@@ -557,7 +557,7 @@ begin
     format('%s님이 %s%% %s(으)로 교환을 제안했어요.',
       (select name from meoktu.profiles where id = p_user),
       (select discount from meoktu.coupons where id = p_coupon),
-      (select title from meoktu.coupons where id = p_coupon)), '/my');
+      (select title from meoktu.coupons where id = p_coupon)), '/market?view=mine');
   perform meoktu.log_audit(p_user, 'coupon.offer', 'listing', p_listing,
     format('%s 교환 제안', (select title from meoktu.coupons where id = p_coupon)));
   perform meoktu.bump_version();

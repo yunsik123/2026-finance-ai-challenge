@@ -2097,7 +2097,7 @@ app.post('/api/listings/:listingId/offers', auth(), async (req: AuthedRequest, r
     db.couponOffers.push(offer)
     audit(me.id, 'coupon.offer', 'listing', listing.id, `${offered.title} 교환 제안`)
     pushNotification(listing.userId, 'offer_received', '새 교환 제안이 왔어요',
-      `${me.name}님이 ${offered.discount}% ${offered.title}(으)로 교환을 제안했어요.`, '/my')
+      `${me.name}님이 ${offered.discount}% ${offered.title}(으)로 교환을 제안했어요.`, '/market?view=mine')
     await saveDatabase(); changed()
     return { status: 201, body: { message: '교환 제안을 보냈어요. 등록자가 수락하면 바로 교환돼요.', offer, settled: false } }
   })

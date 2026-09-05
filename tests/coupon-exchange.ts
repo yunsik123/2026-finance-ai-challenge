@@ -80,7 +80,15 @@ assert(!duplicate.ok, '같은 매물에 중복 제안을 보낼 수 없어야 �
 
 // 등록자에게 알림이 갔는가
 const aInbox = await ok('/api/notifications', {}, marketA.token)
-assert(aInbox.notifications.some((item: any) => item.type === 'offer_received'), '등록자에게 제안 알림이 가야 합니다.')
+const receivedNotification = aInbox.notifications.find((item: any) => item.type === 'offer_received')
+assert(receivedNotification, '등록자에게 제안 알림이 가야 합니다.')
+assert(receivedNotification.link === '/market?view=mine', '제안 알림을 누르면 바로 수락·거절 화면으로 가야 합니다.')
+
+// 마이페이지가 사용하는 /api/me 집계와 “내 교환” 화면의 원장에 모두 같은 제안이 드러나야 한다.
+const marketABeforeAccept = await ok('/api/me', {}, marketA.token)
+assert(marketABeforeAccept.exchange.offersReceived > 0, '마이페이지에 받은 교환 제안 건수가 표시되어야 합니다.')
+const marketAMine = await ok('/api/market/mine', {}, marketA.token)
+assert(marketAMine.listings.some((listing: any) => listing.offers.some((item: any) => item.id === offered.offer.id && item.stillValid)), '내 교환 화면에 수락 가능한 제안이 보여야 합니다.')
 
 // 제안자가 아닌 사람은 수락할 수 없다
 const wrongAccepter = await post(`/api/offers/${offered.offer.id}/accept`, {}, marketB.token)
@@ -89,6 +97,10 @@ assert(!wrongAccepter.ok, '매물 등록자만 제안을 수락할 수 있어야
 // 등록자가 수락 → 체결
 const accepted = await ok(`/api/offers/${offered.offer.id}/accept`, { method: 'POST' }, marketA.token)
 assert(accepted.trade.mode === 'offer', '제안 수락 거래로 기록되어야 합니다.')
+
+const marketAAfter = await ok('/api/me', {}, marketA.token)
+assert(marketAAfter.exchange.offersReceived === 0, '수락한 제안은 마이페이지의 대기 건수에서 빠져야 합니다.')
+assert(marketAAfter.coupons.some((item: any) => item.id === 'c-market-2' && item.status === 'available'), '등록자도 수락 직후 상대 쿠폰을 받아야 합니다.')
 
 const ownerAfter = await ok('/api/me', {}, owner.token)
 const gotDotori = ownerAfter.coupons.find((item: any) => item.id === 'c-market-3')
