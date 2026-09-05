@@ -51,7 +51,7 @@ for (const filename of ['.env.local', '.env.development.local', '.env']) {
 // (통합 테스트가 실제 data/db.json 의 쿠폰 매물을 소진시키는 문제를 막는다.)
 const dataDir = process.env.MEOKTU_DATA_DIR
   ? path.resolve(root, process.env.MEOKTU_DATA_DIR)
-  : process.env.VERCEL ? path.join('/tmp', 'meoktu') : path.join(root, 'data')
+  : path.join(root, 'data')
 const dbPath = path.join(dataDir, 'db.json')
 const port = Number(process.env.PORT || 8787)
 const secret = process.env.APP_SECRET || 'meoktu-local-development-secret-change-me'
@@ -95,7 +95,6 @@ if ((stateStoreMode === 'supabase' || stateStoreMode === 'tables') && (!supabase
   throw new Error(`STATE_STORE=${stateStoreMode} requires ${missing}`)
 }
 const useSharedState = stateStoreMode === 'supabase' || stateStoreMode === 'tables'
-  || (stateStoreMode !== 'file' && Boolean(supabaseUrl && supabaseServiceKey) && Boolean(process.env.VERCEL))
 // 정규화 테이블은 반드시 STATE_STORE=tables 로 명시해야 켜진다.
 // 미지정이면 예전대로 app_state 를 쓴다. 이미 떠 있는 배포가 meoktu 스키마를
 // 적용하기 전에 자동으로 갈아타면 기동 자체가 실패하기 때문이다(npm run db:migrate 선행 필요).
@@ -4273,11 +4272,9 @@ app.use((error: Error, _req: Request, res: Response, _next: NextFunction) => {
 
 io.on('connection', (socket) => socket.emit('connected', { at: now() }))
 
-if (!process.env.VERCEL) {
-  httpServer.listen(port, '0.0.0.0', () => {
-    console.log(`Meoktu server running on http://localhost:${port}`)
-  })
-}
+httpServer.listen(port, '0.0.0.0', () => {
+  console.log(`Meoktu server running on http://localhost:${port}`)
+})
 
 export { app }
 export default app

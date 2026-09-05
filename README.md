@@ -403,22 +403,34 @@ npm run test:integration
 `server/sitemap.ts`의 메뉴명·버튼명은 실제 화면과 1:1로 맞춰야 합니다.
 안 고치면 AI 상담원이 존재하지 않는 버튼을 안내하게 됩니다. 파일 맨 위 주석에도 같은 내용이 적혀 있습니다.
 
-## Vercel
+## 배포 (Cloud Run)
 
-`api/index.ts`가 Express 서버리스 함수 진입점이고, `vercel.json`이 `/api/*` 요청을 함수로 전달하고 나머지 경로를 Vite SPA로 연결합니다. 필요한 Vercel 환경변수는 다음과 같습니다.
+Vercel 은 더 이상 쓰지 않는다. 서버와 프론트엔드를 한 컨테이너로 묶어 Cloud Run 하나로 낸다.
+서버리스 함수로 쪼갤 때 생기던 제약(소켓을 못 열고, 인스턴스마다 원장이 갈라지던 문제)이 사라지고,
+Vertex AI·Cloud SQL 인증도 서비스 계정으로 자동 처리된다.
+
+```bash
+bash scripts/deploy-cloudrun.sh            # 평소용 (min-instances=0, 안 쓰면 요금 0원)
+DEMO=1 bash scripts/deploy-cloudrun.sh     # 시연용 (min-instances=2, 콜드스타트 없음)
+```
+
+이미지는 Cloud Build 가 클라우드에서 만든다. 로컬에 Docker 가 없어도 된다.
+
+배포에 들어가는 환경변수:
 
 - `STATE_STORE=postgres`
-- `INSTANCE_CONNECTION_NAME` (Cloud Run), 또는 `DATABASE_URL` (로컬·스키마 적용)
-- `DB_USER`, `DB_PASSWORD`, `DB_NAME`
+- `INSTANCE_CONNECTION_NAME` — Cloud Run 이 `/cloudsql` 소켓으로 붙는다
+- `DB_USER`, `DB_NAME` (암호는 Secret Manager)
 - `GOOGLE_CLOUD_PROJECT`, `VERTEX_LOCATION=global`
-- `VERTEX_CHAT_MODEL`, `VERTEX_OCR_MODEL` (선택, 기본: `gemini-3-flash-preview`)
-- `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD` (선택 — 없으면 서버 내장 그래프로 동작)
-- `APP_SECRET`
+- `VERTEX_CHAT_MODEL`, `VERTEX_OCR_MODEL` (선택, 기본 `gemini-3-flash-preview`)
+- `NEO4J_URI`, `NEO4J_USER` (암호는 Secret Manager)
+- `LIMIT_*` (선택 — 아래 '운영 한도' 참고)
 
-암호는 전부 Secret Manager 에 두고 Cloud Run 이 `--set-secrets` 로 주입받습니다.
-저장소에도 이미지에도 평문 암호가 남지 않습니다.
+암호 3개(`DB_PASSWORD`·`NEO4J_PASSWORD`·`APP_SECRET`)는 Secret Manager 에 두고
+`--set-secrets` 로 주입한다. 저장소에도 이미지에도 평문 암호가 남지 않는다.
 
-운영 Vercel은 `STATE_STORE=supabase`로 Supabase의 `app_state` 한 행을 공유 원장으로 사용합니다. `STATE_STORE=supabase`인데 URL 또는 service role 키가 없으면 파일 원장으로 조용히 후퇴하지 않고 시작 단계에서 오류를 냅니다. `db/postgres-schema.sql`의 정규화 테이블과 트랜잭션 RPC는 후속 확장용 설계이며, 현재 MVP의 운영 쓰기는 `app_state` compare-and-set 잠금으로 직렬화됩니다.
+> 깃허브에 푸시해도 자동 배포되지 않는다. Cloud Build 트리거를 만들지 않았기 때문이다.
+> 배포는 위 스크립트로 직접 실행한다.
 
 ## 운영 한도와 확장 한계
 
