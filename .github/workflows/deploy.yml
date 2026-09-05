@@ -1,0 +1,79 @@
+# main 에 푸시하면 Cloud Run 으로 자동 배포한다.
+#
+# 인증은 Workload Identity Federation 을 쓴다. GitHub 이 발급한 OIDC 토큰을 구글이
+# 직접 검증하므로 저장소에 서비스 계정 키를 넣지 않는다. 유출될 비밀이 없다는 뜻이고,
+# 아래 두 값(provider, service_account)은 비밀이 아니라 공개 식별자다.
+#
+# 구글 쪽 설정(이미 되어 있음):
+#   워크로드 아이덴티티 풀   github
+#   공급자                  github-oidc  (yunsik123 소유 저장소만 허용)
+#   배포 계정               meoktu-deployer@...
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches: [main]
+  # 필요하면 액션 탭에서 손으로도 돌릴 수 있게 한다.
+  workflow_dispatch:
+
+# 배포가 겹치면 나중 것만 남긴다. 앞선 배포는 취소한다.
+concurrency:
+  group: deploy-cloud-run
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # OIDC 토큰을 받으려면 id-token 권한이 필요하다.
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: 의존성 설치
+        run: npm ci
+
+      # 배포 전에 깨진 코드를 걸러낸다. 여기서 실패하면 배포까지 가지 않는다.
+      - name: 타입 검사
+        run: npm run check
+
+      - name: 빌드
+        run: npm run build
+
+      # 통합 테스트는 로컬 파일 원장으로 돌린다.
+      # 운영 Cloud SQL 을 건드리지 않고, 생성형 자격증명이 없어도 규칙 폴백 경로로 검증된다.
+      - name: 통합 테스트
+        run: npm run test:integration
+        env:
+          STATE_STORE: file
+          NEO4J_URI: ''
+
+      - id: auth
+        name: Google Cloud 인증 (키 없음)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/968525132574/locations/global/workloadIdentityPools/github/providers/github-oidc
+          service_account: meoktu-deployer@project-74cf94c0-93f0-48ad-b8e.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Cloud Run 배포
+        run: bash scripts/deploy-cloudrun.sh
+        env:
+          PROJECT: project-74cf94c0-93f0-48ad-b8e
+          REGION: asia-northeast3
+          ZONE: asia-northeast3-a
+
+      - name: 배포 확인
+        run: |
+          URL=$(gcloud run services describe meoktu --region=asia-northeast3 --format='value(status.url)')
+          echo "배포 주소: $URL"
+          curl -sf "$URL/api/health" | tee /dev/stderr | grep -q '"ok":true'
+          echo "### 배포 완료 :rocket:" >> $GITHUB_STEP_SUMMARY
+          echo "$URL" >> $GITHUB_STEP_SUMMARY
