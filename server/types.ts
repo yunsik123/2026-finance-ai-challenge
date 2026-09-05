@@ -30,6 +30,9 @@ export interface DataConnection {
 export interface Restaurant {
   id: string
   ownerId?: string
+  /** 심사로 등록된 식당의 공개 여부. 기존 시드 식당은 값이 없어도 공개한다. */
+  verificationStatus?: 'submitted' | 'verified' | 'rejected'
+  sourceApplicationId?: string
   name: string
   emoji: string
   category: string
@@ -256,6 +259,23 @@ export interface Favorite {
   createdAt: string
 }
 
+/**
+ * 약관 동의 기록.
+ * 가입뿐 아니라 투자·회수·펀딩신청 때마다 "그 시점에 적용된 약관 버전"과 동의 시각을 남긴다.
+ * 나중에 약관이 바뀌어도 각 거래가 어떤 문서에 근거했는지 되짚을 수 있어야 하기 때문이다.
+ */
+export interface LegalConsent {
+  id: string
+  userId: string
+  context: 'signup' | 'invest' | 'withdraw' | 'owner_application'
+  documentIds: string[]
+  version: string
+  resourceType?: string
+  resourceId?: string
+  amount?: number
+  agreedAt: string
+}
+
 export interface AuditEvent {
   id: string
   actorId?: string
@@ -329,4 +349,5 @@ export interface Database {
   articles: Article[]
   etfs: EtfFund[]
   supportRequests?: SupportRequest[]
+  legalConsents?: LegalConsent[]
 }

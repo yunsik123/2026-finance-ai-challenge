@@ -20,10 +20,14 @@ function assert(value: unknown, message: string): asserts value {
   if (!value) throw new Error(message)
 }
 
+const legal = await request('/api/legal')
 const stamp = Date.now()
 const investor = await request('/api/auth/signup', {
   method: 'POST',
-  body: JSON.stringify({ email: `flow-${stamp}@meoktu.test`, password: 'test1234!', name: '흐름테스터', role: 'investor' }),
+  body: JSON.stringify({
+    email: `flow-${stamp}@meoktu.test`, password: 'test1234!', name: '흐름테스터', role: 'investor',
+    consent: { version: legal.version, documentIds: legal.required.signup },
+  }),
 })
 
 const before = await request('/api/me', {}, investor.token)
@@ -45,14 +49,20 @@ const target = publicBefore.restaurants.find((item: any) => item.fund.status ===
 const fundId = target?.fund.id
 const restaurantId = target?.id
 assert(target?.fund.status === 'trading', '자동매칭 테스트 대상 펀드는 거래 중이어야 합니다.')
-const invest = await request(`/api/funds/${fundId}/invest`, { method: 'POST', body: JSON.stringify({ amount: 20000 }) }, investor.token)
+const invest = await request(`/api/funds/${fundId}/invest`, { method: 'POST', body: JSON.stringify({
+  amount: 20000,
+  consent: { version: legal.version, documentIds: legal.required.invest },
+}) }, investor.token)
 assert(invest.matched === 20000 && invest.queued === 0, '기존 회수 대기 주문과 투자 예약이 즉시 체결되어야 합니다.')
 
 const afterInvest = await request('/api/me', {}, investor.token)
 const position = afterInvest.positions.find((item: any) => item.fundId === fundId)
 assert(position?.amount >= 20000, '체결된 투자금이 나의 식당에 즉시 나타나야 합니다.')
 
-const withdraw = await request(`/api/funds/${fundId}/withdraw`, { method: 'POST', body: JSON.stringify({ amount: 10000 }) }, investor.token)
+const withdraw = await request(`/api/funds/${fundId}/withdraw`, { method: 'POST', body: JSON.stringify({
+  amount: 10000,
+  consent: { version: legal.version, documentIds: legal.required.withdraw },
+}) }, investor.token)
 assert(withdraw.queued === 10000, '반대 투자 예약이 없으면 회수 주문이 대기해야 합니다.')
 const order = (await request('/api/me', {}, investor.token)).orders.find((item: any) => item.type === 'sell' && item.remaining === 10000)
 assert(order, '회수 대기 주문이 내 상태에 표시되어야 합니다.')
@@ -62,10 +72,16 @@ const orderFund = publicAfterOrder.restaurants.find((item: any) => item.fund.id 
 assert(!(orderFund.openBuyAmount > 0 && orderFund.openSellAmount > 0), '매수·매도 대기금액이 동시에 존재하면 안 됩니다.')
 const counterparty = await request('/api/auth/signup', {
   method: 'POST',
-  body: JSON.stringify({ email: `counter-${stamp}@meoktu.test`, password: 'test1234!', name: '상대테스터', role: 'investor' }),
+  body: JSON.stringify({
+    email: `counter-${stamp}@meoktu.test`, password: 'test1234!', name: '상대테스터', role: 'investor',
+    consent: { version: legal.version, documentIds: legal.required.signup },
+  }),
 })
 assert(orderFund.openSellAmount > 0 && orderFund.openSellAmount <= target.fund.goal * 0.01, '회수 대기금액은 한 사용자 투자 한도 안이어야 합니다.')
-const counterInvest = await request(`/api/funds/${fundId}/invest`, { method: 'POST', body: JSON.stringify({ amount: orderFund.openSellAmount }) }, counterparty.token)
+const counterInvest = await request(`/api/funds/${fundId}/invest`, { method: 'POST', body: JSON.stringify({
+  amount: orderFund.openSellAmount,
+  consent: { version: legal.version, documentIds: legal.required.invest },
+}) }, counterparty.token)
 assert(counterInvest.matched === orderFund.openSellAmount && counterInvest.queued === 0, '다른 사용자의 투자 예약이 전체 회수 대기금액과 즉시 체결되어야 합니다.')
 const sellerAfterMatch = await request('/api/me', {}, investor.token)
 assert(!sellerAfterMatch.orders.some((item: any) => item.id === order.id && item.remaining > 0), '첫 사용자의 회수 대기 주문이 체결 완료되어야 합니다.')
@@ -78,7 +94,10 @@ assert(review.review.visitVerified, '리뷰에는 방문 인증 표시가 있어
 
 const owner = await request('/api/auth/signup', {
   method: 'POST',
-  body: JSON.stringify({ email: `owner-flow-${stamp}@meoktu.test`, password: 'test1234!', name: '심사테스터', role: 'owner' }),
+  body: JSON.stringify({
+    email: `owner-flow-${stamp}@meoktu.test`, password: 'test1234!', name: '심사테스터', role: 'owner',
+    consent: { version: legal.version, documentIds: legal.required.signup },
+  }),
 })
 const application = await request('/api/applications', {
   method: 'POST',
@@ -98,6 +117,7 @@ const application = await request('/api/applications', {
     identityVerified: true,
     privacyConsent: true,
     creditConsent: true,
+    consent: { version: legal.version, documentIds: legal.required.owner_application },
     requestedLimit: 30000000,
     fundPurpose: '좌석 확대와 주방 설비 교체',
     businessPlan: '인테리어 1,500만원, 설비 1,000만원, 운전자금 500만원',

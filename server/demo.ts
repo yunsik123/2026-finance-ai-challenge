@@ -14,7 +14,7 @@
 
 import type {
   Application, Coupon, CouponListing, CouponOffer, CouponTrade, DataConnection,
-  Notification, Position, Review, Role, VisitVerification, WalletTransaction,
+  LegalConsent, Notification, Position, Review, Role, VisitVerification, WalletTransaction,
 } from './types.ts'
 
 /** 4시간. 체험 토큰의 만료 시간과 맞춘다. */
@@ -40,6 +40,8 @@ export type DemoSandbox = {
   applications: Application[]
   notifications: Notification[]
   walletTransactions: WalletTransaction[]
+  /** 체험에서도 위험고지 동의를 똑같이 받고 남긴다. 세션이 끝나면 함께 사라진다. */
+  consents: LegalConsent[]
   /** 체험 투자로 늘어난 것처럼 보여줄 펀드별 금액. 실제 펀드는 그대로다. */
   fundDeltas: Record<string, number>
   /** 사장님 체험에서 매출 공개 토글 상태. */
@@ -73,7 +75,7 @@ export function sandboxFor(id: string, role: Role): DemoSandbox {
     cash: role === 'investor' ? 300_000 : 0,
     positions: [], coupons: [], listings: [], offers: [], trades: [],
     reviews: [], visits: [], favorites: [], connections: [],
-    applications: [], notifications: [], walletTransactions: [],
+    applications: [], notifications: [], walletTransactions: [], consents: [],
     fundDeltas: {},
   }
   sandboxes.set(id, created)
@@ -112,4 +114,4 @@ export function demoNotification(sandbox: DemoSandbox, type: string, title: stri
   return notification
 }
 
-export type { Coupon, CouponListing, CouponOffer, CouponTrade, Position, Review, VisitVerification }
+export type { Coupon, CouponListing, CouponOffer, CouponTrade, LegalConsent, Position, Review, VisitVerification }

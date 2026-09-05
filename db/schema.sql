@@ -116,6 +116,7 @@ create table if not exists meoktu.restaurants (
   sales_disclosure boolean not null default false,
   verification_status text not null default 'draft'
     check (verification_status in ('draft', 'submitted', 'verified', 'rejected')),
+  source_application_id text,
   -- 서술형 부가정보는 조회만 하고 조건 검색을 하지 않아 jsonb 로 둔다.
   food_description text,
   dining_notes  text,
@@ -123,6 +124,7 @@ create table if not exists meoktu.restaurants (
   menu_highlights jsonb not null default '[]'::jsonb,
   created_at    timestamptz not null default now()
 );
+alter table meoktu.restaurants add column if not exists source_application_id text;
 create index if not exists restaurants_owner_idx on meoktu.restaurants(owner_id);
 create index if not exists restaurants_discover_idx on meoktu.restaurants(region, category);
 

@@ -17,6 +17,8 @@ async function ok(path: string, options: RequestInit = {}, token?: string) {
 }
 function assert(value: unknown, message: string): asserts value { if (!value) throw new Error(message) }
 
+const legal = await ok('/api/legal')
+
 /* 1. 체험 세션은 실제로 동작하되 공유 원장을 건드리지 않는다. */
 const demoInvestor = await ok('/api/auth/demo', { method: 'POST', body: JSON.stringify({ role: 'investor' }) })
 const demoInvestorMe = await ok('/api/me', {}, demoInvestor.token)
@@ -29,7 +31,10 @@ assert(demoTopup.ephemeral === true, '체험 충전 결과는 비영구임을 �
 assert(demoTopup.balance === demoInvestorMe.user.cash + 50000, '체험 충전이 체험 잔액에 반영되어야 합니다.')
 
 const demoTarget = (await ok('/api/public')).restaurants.find((item: any) => item.fund.status === 'funding')
-const demoInvest = await ok(`/api/funds/${demoTarget.fund.id}/invest`, { method: 'POST', body: JSON.stringify({ amount: 20000 }) }, demoInvestor.token)
+const demoInvest = await ok(`/api/funds/${demoTarget.fund.id}/invest`, { method: 'POST', body: JSON.stringify({
+  amount: 20000,
+  consent: { version: legal.version, documentIds: legal.required.invest },
+}) }, demoInvestor.token)
 assert(demoInvest.ephemeral === true, '체험 투자 결과는 비영구임을 표시해야 합니다.')
 const demoAfterInvest = await ok('/api/me', {}, demoInvestor.token)
 assert(demoAfterInvest.positions.some((item: any) => item.fundId === demoTarget.fund.id && item.amount === 20000), '체험 투자금이 체험 포트폴리오에 남아야 합니다.')
@@ -97,6 +102,7 @@ const applicationPayload = {
   uploadedDocuments: { business: 'meoktu-business-sample.png', license: 'license-sample.png', account: 'meoktu-account-sample.csv' },
   documentMetadata: { account: { size: 512, type: 'text/csv', rowCount: 5, headers: ['거래일시', '입금액', '출금액', '잔액', '거래상대방', '적요'] } },
   identityVerified: true, privacyConsent: true, creditConsent: true,
+  consent: { version: legal.version, documentIds: legal.required.owner_application },
   fundPurpose: '주방 설비 교체', businessPlan: '조리 시간을 줄이고 좌석 회전율을 높입니다.', expectedEffect: '대기시간 단축', requestedLimit: 30000000,
 }
 const reviewed = await ok('/api/applications', { method: 'POST', body: JSON.stringify(applicationPayload) }, ownerAccount.token)

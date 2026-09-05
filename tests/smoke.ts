@@ -10,6 +10,7 @@ async function request(path: string, options: RequestInit = {}, token?: string) 
 }
 
 const checks: string[] = []
+const legal = await request('/api/legal')
 const publicState = await request('/api/public')
 if (publicState.restaurants.length !== 12 || publicState.funds.length !== 12) throw new Error('seed count mismatch')
 checks.push('12 restaurants and funds')
@@ -28,7 +29,10 @@ const changed = new Promise<void>((resolve, reject) => {
   const timeout = setTimeout(() => reject(new Error('realtime timeout')), 4000)
   socket.once('state:changed', () => { clearTimeout(timeout); resolve() })
 })
-await request('/api/funds/f-sobok/invest', { method: 'POST', body: JSON.stringify({ amount: 1000 }) }, login.token)
+await request('/api/funds/f-sobok/invest', { method: 'POST', body: JSON.stringify({
+  amount: 1000,
+  consent: { version: legal.version, documentIds: legal.required.invest },
+}) }, login.token)
 await changed
 socket.disconnect()
 checks.push('investment and realtime broadcast')
@@ -56,6 +60,7 @@ const applicationBody = (contents: Record<string, string>) => JSON.stringify({
   connectedSources: ['business', 'license', 'identity', 'pos', 'account', 'card', 'delivery', 'tax', 'customer', 'lease', 'debt', 'staff'],
   uploadedDocuments: { business: 'business.pdf', license: 'license.pdf', pos: 'pos.csv', account: 'account.csv', card: 'card.csv', delivery: 'delivery.csv', tax: 'tax.pdf', customer: 'customer.csv', lease: 'lease.pdf', debt: 'debt.pdf', staff: 'staff.csv' },
   documentContents: contents, identityVerified: true, privacyConsent: true, creditConsent: true,
+  consent: { version: legal.version, documentIds: legal.required.owner_application },
   fundPurpose: '주방 설비 교체', businessPlan: '조리 시간을 단축해 좌석 회전율과 고객 만족도를 높입니다.', requestedLimit: 30000000,
 })
 

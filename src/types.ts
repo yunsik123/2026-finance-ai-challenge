@@ -19,7 +19,7 @@ export interface Fund {
 }
 
 export interface Restaurant {
-  id: string; ownerId?: string; name: string; emoji: string; category: string; region: string; neighborhood: string
+  id: string; ownerId?: string; verificationStatus?: 'submitted' | 'verified' | 'rejected'; sourceApplicationId?: string; name: string; emoji: string; category: string; region: string; neighborhood: string
   tagline: string; description: string; signature: string; avgPrice: number; maxMenuPrice: number; openedYears: number
   monthlySales: number; salesGrowth: number; repeatRate: number; footTrafficGrowth: number; competition: string; closingRate: number
   rating: number; reviewCount: number; supporters: number; communityScore: number; stabilityScore: number; story: string; color: string; tags: string[]
@@ -110,6 +110,39 @@ export interface MeState {
   unreadNotifications: number
   exchange: { openListings: number; offersReceived: number; offersSent: number; trades: number }
   rules: ExchangeRules
+  legalConsents?: LegalConsentRecord[]
+  legalVersion?: string
+}
+
+export type LegalContext = 'signup' | 'invest' | 'withdraw' | 'owner_application'
+
+export interface LegalSummary {
+  id: string
+  title: string
+  summary: string
+  audience: 'all' | 'investor' | 'owner'
+  requiredFor: LegalContext[]
+}
+
+export interface LegalDocument extends LegalSummary {
+  sections: Array<{ heading: string; body: string[] }>
+}
+
+export interface LegalIndex {
+  version: string
+  documents: LegalSummary[]
+  required: Record<LegalContext, string[]>
+}
+
+export interface LegalConsentRecord {
+  id: string
+  context: LegalContext
+  documentIds: string[]
+  version: string
+  resourceType?: string
+  resourceId?: string
+  amount?: number
+  agreedAt: string
 }
 
 export interface OcrResult {

@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
+import { NavLink } from 'react-router-dom'
 import { ArrowLeft, BadgeCheck, Banknote, Building2, Check, Database, Download, Eraser, FileSpreadsheet, FolderDown, Landmark, Link2, LockKeyhole, PlugZap, ReceiptText, ShieldCheck, Sparkles, Store, UploadCloud, UserCheck, Users, type LucideIcon } from 'lucide-react'
 import { api } from './lib/api.ts'
 import OwnerDashboard from './OwnerDashboard.tsx'
 import CouponVerify from './CouponVerify.tsx'
 import VerificationReport from './VerificationReport.tsx'
 import CreditGradePanel from './CreditGradePanel.tsx'
+import { LegalDocModal, useLegalIndex } from './LegalCenter.tsx'
 import type { ApplicationResult, MeState, OcrAnalysis } from './types.ts'
 
 const won = (value: number) => `${Math.round(value).toLocaleString('ko-KR')}원`
@@ -55,6 +57,9 @@ type DocumentMetadata = { name: string; size: number; type: string; rowCount: nu
  */
 const sampleProfile: Record<string, string> = {
   restaurantName: '샘플식당',
+  category: '한식',
+  signature: '들기름 고등어 한상',
+  avgPrice: '13000',
   ownerName: '김소담',
   businessNumber: '123-45-67891',
   licenseNumber: '제 2022-마포-0451 호',
@@ -136,7 +141,15 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
   const [result, setResult] = useState<ApplicationResult | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [fillingSamples, setFillingSamples] = useState(false)
+  const legal = useLegalIndex()
+  const [agreedDocuments, setAgreedDocuments] = useState<string[]>([])
+  const [readingLegal, setReadingLegal] = useState('')
   const formRef = useRef<HTMLFormElement | null>(null)
+
+  const consentDocuments = (legal?.documents || []).filter((document) => legal?.required.owner_application.includes(document.id))
+  const allConsentsAgreed = consentDocuments.length > 0 && consentDocuments.every((document) => agreedDocuments.includes(document.id))
+  const toggleConsent = (documentId: string) => setAgreedDocuments((current) => current.includes(documentId)
+    ? current.filter((item) => item !== documentId) : [...current, documentId])
 
   useEffect(() => { if (owner) api<any>('/api/owner').then(setOwnerData).catch(() => undefined) }, [owner, me?.applications.length])
   const restaurant = ownerData?.restaurants?.[0]
@@ -157,6 +170,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
     setDocumentMetadata({})
     setOcrResults({})
     setIdentityVerified(false)
+    setAgreedDocuments([])
     setResult(null)
   }
   const beginApplication = () => {
@@ -224,12 +238,12 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
       if (form) {
         for (const [name, value] of Object.entries(sampleProfile)) {
           const field = form.elements.namedItem(name)
-          if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement) field.value = value
+          if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement || field instanceof HTMLSelectElement) field.value = value
         }
       }
       setIdentityVerified(true)
       const rows = metadataList.reduce((sum, item) => sum + item.rowCount, 0)
-      notify(`샘플 자료 ${files.length}종을 올렸어요. 표 자료 ${rows.toLocaleString('ko-KR')}행을 확인했고 1·4단계 입력란도 채웠습니다. 3단계 필수 동의 2개만 체크하면 자동분석을 실행할 수 있어요.`)
+      notify(`샘플 자료 ${files.length}종을 올렸어요. 표 자료 ${rows.toLocaleString('ko-KR')}행을 확인했고 1·4단계 입력란도 채웠습니다. 3단계 필수 고지를 확인하면 자동분석을 실행할 수 있어요.`)
     } catch (error) { notify((error as Error).message) }
     finally { setFillingSamples(false) }
   }
@@ -277,6 +291,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!owner) { onLogin(); return }
+    if (!legal || !allConsentsAgreed) { notify('필수 고지사항을 모두 확인하고 동의해주세요.'); return }
     const form = new FormData(event.currentTarget)
     const connectedSources = [...Object.keys(uploadedFiles), ...(identityVerified ? ['identity'] : [])]
     // CSV 본문을 함께 보낸다. 서버가 이 원자료를 직접 합산해 심사 지표를 만든다.
@@ -296,6 +311,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
       identityVerified,
       privacyConsent: form.get('privacyConsent') === 'true',
       creditConsent: form.get('creditConsent') === 'true',
+      consent: { version: legal.version, documentIds: agreedDocuments },
     }
     for (const [key, value] of form.entries()) {
       if (key.startsWith('document-') || key.endsWith('Consent')) continue
@@ -307,7 +323,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
     finally { setSubmitting(false) }
   }
 
-  return <div className="owner-page owner-v2">
+  return <><div className="owner-page owner-v2">
     <section className="owner-page-hero">
       <div><span className="eyebrow light"><Store /> 먹투 사장님 센터</span><h1>제출한 자료와<br /><em>기관 연결을 구분해요.</em></h1><p>사장님 직접 업로드와 제휴기관 전송을 출처별로 기록하고 POS·계좌·카드·세무·상권을 교차검증합니다.</p><div className="owner-values"><span><Check /> 신청비 0원</span><span><Check /> 평균 3분 예비심사</span><span><Check /> 조건부 승인 가능</span><span><Check /> 출처 구분 원장</span><span><Check /> 6단계 교차검증</span><span><Check /> 부족한 자료는 미산정</span></div></div>
       <div className="review-flow data-flow"><b>펀딩 등록 흐름</b>{['사업자·대표자 인증','직접 업로드/기관연동 선택','최소 필수 동의 확인','35지표 먹투 성장성 예비평가','결측·위험 관리자 확인','펀딩 등록과 공개범위 선택'].map((title,index) => <div key={title}><span>{index+1}</span><p>{title}</p><Check /></div>)}</div>
@@ -336,7 +352,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
         <div className="result-explanation"><b>심사 설명</b><p>{result.explanation}</p><span>AI 제안 한도 {won(result.approvedLimit)}{result.requestedLimit ? ` · 희망 ${won(result.requestedLimit)}` : ''} · 운영자 확정 전 참고값</span></div>
         {/* 초기 MVP에 있던 안내. 점수가 낮게 나왔을 때 사장님이 가장 먼저 궁금해하는 것이라 되살렸다. */}
         <div className="result-why"><b>왜 바로 탈락시키지 않았나요?</b><p>먹투는 기존 신용점수만으로 판단하지 않습니다. 실제 고객의 재방문과 최근 성장 흐름이 보이면 조건부 승인이나 사람의 추가 검토 기회를 드려요. 자료가 부족하다는 이유만으로 자동 거절하지 않습니다.</p></div>
-        <button className="button" onClick={goBack}>사장님 센터로 돌아가기</button>
+        <div className="owner-result-actions"><NavLink className="button" to="/owner/my">마이페이지에서 결과 확인</NavLink><button className="button secondary" onClick={goBack}>사장님 센터로 돌아가기</button></div>
       </section> : (!owner || showForm || !restaurant) && <form ref={formRef} className={`application-form source-application ${!owner ? 'locked' : ''}`} onSubmit={submit}>
         {!owner && <div className="owner-lock-overlay"><LockKeyhole /><h2>사장님 계정 전용 기능이에요</h2><p>상호명과 자료 업로드를 포함한 모든 입력은 소상공인 계정으로 로그인한 뒤 사용할 수 있습니다.</p><button type="button" className="button" onClick={onLogin}>{me ? '소상공인 계정으로 다시 로그인' : '로그인·회원가입'}</button></div>}
         <fieldset disabled={!owner}>
@@ -348,7 +364,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
 
           <section className="form-section">
             <div className="form-section-title"><span>1</span><div><h3>사업체 기본정보와 대표자 확인</h3><p>상권 자료는 주소를 기준으로 먹투가 직접 수집합니다.</p></div></div>
-            <div className="field-grid"><label className="field"><span>상호명</span><input name="restaurantName" required placeholder="예: 소복소복" /></label><label className="field"><span>대표자명</span><input name="ownerName" required placeholder="사업자등록증과 동일하게" /></label><label className="field"><span>사업자등록번호</span><input name="businessNumber" required placeholder="000-00-00000" /></label><label className="field"><span>영업신고번호</span><input name="licenseNumber" required placeholder="신고번호 입력" /></label><label className="field full-field"><span>사업장 주소</span><input name="address" required placeholder="상권·경쟁·생활인구 분석에 사용됩니다." /></label></div>
+            <div className="field-grid"><label className="field"><span>상호명</span><input name="restaurantName" required placeholder="예: 소복소복" defaultValue={restaurant?.name} /></label><label className="field"><span>대표자명</span><input name="ownerName" required placeholder="사업자등록증과 동일하게" /></label><label className="field"><span>업종</span><select name="category" required defaultValue={restaurant?.category || '한식'}><option>한식</option><option>중식</option><option>일식</option><option>양식</option><option>카페·베이커리</option><option>분식</option><option>주점</option><option>기타</option></select></label><label className="field"><span>대표 메뉴</span><input name="signature" required placeholder="예: 들기름 고등어 한상" defaultValue={restaurant?.signature} /></label><label className="field"><span>평균 식사 가격</span><div className="number-field"><input type="number" name="avgPrice" min={1000} step={1000} defaultValue={restaurant?.avgPrice || 12000} required /><span>원</span></div></label><label className="field"><span>사업자등록번호</span><input name="businessNumber" required placeholder="000-00-00000" /></label><label className="field"><span>영업신고번호</span><input name="licenseNumber" required placeholder="신고번호 입력" /></label><label className="field full-field"><span>사업장 주소</span><input name="address" required placeholder="상권·경쟁·생활인구 분석에 사용됩니다." /></label></div>
             <button type="button" className={`identity-action ${identityVerified ? 'verified' : ''}`} onClick={() => setIdentityVerified(true)}><UserCheck />{identityVerified ? '대표자 본인인증 완료' : '휴대전화로 대표자 본인인증'}<span>{identityVerified ? '신청자와 대표자 일치 여부를 확인했습니다.' : 'MVP에서는 버튼을 누르면 시연용 인증이 완료됩니다.'}</span></button>
           </section>
 
@@ -364,9 +380,12 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
           </section>
 
           <section className="form-section legal-consent-section">
-            <div className="form-section-title"><span>3</span><div><h3>분석에 꼭 필요한 동의만 확인</h3><p>마케팅·광고·제3자 제공 동의는 받지 않습니다. 아래 두 항목은 제출자료를 심사에 처리하기 위한 필수 동의입니다.</p></div></div>
-            <label className="legal-consent-card"><input type="checkbox" name="privacyConsent" value="true" required /><Check /><div><strong>[필수] 개인정보 수집·이용 동의</strong><p><b>목적</b> 대표자·사업체 확인, 펀딩 적격성 심사, 결과 설명 및 부정 신청 방지</p><p><b>항목</b> 대표자명·연락정보, 사업자·영업신고·임대차·직원 집계자료에 포함된 개인정보</p><p><b>보유</b> 심사 종료 또는 신청 철회 후 90일까지. 관계 법령상 별도 보존 의무가 있으면 해당 기간</p><small>동의를 거부할 수 있으나 대표자 확인과 심사를 진행할 수 없습니다.</small></div></label>
-            <label className="legal-consent-card"><input type="checkbox" name="creditConsent" value="true" required /><Check /><div><strong>[필수] 개인(신용)정보 수집·이용 동의</strong><p><b>목적</b> 실제 매출·현금흐름·상환부담 교차검증과 펀딩 가능 한도 산정</p><p><b>항목</b> 사업용 계좌 거래, 카드 정산, 대출잔액·금리·만기·원리금 상환 정보</p><p><b>보유</b> 심사 종료 또는 신청 철회 후 90일까지. 관계 법령상 별도 보존 의무가 있으면 해당 기간</p><small>동의를 거부할 수 있으나 핵심 현금흐름 검증과 자동심사를 진행할 수 없습니다.</small></div></label>
+            <div className="form-section-title"><span>3</span><div><h3>분석에 꼭 필요한 동의만 확인</h3><p>마케팅·광고 동의는 받지 않습니다. 각 항목의 ‘전문 보기’를 누르면 수집 항목·목적·보유기간과 이의제기 절차를 자세히 볼 수 있습니다.</p></div></div>
+            {consentDocuments.map((document) => <div className={`legal-consent-card owner-consent-card ${agreedDocuments.includes(document.id) ? 'checked' : ''}`} key={document.id}>
+              <label><input type="checkbox" name={document.id === 'privacy' ? 'privacyConsent' : document.id === 'credit-info' ? 'creditConsent' : `consent-${document.id}`} value="true" checked={agreedDocuments.includes(document.id)} onChange={() => toggleConsent(document.id)} required /><Check /><span><strong>[필수] {document.title}</strong><small>{document.summary}</small></span></label>
+              <button type="button" className="consent-view" onClick={() => setReadingLegal(document.id)}>전문 보기</button>
+            </div>)}
+            {!consentDocuments.length && <p className="legal-loading">필수 고지사항을 불러오는 중이에요.</p>}
             <div className="automated-analysis-note"><ShieldCheck /><p><b>자동분석 안내</b> 먹투 모델은 예비 점수와 설명을 만들지만 자동으로 최종 거절하지 않습니다. 자료 부족·불일치는 수동 심사로 보내며, 사장님은 결과 설명과 재검토를 요청할 수 있습니다.</p></div>
           </section>
 
@@ -377,12 +396,12 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
           </section>
 
           <section className="three-check-system"><h3>먹투 3중 검증</h3><div><span>① 공식자료</span><p>사업자·홈택스·대출·임대차</p></div><div><span>② 실제 영업자료</span><p>POS·카드·계좌·배달</p></div><div><span>③ 외부자료</span><p>상권·리뷰·고객수요·경쟁</p></div><small>서로 맞지 않는 값은 원인을 분류하고 수동 심사 대상으로 표시합니다.</small></section>
-          <button className="button full huge" disabled={submitting || !identityVerified}>{submitting ? '원천데이터를 교차검증하고 있어요...' : !identityVerified ? '대표자 본인인증을 먼저 완료해주세요' : demoMode ? '체험으로 자동분석 해보기' : '먹투 자동분석 시작'} <Database /></button>
+          <button className="button full huge" disabled={submitting || !identityVerified || !allConsentsAgreed}>{submitting ? '원천데이터를 교차검증하고 있어요...' : !identityVerified ? '대표자 본인인증을 먼저 완료해주세요' : !allConsentsAgreed ? '필수 고지사항에 모두 동의해주세요' : demoMode ? '체험으로 자동분석 해보기' : '먹투 자동분석 시작'} <Database /></button>
           <p className="form-disclaimer">이 결과는 금융기관의 공식 신용평가나 정부 SCB 결과가 아닌 먹투 성장성 예비평가이며 최종 펀딩 승인이 아닙니다. 실제 서비스 출시 전 개인정보·신용정보 처리 구조와 보유기간은 전문 법률 검토 및 제휴기관 요건 확인이 필요합니다.</p>
         </fieldset>
       </form>}
     </div>
-  </div>
+  </div>{readingLegal && <LegalDocModal documentId={readingLegal} onClose={() => setReadingLegal('')} />}</>
 }
 
 /**
@@ -396,7 +415,7 @@ function SampleAutoFill({ filling, uploadedCount, onFill, onClear }: { filling: 
     <span className="sample-autofill-icon"><Sparkles /></span>
     <div className="sample-autofill-copy">
       <b>샘플 자료 {total}종 한 번에 올리기</b>
-      <p>파일을 하나씩 고르지 않아도 <em>샘플식당</em>의 원자료를 위 카드에 자동으로 채우고, 1단계 사업체 정보와 4단계 작성란·대표자 인증까지 함께 완료합니다. 3단계 필수 동의 2개만 직접 체크하면 바로 자동분석 결과를 볼 수 있어요.</p>
+      <p>파일을 하나씩 고르지 않아도 <em>샘플식당</em>의 원자료를 위 카드에 자동으로 채우고, 1단계 사업체 정보와 4단계 작성란·대표자 인증까지 함께 완료합니다. 3단계 필수 고지는 전문을 확인한 뒤 직접 동의해주세요.</p>
       {uploadedCount > 0 && <strong><Check /> 현재 {uploadedCount}종의 자료가 올라가 있어요.</strong>}
     </div>
     <div className="sample-autofill-actions">

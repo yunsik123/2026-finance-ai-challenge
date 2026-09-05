@@ -41,7 +41,7 @@ begin
     signature, story, color, tags, avg_price, max_menu_price, opened_years, monthly_sales,
     sales_growth, repeat_rate, foot_traffic_growth, competition, closing_rate, rating,
     review_count, supporters, community_score, stability_score, sales_disclosure,
-    verification_status, food_description, dining_notes, strengths, menu_highlights)
+    verification_status, source_application_id, food_description, dining_notes, strengths, menu_highlights)
   select x.id,
          -- 원장에 남아 있어도 계정이 없으면 소유자를 비운다(FK 위반 방지).
          (select p.id from meoktu.profiles p where p.id = x."ownerId"),
@@ -57,7 +57,7 @@ begin
          coalesce(x."communityScore", 0), coalesce(x."stabilityScore", 0),
          coalesce(x."salesDisclosure", false),
          -- 기존 원장에는 심사 상태 개념이 없었다. 이미 노출 중인 식당이므로 verified 로 옮긴다.
-         'verified',
+         coalesce(x."verificationStatus", 'verified'), x."sourceApplicationId",
          x."foodDescription", x."diningNotes", coalesce(x.strengths, '{}'),
          coalesce(x."menuHighlights", '[]'::jsonb)
     from jsonb_to_recordset(coalesce(payload->'restaurants', '[]'::jsonb)) as x(
@@ -68,12 +68,14 @@ begin
       "repeatRate" numeric, "footTrafficGrowth" numeric, competition text,
       "closingRate" numeric, rating numeric, "reviewCount" integer, supporters integer,
       "communityScore" integer, "stabilityScore" integer, "salesDisclosure" boolean,
+      "verificationStatus" text, "sourceApplicationId" text,
       "foodDescription" text, "diningNotes" text, strengths text[], "menuHighlights" jsonb)
   on conflict (id) do update set
     name = excluded.name, monthly_sales = excluded.monthly_sales,
     sales_growth = excluded.sales_growth, repeat_rate = excluded.repeat_rate,
     rating = excluded.rating, review_count = excluded.review_count,
-    supporters = excluded.supporters, sales_disclosure = excluded.sales_disclosure;
+    supporters = excluded.supporters, sales_disclosure = excluded.sales_disclosure,
+    verification_status = excluded.verification_status, source_application_id = excluded.source_application_id;
   get diagnostics v_n = row_count; v_report := v_report || jsonb_build_object('restaurants', v_n);
 
   -- 12개월 매출 이력은 식당 문서 안에 배열로 들어 있어 행으로 펼친다.

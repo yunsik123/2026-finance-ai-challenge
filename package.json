@@ -13,6 +13,7 @@
     "test:amount": "tsx tests/amount-input.ts",
     "test:integration": "tsx tests/run.ts",
     "test:ai": "tsx tests/ai-eval.ts",
+    "test:owner": "tsx tests/owner-verification.ts",
     "db:check": "node scripts/apply-db.mjs --test",
     "db:apply": "node scripts/apply-db.mjs",
     "db:migrate": "node scripts/apply-db.mjs --import"

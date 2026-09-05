@@ -16,6 +16,8 @@ async function ok(path: string, options: RequestInit = {}, token?: string) {
 }
 function assert(value: unknown, message: string): asserts value { if (!value) throw new Error(message) }
 
+const legal = await ok('/api/legal')
+
 /* ── 1. 상권 원천데이터 매칭 ─────────────────────────────────── */
 
 // 목화다방은 성수동 → 성수동 상권과 정확히 매칭되어야 한다.
@@ -75,6 +77,7 @@ const application = (extra: Record<string, unknown>) => ({
   connectedSources: ['business', 'license', 'identity', 'pos', 'account', 'card', 'tax', 'debt', 'lease'],
   uploadedDocuments: { business: 'b.pdf', license: 'l.pdf', pos: 'p.csv', account: 'a.csv', card: 'c.csv', tax: 't.pdf', debt: 'd.pdf', lease: 'e.pdf' },
   identityVerified: true, privacyConsent: true, creditConsent: true,
+  consent: { version: legal.version, documentIds: legal.required.owner_application },
   fundPurpose: '주방 설비 교체', businessPlan: '조리 시간을 단축합니다.', requestedLimit: 30000000,
   ...extra,
 })

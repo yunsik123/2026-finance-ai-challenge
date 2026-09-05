@@ -51,6 +51,7 @@ create or replace function meoktu.export_ledger()
         'closingRate', r.closing_rate, 'rating', r.rating, 'reviewCount', r.review_count,
         'supporters', r.supporters, 'communityScore', r.community_score,
         'stabilityScore', r.stability_score, 'salesDisclosure', r.sales_disclosure,
+        'verificationStatus', r.verification_status, 'sourceApplicationId', r.source_application_id,
         'foodDescription', r.food_description, 'diningNotes', r.dining_notes,
         'strengths', meoktu.arr(r.strengths), 'menuHighlights', r.menu_highlights,
         'salesHistory', coalesce((select jsonb_agg(jsonb_build_object(

@@ -69,6 +69,25 @@ assert(answerNavigationQuestion(howTo).includes('내 쿠폰 등록'), '쿠폰 �
 const howToReply = await ok('/api/ai/chat', { method: 'POST', body: JSON.stringify({ role: 'investor', currentPath: '/market', question: howTo }) }, investor.token)
 assert(howToReply.mode !== 'account-ledger-local', '방법을 묻는 질문에 보유 쿠폰 집계로 답하면 안 됩니다.')
 
+// 상담창은 직전 대화를 한 API 요청에 함께 보내므로, 주어를 생략한 후속 질문도 같은 대상을 이어서 답해야 한다.
+const continuedCoupon = await ok('/api/ai/chat', { method: 'POST', body: JSON.stringify({
+  role: 'investor', currentPath: '/market', question: '그건 어디서 하면 돼?',
+  history: [
+    { role: 'user', content: '쿠폰 교환을 하고 싶어.' },
+    { role: 'assistant', content: '쿠폰 교환 방법을 안내해드릴게요.' },
+  ],
+}) }, investor.token)
+assert(continuedCoupon.answer.includes('거래장') && continuedCoupon.answer.includes('교환'), '지시어 후속 질문이 이전 쿠폰 교환 맥락을 이어야 합니다.')
+
+const continuedRestaurant = await ok('/api/ai/chat', { method: 'POST', body: JSON.stringify({
+  role: 'investor', currentPath: '/discover', question: '성장률은?',
+  history: [
+    { role: 'user', content: '소복소복에 대해 알려줘.' },
+    { role: 'assistant', content: '소복소복 정보를 알려드릴게요.' },
+  ],
+}) }, investor.token)
+assert(continuedRestaurant.answer.includes('소복소복') && continuedRestaurant.answer.includes('18.4'), '주어가 생략된 후속 질문도 이전 식당 맥락을 이어야 합니다.')
+
 // 상담 AI는 개인별 투자금액이나 가장 유리한 식당을 대신 결정하지 않는다.
 for (const question of ['소복소복에 50만원 투자하는 게 좋을까?', '어느 식당이 가장 유리한지 골라줘']) {
   const blocked = await ok('/api/ai/chat', { method: 'POST', body: JSON.stringify({ role: 'investor', currentPath: '/insight', question }) }, investor.token)
@@ -80,11 +99,18 @@ for (const question of ['소복소복에 50만원 투자하는 게 좋을까?', 
 
 // 예약 거래 카드의 “예약 걸기”와 “취소”가 사용하는 실제 API 흐름을 검증한다.
 const stamp = Date.now()
-const queueUser = await ok('/api/auth/signup', { method: 'POST', body: JSON.stringify({ email: `queue-ui-${stamp}@meoktu.test`, password: 'test1234!', name: '예약화면테스터', role: 'investor' }) })
+const legal = await ok('/api/legal')
+const queueUser = await ok('/api/auth/signup', { method: 'POST', body: JSON.stringify({
+  email: `queue-ui-${stamp}@meoktu.test`, password: 'test1234!', name: '예약화면테스터', role: 'investor',
+  consent: { version: legal.version, documentIds: legal.required.signup },
+}) })
 const publicState = await ok('/api/public')
 const emptyBookFund = publicState.funds.find((fund: any) => fund.status === 'trading' && fund.openSellAmount === 0)
 assert(emptyBookFund, '즉시 체결될 회수 주문이 없는 거래 중 펀드가 필요합니다.')
-const queued = await ok(`/api/funds/${emptyBookFund.id}/invest`, { method: 'POST', body: JSON.stringify({ amount: 1000 }) }, queueUser.token)
+const queued = await ok(`/api/funds/${emptyBookFund.id}/invest`, { method: 'POST', body: JSON.stringify({
+  amount: 1000,
+  consent: { version: legal.version, documentIds: legal.required.invest },
+}) }, queueUser.token)
 assert(queued.queued === 1000, '상세 화면의 투자 예약이 대기열에 들어가야 합니다.')
 const book = (await ok('/api/market/orderbook', {}, queueUser.token)).books.find((item: any) => item.fundId === emptyBookFund.id)
 const mine = book.buyQueue.find((entry: any) => entry.mine)

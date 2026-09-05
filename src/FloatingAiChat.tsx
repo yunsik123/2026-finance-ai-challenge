@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { ArrowRight, Bot, Database, MessageCircle, Sparkles, X } from 'lucide-react'
+import { ArrowRight, Bot, Database, MessageCircle, X } from 'lucide-react'
 import { useLocation } from 'react-router-dom'
 import { api } from './lib/api.ts'
 import type { Role } from './types.ts'
 
-type Source = { id: string; label: string; type: string }
-type Message = { role: 'user' | 'ai'; text: string; sources?: Source[] }
+type Message = { role: 'user' | 'ai'; text: string }
+type ChatHistoryTurn = { role: 'user' | 'assistant'; content: string }
 
 export default function FloatingAiChat({ role }: { role: Role }) {
   const location = useLocation()
@@ -32,11 +32,16 @@ export default function FloatingAiChat({ role }: { role: Role }) {
     setOpen(true); setQuestion(''); setAsking(true)
     setMessages((current) => [...current, { role: 'user', text: value }])
     try {
-      const result = await api<{ answer: string; mode: string; sources?: Source[] }>('/api/ai/chat', {
-        method: 'POST', body: JSON.stringify({ question: value, role, currentPath: location.pathname }),
+      // 첫 인사말은 빼고, 직전 대화를 한 요청에 함께 담아 후속 질문의 맥락을 유지한다.
+      const history: ChatHistoryTurn[] = messages.slice(1).slice(-12).map((message) => ({
+        role: message.role === 'ai' ? 'assistant' : 'user',
+        content: message.text,
+      }))
+      const result = await api<{ answer: string; mode: string }>('/api/ai/chat', {
+        method: 'POST', body: JSON.stringify({ question: value, history, role, currentPath: location.pathname }),
       })
       setMode(result.mode)
-      setMessages((current) => [...current, { role: 'ai', text: result.answer, sources: result.sources }])
+      setMessages((current) => [...current, { role: 'ai', text: result.answer }])
     } catch (error) {
       setMessages((current) => [...current, { role: 'ai', text: `잠시 연결이 원활하지 않아요. ${(error as Error).message}` }])
     } finally { setAsking(false) }
@@ -47,7 +52,7 @@ export default function FloatingAiChat({ role }: { role: Role }) {
     {open && <section className="floating-ai-panel" aria-label="먹투 AI 상담">
       <header><span className="floating-ai-avatar"><Bot /></span><div><b>먹투 AI 상담원</b><small><i /> {online ? '상담 가능' : '기본 안내 모드'}</small></div><button onClick={() => setOpen(false)} aria-label="AI 상담 닫기"><X /></button></header>
       <div className="floating-ai-context"><Database /><span><b>{role === 'owner' ? '사장님 상담' : '투자자 상담'}</b> · 현재 화면과 {role === 'owner' ? '내 심사·가게' : '내 투자·쿠폰'} 원장을 확인해 안내해요.</span></div>
-      <div className="floating-ai-messages" ref={scrollRef}>{messages.map((message, index) => <div className={`floating-message ${message.role}`} key={index}><p>{message.text}</p>{message.sources && message.sources.length > 0 && <div className="floating-sources"><span><Sparkles /> 참고한 정보</span>{message.sources.map((source) => <small key={source.id}>{source.label}</small>)}</div>}</div>)}{asking && <div className="floating-message ai typing">···</div>}</div>
+      <div className="floating-ai-messages" ref={scrollRef}>{messages.map((message, index) => <div className={`floating-message ${message.role}`} key={index}><p>{message.text}</p></div>)}{asking && <div className="floating-message ai typing">···</div>}</div>
       <div className="floating-ai-suggestions">{suggestions.map((item) => <button key={item} onClick={() => ask(item)}>{item}</button>)}</div>
       <form onSubmit={submit}><input value={question} onChange={(event) => setQuestion(event.target.value)} placeholder={role === 'owner' ? '내 심사·펀딩·쿠폰 운영을 물어보세요' : '내 투자·쿠폰·예약 거래를 물어보세요'} aria-label="AI 상담 질문" /><button disabled={asking || !question.trim()} aria-label="질문 보내기"><ArrowRight /></button></form>
       <p className="floating-ai-notice">답변은 참고용이며 투자 권유나 원금 보장이 아닙니다.</p>
