@@ -652,8 +652,8 @@ function issueCoupon(position: Position) {
  *
  * 지갑이 비어 있으면 교환장에 들어가도 "조건에 맞는 내 쿠폰이 없어요"만 보인다.
  * 그래서 이 서비스의 핵심인 쿠폰 교환을 한 번도 못 해보고 나가게 된다.
- * 계정을 만들 때와 체험 세션을 열 때 두 장을 미리 넣어 주고,
- * 그 두 장은 지금 열려 있는 매물과 교환 규칙(할인율 차이·액면가 배수·업종·지역)을
+ * 계정을 만들 때와 체험 세션을 열 때 다섯 장을 미리 넣어 주고,
+ * 그 쿠폰들은 지금 열려 있는 매물과 교환 규칙(할인율 차이·액면가 배수·업종·지역)을
  * 실제로 통과하도록 골라 두었다.
  *
  * 펀드에서 나온 쿠폰이 아니라 플랫폼이 주는 쿠폰이라 fundId 는 비운다.
@@ -663,17 +663,20 @@ function issueCoupon(position: Position) {
 const WELCOME_COUPONS = [
   { restaurantId: 'r-mealmill', discount: 26 },
   { restaurantId: 'r-podo', discount: 22 },
+  { restaurantId: 'r-greenbowl', discount: 24 },
+  { restaurantId: 'r-huaxiang', discount: 28 },
+  { restaurantId: 'r-oven', discount: 30 },
 ] as const
 const WELCOME_COUPON_DAYS = 60
 
-function buildWelcomeCoupons(userId: string, makeId: (prefix: string) => string): Coupon[] {
+function buildWelcomeCoupons(userId: string, makeId: (prefix: string) => string, occasion = '가입 축하'): Coupon[] {
   const expiresAt = new Date(Date.now() + WELCOME_COUPON_DAYS * 86400000).toISOString()
   return WELCOME_COUPONS.flatMap(({ restaurantId, discount }) => {
     const restaurant = db.restaurants.find((item) => item.id === restaurantId)
     if (!restaurant) return []
     return [{
       id: makeId('coupon'), userId, restaurantId: restaurant.id,
-      title: `${restaurant.name} ${discount}% 가입 축하 쿠폰`, discount,
+      title: `${restaurant.name} ${discount}% ${occasion} 쿠폰`, discount,
       maxDiscountWon: Math.floor(restaurant.maxMenuPrice * discount / 100),
       type: 'fund', status: 'available', createdAt: now(), expiresAt,
     } satisfies Coupon]
@@ -681,7 +684,7 @@ function buildWelcomeCoupons(userId: string, makeId: (prefix: string) => string)
 }
 
 const welcomeCouponMessage = (coupons: Coupon[]) =>
-  `${coupons.map((coupon) => coupon.title.replace(' 가입 축하 쿠폰', '')).join(', ')} 쿠폰을 지갑에 넣어 뒀어요. 교환장에서 원하는 식당 쿠폰으로 바꿔보세요.`
+  `${coupons.map((coupon) => coupon.title.replace(/ (?:가입 축하|체험 시작) 쿠폰$/, '')).join(', ')} 쿠폰을 지갑에 넣어 뒀어요. 교환장에서 원하는 식당 쿠폰으로 바꿔보세요.`
 
 /** 새 계정에 가입 축하 쿠폰을 넣는다. 이미 쿠폰이 있는 계정은 건드리지 않는다. */
 function grantWelcomeCoupons(user: User) {
@@ -973,17 +976,17 @@ const DEMO_PARTNER_PROVIDERS: Record<string, { title: string; provider: string; 
 const demoRestaurantOf = (restaurantId?: string) => db.restaurants.find((item) => item.id === restaurantId)
 
 /**
- * 체험 세션의 원장. 처음 열릴 때 가입 축하 쿠폰을 넣어 준다.
- * 체험자도 회원과 똑같이 지갑에 쿠폰 두 장을 들고 시작해야 교환장을 눌러볼 수 있다.
+ * 체험 세션의 원장. 처음 열릴 때 체험 시작 쿠폰을 넣어 준다.
+ * 체험자도 회원과 똑같이 지갑에 쿠폰 다섯 장을 들고 시작해야 교환장을 눌러볼 수 있다.
  */
 function demoSandbox(id: string, role: Role) {
   const sandbox = sandboxFor(id, role)
   if (!sandbox.welcomed && role === 'investor') {
     sandbox.welcomed = true
-    const coupons = buildWelcomeCoupons(sandbox.id, demoId)
+    const coupons = buildWelcomeCoupons(sandbox.id, demoId, '체험 시작')
     sandbox.coupons.unshift(...coupons)
     if (coupons.length) {
-      demoNotification(sandbox, 'coupon', `가입 축하 쿠폰 ${coupons.length}장이 도착했어요`, welcomeCouponMessage(coupons), '/market')
+      demoNotification(sandbox, 'coupon', `체험 시작 쿠폰 ${coupons.length}장이 도착했어요`, welcomeCouponMessage(coupons), '/market')
     }
   }
   return sandbox
@@ -1501,6 +1504,7 @@ app.post('/api/auth/signup', async (req, res) => {
 
 app.post('/api/auth/demo', (req, res) => {
   const role: Role = req.body?.role === 'owner' ? 'owner' : 'investor'
+  // 누를 때마다 무작위 sub가 든 새 토큰을 발급한다. 이전 체험 샌드박스를 이어 쓰지 않는다.
   const user: SessionUser = {
     id: `demo-${role}`, email: `${role}@demo-session.meoktu`, name: role === 'owner' ? '사장님 체험자' : '투자자 체험자',
     role, passwordHash: 'demo-session', cash: 0, createdAt: now(), sessionMode: 'demo',

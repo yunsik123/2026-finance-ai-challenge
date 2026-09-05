@@ -32,9 +32,12 @@ const investor = await request('/api/auth/signup', {
 
 const before = await request('/api/me', {}, investor.token)
 // 가입 직후 지갑이 비어 있으면 교환장에서 눌러볼 수 있는 게 없다. 축하 쿠폰이 들어가 있어야 한다.
-assert(investor.welcomeCoupons?.length >= 2, '가입 응답에 가입 축하 쿠폰이 담겨야 합니다.')
-assert(before.coupons.filter((item: any) => item.status === 'available').length >= 2, '가입 직후 지갑에 쓸 수 있는 쿠폰이 있어야 합니다.')
+assert(investor.welcomeCoupons?.length === 5, '최초 가입 응답에 가입 축하 쿠폰 5장이 담겨야 합니다.')
+assert(before.coupons.filter((item: any) => item.status === 'available').length === 5, '가입 직후 지갑에 쓸 수 있는 쿠폰 5장이 있어야 합니다.')
 assert(before.notifications.some((item: any) => item.type === 'coupon'), '가입 축하 쿠폰 알림이 있어야 합니다.')
+const loginAgain = await request('/api/auth/login', { method: 'POST', body: JSON.stringify({ email: `flow-${stamp}@meoktu.test`, password: 'test1234!', role: 'investor' }) })
+const afterLoginAgain = await request('/api/me', {}, loginAgain.token)
+assert(afterLoginAgain.coupons.length === before.coupons.length, '재로그인할 때 가입 축하 쿠폰을 다시 지급하면 안 됩니다.')
 const marketForNewbie = await request('/api/public', {}, investor.token)
 assert(marketForNewbie.listings.some((item: any) => item.matchableCouponIds.length > 0), '가입 축하 쿠폰으로 바로 교환할 수 있는 매물이 있어야 합니다.')
 const topup = await request('/api/wallet/topup', { method: 'POST', body: JSON.stringify({ amount: 123456 }) }, investor.token)

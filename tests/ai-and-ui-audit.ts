@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { answerNavigationQuestion, pageForRoute } from '../server/sitemap.ts'
 
 const base = process.env.MEOKTU_TEST_BASE || `http://localhost:${process.env.MEOKTU_TEST_PORT || 8787}`
@@ -9,6 +10,12 @@ async function ok(path: string, options: RequestInit = {}, token?: string) {
 }
 function assert(value: unknown, message: string): asserts value { if (!value) throw new Error(message) }
 const money = (value: number) => `${Math.round(value).toLocaleString('ko-KR')}원`
+
+// /owner/my 에서 상위 경로 /owner까지 활성화되면 데스크톱 점과 모바일 선택 표시가 두 개 생긴다.
+// 사장님 센터 링크는 정확한 /owner 경로에서만 활성화되도록 두 내비게이션 모두 end를 써야 한다.
+const appSource = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
+assert((appSource.match(/<NavLink end to="\/owner">/g) || []).length === 2,
+  '데스크톱·모바일 사장님 센터 링크는 /owner/my에서 비활성화되도록 정확히 일치해야 합니다.')
 
 // 실제 화면 문구와 상담 지도가 맞는지 기능별로 확인한다.
 const navigationCases = [

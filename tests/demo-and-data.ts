@@ -24,6 +24,7 @@ const demoInvestor = await ok('/api/auth/demo', { method: 'POST', body: JSON.str
 const demoInvestorMe = await ok('/api/me', {}, demoInvestor.token)
 assert(demoInvestorMe.user.sessionMode === 'demo', '투자자 체험 토큰은 demo 세션이어야 합니다.')
 assert(demoInvestorMe.user.cash > 0, '체험 투자자는 바로 눌러볼 수 있는 시작 잔액을 가져야 합니다.')
+assert(demoInvestorMe.coupons.length === 5, '투자자 체험은 매번 시작 쿠폰 5장을 받아야 합니다.')
 
 const ledgerCashBefore = (await ok('/api/public')).stats.funded
 const demoTopup = await ok('/api/wallet/topup', { method: 'POST', body: JSON.stringify({ amount: 50000 }) }, demoInvestor.token)
@@ -52,11 +53,13 @@ assert(sharedPublic.stats.funded === ledgerCashBefore, '체험 투자가 공유 
 
 const otherDemo = await ok('/api/auth/demo', { method: 'POST', body: JSON.stringify({ role: 'investor' }) })
 const otherDemoMe = await ok('/api/me', {}, otherDemo.token)
+assert(otherDemo.token !== demoInvestor.token && otherDemoMe.user.id !== demoInvestorMe.user.id, '투자자 체험에 다시 들어가면 새 세션이어야 합니다.')
+assert(otherDemoMe.user.cash === demoInvestorMe.demo.startingCash, '새 투자자 체험의 잔액은 시작 금액으로 초기화되어야 합니다.')
 assert(otherDemoMe.positions.length === 0, '체험 세션끼리도 서로의 기록이 보이면 안 됩니다.')
 // 새 체험 세션의 지갑에는 자기 가입 축하 쿠폰만 있어야 한다. 앞 세션이 발급한 쿠폰이 섞이면 안 된다.
 assert(!otherDemoMe.coupons.some((item: any) => item.id === demoCoupon.coupon.id), '앞 체험 세션의 쿠폰이 보이면 안 됩니다.')
-assert(otherDemoMe.coupons.length >= 2 && otherDemoMe.coupons.every((item: any) => item.status === 'available' && !item.fundId),
-  '체험 세션은 가입 축하 쿠폰을 들고 시작해야 합니다.')
+assert(otherDemoMe.coupons.length === 5 && otherDemoMe.coupons.every((item: any) => item.status === 'available' && !item.fundId),
+  '새 투자자 체험은 시작 쿠폰 5장만 들고 시작해야 합니다.')
 
 // 가입 축하 쿠폰만으로 교환장에서 실제 교환까지 해볼 수 있어야 한다.
 const demoMarket = await ok('/api/public', {}, otherDemo.token)
@@ -82,6 +85,11 @@ assert((await ok('/api/owner', {}, ownerAccount.token)).ocrAnalyses.length === b
 const demoConnection = await ok('/api/data-connections/pos', { method: 'POST', body: JSON.stringify({}) }, demoOwner.token)
 assert(demoConnection.ephemeral === true && demoConnection.connection.sourceId === 'pos', '체험 사장님은 기관 연결을 눌러볼 수 있어야 합니다.')
 assert((await ok('/api/owner', {}, ownerAccount.token)).dataConnections.every((item: any) => item.id !== demoConnection.connection.id), '체험 기관 연결이 실제 계정 원장에 남으면 안 됩니다.')
+const freshDemoOwner = await ok('/api/auth/demo', { method: 'POST', body: JSON.stringify({ role: 'owner' }) })
+const freshDemoOwnerState = await ok('/api/owner', {}, freshDemoOwner.token)
+assert(freshDemoOwner.token !== demoOwner.token, '사장님 체험에 다시 들어가면 새 세션이어야 합니다.')
+assert(freshDemoOwnerState.dataConnections.length === 0 && freshDemoOwnerState.applications.length === 0,
+  '새 사장님 체험에는 이전 체험의 기관 연결과 심사 기록이 남지 않아야 합니다.')
 const invalidDemoApplication = await request('/api/applications', { method: 'POST', body: '{}' }, demoOwner.token)
 assert(invalidDemoApplication.status === 400, '체험 심사도 실제와 같은 입력 검증을 거쳐야 합니다.')
 
