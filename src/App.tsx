@@ -64,14 +64,34 @@ function App() {
   useEffect(() => {
     const reload = () => refresh().catch(() => undefined)
     reload()
-    // 로컬·단일 서버에서는 소켓으로 즉시 반영된다.
+    // 같은 인스턴스에 붙어 있으면 소켓으로 즉시 반영된다.
     const socket = io({ reconnectionAttempts: 3, timeout: 4000 })
     socket.on('state:changed', reload)
-    // 서버리스(Vercel)처럼 소켓을 못 여는 환경에서는 폴링과 포커스 복귀로 다른 사람의 변경을 따라잡는다.
-    const timer = window.setInterval(() => {
-      if (!socket.connected && document.visibilityState === 'visible') reload()
-    }, 15000)
-    const onFocus = () => { if (!socket.connected) reload() }
+
+    // 소켓이 붙어 있어도 폴링을 멈추지 않는다.
+    //
+    // 소켓 브로드캐스트는 그 요청을 처리한 서버 인스턴스에 붙은 브라우저에만 간다.
+    // Cloud Run 은 부하에 따라 인스턴스를 여러 개로 늘리므로, 다른 인스턴스에서 일어난
+    // 투자·교환·승인은 소켓으로 오지 않는다. 예전에는 소켓이 연결되면 폴링을 꺼버려서
+    // 그런 변경을 영영 놓쳤다(화면이 조용히 낡았다).
+    //
+    // 대신 전체 상태를 받지 않고 /api/version 의 숫자 하나만 확인한다.
+    // 값이 달라졌을 때만 전체를 다시 받으므로 트래픽은 거의 늘지 않는다.
+    let lastVersion: number | undefined
+    const poll = async () => {
+      if (document.visibilityState !== 'visible') return
+      try {
+        const { version } = await api<{ version: number }>('/api/version')
+        if (lastVersion !== undefined && version !== lastVersion) reload()
+        lastVersion = version
+      } catch {
+        // 버전 확인이 실패하면(네트워크 순단 등) 소켓조차 없을 때만 전체를 다시 받는다.
+        if (!socket.connected) reload()
+      }
+    }
+    const timer = window.setInterval(poll, 10000)
+    // 탭으로 돌아왔을 때는 다음 주기를 기다리지 않고 즉시 따라잡는다.
+    const onFocus = () => { void poll() }
     window.addEventListener('focus', onFocus)
     return () => { socket.disconnect(); window.clearInterval(timer); window.removeEventListener('focus', onFocus) }
   }, [])

@@ -1021,10 +1021,31 @@ app.use(express.json({ limit: `${Math.ceil(LIMITS.uploadMb * 1.4)}mb` }))
  * - 변경 요청: 전역 쓰기 잠금을 잡고, 잠금 안에서 상태를 다시 읽은 뒤 핸들러를 실행한다.
  *   덕분에 인스턴스가 몇 개로 늘어나도 쿠폰·투자 원장이 갈라지지 않는다.
  */
+/**
+ * 전역 잠금을 잡지 않는 POST 경로.
+ *
+ * 이 경로들은 생성형 호출이 들어가서 응답까지 8~16초가 걸린다. 미들웨어의 잠금은
+ * 응답이 끝날 때까지(res.on('finish')) 유지되므로, 여기에 잠금을 걸면 AI 상담 한 명이
+ * 그 시간 내내 서비스 전체의 쓰기(투자·회수·쿠폰교환·승인)를 멈춰세운다.
+ *
+ * 실측: 동시 4건 중 2건이 9초(잠금 대기 deadline)를 기다린 뒤 503 으로 떨어졌고,
+ * 성공한 요청도 8초 → 16초 → 18초로 완전히 직렬화됐다.
+ *
+ * 이 경로들은 원장에 쓰는 것이 거의 없고(대부분 조회), 남길 기록이 있을 때만
+ * withWriteLock() 으로 아주 짧게 잠근다.
+ */
+const UNLOCKED_AI_PATHS = new Set([
+  '/api/ai/chat',
+  '/api/ai/ocr',
+  '/api/ai/owner-report',
+  '/api/ai/anomaly-detection',
+  '/api/ai/insight-summary',
+])
+
 app.use('/api', async (req, res, next) => {
   if (store.kind === 'file') return next()
   try {
-    if (req.method === 'GET') {
+    if (req.method === 'GET' || UNLOCKED_AI_PATHS.has(req.originalUrl.split('?')[0])) {
       await refreshState()
       return next()
     }
@@ -1054,6 +1075,47 @@ app.use('/api', async (req, res, next) => {
     next(error)
   }
 })
+
+/**
+ * 짧은 쓰기 하나만 전역 잠금 안에서 처리한다.
+ *
+ * UNLOCKED_AI_PATHS 의 경로는 미들웨어 잠금을 건너뛰므로, 원장에 남길 것이 있으면
+ * 여기로 감싼다. 잠금을 쥐는 시간이 생성형 호출 전체(10초 이상)가 아니라
+ * 실제 쓰기 순간(수십 ms)으로 줄어든다.
+ *
+ * 잠금을 못 잡으면 undefined 를 돌려주고 기록을 포기한다. 감사 로그 한 줄 때문에
+ * 사장님이 받아야 할 판독 결과나 리포트를 통째로 실패시키지는 않는다.
+ */
+async function withWriteLock<T>(run: () => T | Promise<T>): Promise<T | undefined> {
+  if (store.kind === 'file') {
+    const value = await run()
+    await saveDatabase()
+    return value
+  }
+  const owner = crypto.randomUUID()
+  const deadline = Date.now() + 9000
+  let acquired = false
+  while (Date.now() < deadline) {
+    if (await store.acquire(owner)) { acquired = true; break }
+    await new Promise((resolve) => setTimeout(resolve, 120 + Math.random() * 200))
+  }
+  if (!acquired) {
+    console.warn('withWriteLock: 잠금을 잡지 못해 기록을 건너뜁니다.')
+    return undefined
+  }
+  const previous = lockOwner
+  lockOwner = owner
+  try {
+    // 잠금 안에서 최신 상태를 다시 읽어야 다른 인스턴스가 쓴 내용을 덮어쓰지 않는다.
+    await refreshState(true)
+    const value = await run()
+    await saveDatabase()
+    return value
+  } finally {
+    lockOwner = previous
+    await store.release(owner).catch(() => undefined)
+  }
+}
 
 /* ── 체험 모드 ─────────────────────────────────────────────────
  * 체험 세션의 쓰기는 공유 원장(db.json) 대신 메모리 샌드박스로 보낸다.
@@ -1525,6 +1587,21 @@ function withDemoOverlay(state: ReturnType<typeof publicState>, user: SessionUse
   return { ...state, restaurants, listings: [...myListings, ...listings], demo: { notice: DEMO_NOTICE } }
 }
 
+
+/**
+ * 원장 버전만 돌려준다. 브라우저가 "바뀐 게 있나"를 물어보는 자리다.
+ *
+ * 왜 필요한가: 소켓 브로드캐스트(io.emit)는 그 요청을 처리한 인스턴스에 붙어 있는
+ * 브라우저에게만 간다. Cloud Run 처럼 인스턴스가 여러 개로 늘어나면 다른 인스턴스에서
+ * 일어난 투자·교환·승인은 소켓으로 영영 오지 않는다. 화면이 조용히 낡는다.
+ *
+ * 전체 상태(/api/public)는 수십 KB 라 몇 초마다 받아오면 낭비지만 이 응답은 숫자 하나다.
+ * 그래서 소켓이 붙어 있어도 이것만 주기적으로 확인하고, 값이 달라졌을 때만 전체를 다시 받는다.
+ */
+app.get('/api/version', async (_req, res) => {
+  await refreshState().catch(() => undefined)
+  res.json({ version: stateVersion, at: now() })
+})
 
 app.get('/api/health', (_req, res) => res.json({
   ok: true,
@@ -3203,9 +3280,12 @@ bbox는 0~1000 기준 [x,y,width,height]이며 이미지 전체를 가리키는 
       analysis, ephemeral: true,
     })
   }
-  db.ocrAnalyses.push(analysis)
-  audit(req.user!.id, 'ocr.analyzed', 'ocr_analysis', analysis.id, `${filename} · ${status}`)
-  await saveDatabase(); changed()
+  // 판독은 이미 끝났다. 원장에 남기는 순간만 짧게 잠근다.
+  await withWriteLock(() => {
+    db.ocrAnalyses.push(analysis)
+    audit(req.user!.id, 'ocr.analyzed', 'ocr_analysis', analysis.id, `${filename} · ${status}`)
+  })
+  changed()
   res.json({ message: status === 'ai_extracted' ? 'AI가 문서의 보이는 항목을 구조화했어요. 최종 판단은 운영자 확인이 필요해요.' : '문서를 접수했어요. AI 연결 전이라 운영자 수동 검토 대상으로 표시했어요.', analysis })
 })
 
@@ -3695,7 +3775,7 @@ app.post('/api/ai/owner-report', auth('owner'), async (req: AuthedRequest, res) 
       const texts = [report.headline, report.salesCause.body, report.repeatPlan.body, report.couponPlan.body, report.costCheck.body, report.watchout, ...report.tasks]
       if (!safeAdvisoryText(texts)) throw new Error('owner report tripped advisory policy')
       if (leaksFieldName(texts)) throw new Error('owner report leaked internal field names')
-      if (!demo) audit(req.user!.id, 'ai.owner_report', 'restaurant', restaurant.id, `${facts.reportMonth} 경영 리포트 생성`)
+      if (!demo) await withWriteLock(() => audit(req.user!.id, 'ai.owner_report', 'restaurant', restaurant.id, `${facts.reportMonth} 경영 리포트 생성`))
       return { value: report, model }
     })
     const { value: report, model } = generated
@@ -3734,7 +3814,7 @@ app.post('/api/ai/anomaly-detection', auth('owner'), async (req: AuthedRequest, 
       const { parsed, model } = await callAiJson(ANOMALY_EXPLANATION_SYSTEM, anomalyExplanationPrompt(detected), { maxTokens: 500 })
       const result = applyAnomalyExplanation(detected, parsed)
       if (!result || !safeAdvisoryText([result.summary, ...result.nextChecks])) throw new Error('anomaly explanation failed validation')
-      if (!demo) audit(req.user!.id, 'ai.anomaly_detection', 'restaurant', restaurant.id, `매출 이상탐지 ${detected.status}`)
+      if (!demo) await withWriteLock(() => audit(req.user!.id, 'ai.anomaly_detection', 'restaurant', restaurant.id, `매출 이상탐지 ${detected.status}`))
       return { value: result, model }
     })
     res.json({ result: generated.value, provider: aiProviderLabel(), model: generated.model, generatedAt: now(), cached: false })
