@@ -173,7 +173,8 @@ export default function FundDetailModal({ restaurant: r, me, onClose, onLogin, r
         <div className="order-tabs"><button className={tab === 'invest' ? 'active' : ''} onClick={() => setTab('invest')}>투자하기</button><button className={tab === 'withdraw' ? 'active' : ''} onClick={() => setTab('withdraw')}>회수하기</button></div>
         {r.fund.status === 'trading' && <div className={`orderbook-card ${orderBook.kind}`}><span>{orderBook.label}</span><b>{won(orderBook.amount)}</b><p>{orderBook.note}</p></div>}
         <div className="balance-row"><span>{tab === 'invest' ? '보유 먹투머니' : '회수 가능 금액'}</span><b>{won(tab === 'invest' ? me?.user.cash || 0 : position?.availableAmount || 0)}</b></div>
-        <label className="amount-input"><input aria-label={tab === 'invest' ? '투자 금액' : '회수 금액'} {...amountBind} /><span>원</span></label>
+        <label className="amount-input"><input aria-label={tab === 'invest' ? '투자 금액' : '회수 금액'} aria-describedby="fund-amount-help" {...amountBind} /><span>원</span></label>
+        <p className="amount-input-help" id="fund-amount-help">금액을 눌러 원하는 숫자를 직접 입력하세요 · 1,000원 단위</p>
         <div className="quick-amounts">{[10000,50000,100000].map((value) => <button key={value} onClick={() => setAmount(value)}>+{value/10000}만</button>)}<button onClick={() => setAmount(tab === 'invest' ? Math.min(me?.user.cash || 0, remainingLimit) : position?.availableAmount || 0)}>최대</button></div>
         {tab === 'invest' && <div className="limit-note"><span>남은 개인 투자 한도</span><b>{won(remainingLimit)}</b></div>}
         <div className="benefit-preview"><Ticket /><div><span>혜택 적립 속도</span><b>10만원당 하루 {r.fund.dailyRatePer100k}%</b><p>매출 보너스 +{r.fund.salesBonus}%{position?.early ? ` · 최초 투자자 적용 +${effectiveSalesBonus.toFixed(1)}%` : r.fund.status === 'funding' ? ` · 최초 투자자는 매출 보너스 ${r.fund.earlyBonus}% 우대` : ''}</p></div></div>

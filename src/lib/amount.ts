@@ -1,10 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
-import type { ChangeEvent } from 'react'
+import type { ChangeEvent, FocusEvent } from 'react'
 
 export const UNIT = 1000
 
 const digitsOf = (value: string) => value.replace(/\D/g, '')
 const format = (value: number) => value.toLocaleString('ko-KR')
+
+/** 사용자가 붙여넣거나 직접 입력한 문자열에서 금액과 표시값을 만든다. */
+export const parseAmountInput = (value: string) => {
+  const digits = digitsOf(value).slice(0, 12)
+  return {
+    amount: digits ? Number(digits) : 0,
+    text: digits ? format(Number(digits)) : '',
+  }
+}
 
 /** 입력이 끝난 금액을 1,000원 단위로 맞추고 허용 범위 안으로 넣는다. */
 export const normalizeAmount = (value: number, min = UNIT, max?: number) => {
@@ -43,8 +52,8 @@ export function useAmountInput(initial: number, options: { min?: number; max?: n
     const input = event.target
     const caret = input.selectionStart ?? input.value.length
     const typedBefore = digitsOf(input.value.slice(0, caret)).length
-    const digits = digitsOf(input.value).slice(0, 12)
-    const next = digits ? format(Number(digits)) : ''
+    const nextValue = parseAmountInput(input.value)
+    const next = nextValue.text
     let position = 0
     for (let index = 0, seen = 0; index < next.length && typedBefore > 0; index += 1) {
       if (/\d/.test(next[index])) seen += 1
@@ -53,7 +62,18 @@ export function useAmountInput(initial: number, options: { min?: number; max?: n
     }
     caretRef.current = position
     setText(next)
-    setAmountState(digits ? Number(digits) : 0)
+    setAmountState(nextValue.amount)
+  }
+
+  // 첫 클릭에서는 기존 금액을 모두 선택해 1,000 → 3,000처럼 바로 덮어쓸 수 있게 한다.
+  // 두 번째 클릭부터는 포커스 이벤트가 다시 발생하지 않아 원하는 자리만 고칠 수도 있다.
+  const onFocus = (event: FocusEvent<HTMLInputElement>) => {
+    const input = event.currentTarget
+    const selectCurrentAmount = () => {
+      if (inputRef.current === input && document.activeElement === input) input.select()
+    }
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(selectCurrentAmount)
+    else selectCurrentAmount()
   }
 
   /** blur·제출 직전에 호출해 화면과 서버로 나가는 값을 1,000원 단위로 맞춘다. */
@@ -75,6 +95,7 @@ export function useAmountInput(initial: number, options: { min?: number; max?: n
       autoComplete: 'off' as const,
       value: text,
       onChange,
+      onFocus,
       onBlur: commit,
     },
   }

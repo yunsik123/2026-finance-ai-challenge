@@ -10,6 +10,7 @@
     "build": "tsc -b --force && vite build",
     "start": "tsx server/index.ts",
     "check": "tsc -b --force --pretty false",
+    "test:amount": "tsx tests/amount-input.ts",
     "test:integration": "tsx tests/run.ts",
     "test:ai": "tsx tests/ai-eval.ts",
     "db:check": "node scripts/apply-db.mjs --test",
