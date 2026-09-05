@@ -52,19 +52,27 @@ const target = publicBefore.restaurants.find((item: any) => item.fund.status ===
 const fundId = target?.fund.id
 const restaurantId = target?.id
 assert(target?.fund.status === 'trading', '자동매칭 테스트 대상 펀드는 거래 중이어야 합니다.')
+const missingRiskResponse = await fetch(`${base}/api/funds/${fundId}/invest`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${investor.token}` },
+  body: JSON.stringify({ amount: 1000, consent: { version: legal.version, documentIds: legal.required.invest } }),
+})
+const missingRiskBody = await missingRiskResponse.json() as { error?: string }
+assert(missingRiskResponse.status === 400 && missingRiskBody.error?.includes('위험'), '위험 확인 체크값이 없으면 서버가 투자를 거절해야 합니다.')
 const invest = await request(`/api/funds/${fundId}/invest`, { method: 'POST', body: JSON.stringify({
   amount: 20000,
-  consent: { version: legal.version, documentIds: legal.required.invest },
+  consent: { version: legal.version, documentIds: legal.required.invest, riskAcknowledged: true },
 }) }, investor.token)
 assert(invest.matched === 20000 && invest.queued === 0, '기존 회수 대기 주문과 투자 예약이 즉시 체결되어야 합니다.')
 
 const afterInvest = await request('/api/me', {}, investor.token)
 const position = afterInvest.positions.find((item: any) => item.fundId === fundId)
 assert(position?.amount >= 20000, '체결된 투자금이 나의 식당에 즉시 나타나야 합니다.')
+assert(afterInvest.legalConsents.some((item: any) => item.context === 'invest' && item.riskAcknowledged === true), '위험 확인 사실이 투자 동의 원장에 기록돼야 합니다.')
 
 const withdraw = await request(`/api/funds/${fundId}/withdraw`, { method: 'POST', body: JSON.stringify({
   amount: 10000,
-  consent: { version: legal.version, documentIds: legal.required.withdraw },
+  consent: { version: legal.version, documentIds: legal.required.withdraw, riskAcknowledged: true },
 }) }, investor.token)
 assert(withdraw.queued === 10000, '반대 투자 예약이 없으면 회수 주문이 대기해야 합니다.')
 const order = (await request('/api/me', {}, investor.token)).orders.find((item: any) => item.type === 'sell' && item.remaining === 10000)
@@ -83,7 +91,7 @@ const counterparty = await request('/api/auth/signup', {
 assert(orderFund.openSellAmount > 0 && orderFund.openSellAmount <= target.fund.goal * 0.01, '회수 대기금액은 한 사용자 투자 한도 안이어야 합니다.')
 const counterInvest = await request(`/api/funds/${fundId}/invest`, { method: 'POST', body: JSON.stringify({
   amount: orderFund.openSellAmount,
-  consent: { version: legal.version, documentIds: legal.required.invest },
+  consent: { version: legal.version, documentIds: legal.required.invest, riskAcknowledged: true },
 }) }, counterparty.token)
 assert(counterInvest.matched === orderFund.openSellAmount && counterInvest.queued === 0, '다른 사용자의 투자 예약이 전체 회수 대기금액과 즉시 체결되어야 합니다.')
 const sellerAfterMatch = await request('/api/me', {}, investor.token)

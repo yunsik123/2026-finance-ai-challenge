@@ -1,6 +1,7 @@
 // AI 점주 경영 리포트 / AI 인사이트 해석 검증.
 // AI 키가 없는 환경에서도 통과해야 한다. 두 엔드포인트 모두 생성형이 없으면
 // 같은 모양의 규칙 기반 결과를 내려주는 것이 계약이기 때문이다.
+import { detectSalesAnomalies } from '../server/ai-analysis.ts'
 const base = process.env.MEOKTU_TEST_BASE || 'http://localhost:8787'
 const call = async (path: string, options: RequestInit = {}, token?: string) => {
   const response = await fetch(base + path, { ...options, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...options.headers } })
@@ -8,6 +9,13 @@ const call = async (path: string, options: RequestInit = {}, token?: string) => 
   return { ok: response.ok, status: response.status, body }
 }
 const assert = (value: unknown, message: string) => { if (!value) throw new Error(message) }
+
+const synthetic = [100, 102, 101, 103, 102, 104, 170, 105].map((sales, index) => ({
+  month: `2026-${String(index + 1).padStart(2, '0')}`, sales, growthRate: 0, bonusRate: 0,
+}))
+const syntheticDetection = detectSalesAnomalies(synthetic)
+assert(syntheticDetection.anomalies.some((item) => item.month === '2026-07' && item.direction === 'increase'), '평소 흐름에서 벗어난 급등 월을 찾아야 합니다.')
+assert(syntheticDetection.anomalies.some((item) => item.month === '2026-08' && item.direction === 'decrease'), '급등 뒤 원복된 급락도 별도 이상으로 찾아야 합니다.')
 
 // 서버에 AI 키가 붙어 있으면 폴백으로 도는 것 자체가 회귀다. 그때는 생성형 경로를 강제로 검사한다.
 const health = await call('/api/health')
@@ -28,6 +36,7 @@ const { facts, report: body, provider } = report.body
 expectProvider(provider, '경영 리포트')
 assert(/^\d{4}-\d{2}$/.test(facts.reportMonth), '리포트 기준 월이 있어야 합니다.')
 assert(typeof facts.salesChange === 'number' && typeof facts.couponUseRate === 'number', '매출 변화와 쿠폰 사용률은 서버가 확정해 내려야 합니다.')
+assert(facts.area?.name && typeof facts.area.localSalesGrowth === 'number' && typeof facts.area.competitorDensity === 'number', '상권 리포트에는 주소 기반 상권 원자료가 포함돼야 합니다.')
 for (const key of ['headline', 'salesCause', 'repeatPlan', 'couponPlan', 'costCheck', 'tasks', 'watchout']) {
   assert(body[key], `리포트에 ${key} 칸이 있어야 합니다.`)
 }
@@ -54,6 +63,18 @@ assert(again.body.report.headline === body.headline, '자료가 그대로면 같
 
 const anonymous = await call('/api/ai/owner-report', { method: 'POST', body: JSON.stringify({}) })
 assert(anonymous.status === 401, '로그인 없이 경영 리포트를 볼 수 없어야 합니다.')
+
+const anomaly = await call('/api/ai/anomaly-detection', { method: 'POST', body: JSON.stringify({}) }, ownerToken)
+assert(anomaly.ok, `이상탐지 호출 실패: ${anomaly.body.error}`)
+assert(['openai', 'meoktu-statistical-engine'].includes(anomaly.body.provider), '이상탐지 생성 경로를 표시해야 합니다.')
+if (aiConfigured && anomaly.body.result.status !== 'insufficient_data') assert(anomaly.body.provider === 'openai', 'AI 키가 설정됐는데 이상탐지 설명이 생성형 경로를 타지 않았습니다.')
+assert(anomaly.body.result.method === 'robust-mad-v1', '이상탐지는 강건 MAD 알고리즘 버전을 공개해야 합니다.')
+assert(anomaly.body.result.sampleSize >= 6, '체험 식당은 이상탐지에 충분한 월별 자료가 있어야 합니다.')
+assert(Number.isFinite(anomaly.body.result.baselineChangeRate), '평소 월 변화 기준값이 숫자여야 합니다.')
+assert(anomaly.body.result.expectedRange.min < anomaly.body.result.expectedRange.max, '정상 예상 범위를 내려줘야 합니다.')
+assert(Array.isArray(anomaly.body.result.anomalies) && Array.isArray(anomaly.body.result.nextChecks), '이상 월과 확인 순서를 구조화해 내려줘야 합니다.')
+const anonymousAnomaly = await call('/api/ai/anomaly-detection', { method: 'POST', body: JSON.stringify({}) })
+assert(anonymousAnomaly.status === 401, '로그인 없이 사장님 매출 이상탐지를 볼 수 없어야 합니다.')
 
 const publicState = await call('/api/public')
 const ids = (publicState.body.restaurants as Array<{ id: string }>).slice(0, 2).map((item) => item.id)

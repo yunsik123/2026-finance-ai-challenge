@@ -14,8 +14,10 @@ const money = (value: number) => `${Math.round(value).toLocaleString('ko-KR')}�
 // /owner/my 에서 상위 경로 /owner까지 활성화되면 데스크톱 점과 모바일 선택 표시가 두 개 생긴다.
 // 사장님 센터 링크는 정확한 /owner 경로에서만 활성화되도록 두 내비게이션 모두 end를 써야 한다.
 const appSource = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
+const fundDetailSource = readFileSync(new URL('../src/FundDetailModal.tsx', import.meta.url), 'utf8')
 assert((appSource.match(/<NavLink end to="\/owner">/g) || []).length === 2,
   '데스크톱·모바일 사장님 센터 링크는 /owner/my에서 비활성화되도록 정확히 일치해야 합니다.')
+assert(fundDetailSource.includes('riskAcknowledged: riskAccepted'), '투자 위험 확인 체크값을 서버 요청의 약관 정보에 포함해야 합니다.')
 
 // 실제 화면 문구와 상담 지도가 맞는지 기능별로 확인한다.
 const navigationCases = [
@@ -116,7 +118,7 @@ const emptyBookFund = publicState.funds.find((fund: any) => fund.status === 'tra
 assert(emptyBookFund, '즉시 체결될 회수 주문이 없는 거래 중 펀드가 필요합니다.')
 const queued = await ok(`/api/funds/${emptyBookFund.id}/invest`, { method: 'POST', body: JSON.stringify({
   amount: 1000,
-  consent: { version: legal.version, documentIds: legal.required.invest },
+  consent: { version: legal.version, documentIds: legal.required.invest, riskAcknowledged: true },
 }) }, queueUser.token)
 assert(queued.queued === 1000, '상세 화면의 투자 예약이 대기열에 들어가야 합니다.')
 const book = (await ok('/api/market/orderbook', {}, queueUser.token)).books.find((item: any) => item.fundId === emptyBookFund.id)

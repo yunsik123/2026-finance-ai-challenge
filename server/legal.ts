@@ -318,6 +318,7 @@ export interface ConsentCheck {
   ok: boolean
   error?: string
   documentIds: string[]
+  riskAcknowledged: boolean
 }
 
 /**
@@ -327,19 +328,23 @@ export interface ConsentCheck {
  */
 export function checkConsent(context: LegalContext, body: unknown, role?: 'investor' | 'owner' | 'admin'): ConsentCheck {
   const required = requiredDocumentIds(context, role)
-  if (!required.length) return { ok: true, documentIds: [] }
-  const consent = (body as { consent?: { version?: string; documentIds?: unknown } } | undefined)?.consent
+  const consent = (body as { consent?: { version?: string; documentIds?: unknown; riskAcknowledged?: unknown } } | undefined)?.consent
+  const riskAcknowledged = consent?.riskAcknowledged === true
+  if (!required.length) return { ok: true, documentIds: [], riskAcknowledged }
   const version = consent?.version
   const agreed = Array.isArray(consent?.documentIds) ? consent.documentIds.map(String) : []
   if (version !== LEGAL_VERSION) {
-    return { ok: false, documentIds: [], error: '약관이 업데이트됐어요. 화면을 새로고침한 뒤 변경된 내용을 확인하고 다시 진행해주세요.' }
+    return { ok: false, documentIds: [], riskAcknowledged, error: '현재 적용 약관 정보를 받지 못했어요. 화면을 새로고침한 뒤 다시 확인해주세요.' }
   }
   const missing = required.filter((id) => !agreed.includes(id))
   if (missing.length) {
     const titles = missing.map((id) => byId.get(id)?.title || id).join(', ')
-    return { ok: false, documentIds: [], error: `${titles}에 동의해야 진행할 수 있어요.` }
+    return { ok: false, documentIds: [], riskAcknowledged, error: `${titles}에 동의해야 진행할 수 있어요.` }
+  }
+  if ((context === 'invest' || context === 'withdraw') && !riskAcknowledged) {
+    return { ok: false, documentIds: [], riskAcknowledged, error: '원금 손실과 회수 지연 위험을 확인해야 진행할 수 있어요.' }
   }
   // 필수 문서 외에 선택 동의를 함께 보냈다면 그것도 기록에 남긴다.
   const extra = agreed.filter((id) => byId.has(id) && !required.includes(id))
-  return { ok: true, documentIds: [...required, ...extra] }
+  return { ok: true, documentIds: [...required, ...extra], riskAcknowledged }
 }

@@ -3,6 +3,7 @@ import { AlertTriangle, BadgeCheck, BarChart3, Check, Clock3, HandCoins, LockKey
 import { api } from './lib/api.ts'
 import { useAmountInput } from './lib/amount.ts'
 import CommercialAreaPanel from './CommercialAreaPanel.tsx'
+import { LegalConsentReader, useLegalIndex } from './LegalCenter.tsx'
 import type { CommercialAreaView, MeState, Restaurant, SalesPoint } from './types.ts'
 import './fund-detail-preview.css'
 
@@ -12,6 +13,8 @@ const compactWon = (value: number) => value >= 100000000 ? `${(value / 100000000
 interface Props {
   restaurant: Restaurant
   me: MeState | null
+  initialTab?: 'invest' | 'withdraw'
+  initialAmount?: number
   onClose: () => void
   onLogin: () => void
   refresh: () => Promise<void>
@@ -58,12 +61,15 @@ function RevenueChart({ restaurant }: { restaurant: Restaurant }) {
   </section>
 }
 
-export default function FundDetailModal({ restaurant: r, me, onClose, onLogin, refresh, notify }: Props) {
-  const { amount, setAmount, commit: commitAmount, bind: amountBind } = useAmountInput(50000)
-  const [tab, setTab] = useState<'invest' | 'withdraw'>('invest')
+export default function FundDetailModal({ restaurant: r, me, initialTab = 'invest', initialAmount = 50000, onClose, onLogin, refresh, notify }: Props) {
+  const { amount, setAmount, commit: commitAmount, bind: amountBind } = useAmountInput(initialAmount)
+  const [tab, setTab] = useState<'invest' | 'withdraw'>(initialTab)
   const [busy, setBusy] = useState(false)
   const [confirming, setConfirming] = useState(false)
   const [riskAccepted, setRiskAccepted] = useState(false)
+  const [agreedDocuments, setAgreedDocuments] = useState<string[]>([])
+  const legal = useLegalIndex()
+  useEffect(() => { setTab(initialTab) }, [initialTab, r.id])
   // 상권 분석은 이 모달을 열 때만 필요하므로 별도로 가져온다.
   const [area, setArea] = useState<CommercialAreaView | undefined>()
   useEffect(() => {
@@ -92,12 +98,21 @@ export default function FundDetailModal({ restaurant: r, me, onClose, onLogin, r
     : r.fund.openSellAmount > 0
       ? { kind: 'sell', label: '회수 대기', amount: r.fund.openSellAmount, note: '투자 예약을 넣으면 앞선 주문부터 즉시 체결돼요.' }
       : { kind: 'empty', label: '대기 주문 없음', amount: 0, note: '지금 주문하면 반대 주문이 생길 때 자동으로 체결돼요.' }, [r.fund.openBuyAmount, r.fund.openSellAmount])
+  const consentContext = tab === 'invest' ? 'invest' : 'withdraw'
+  const consentDocuments = (legal?.documents || []).filter((document) => legal?.required[consentContext].includes(document.id))
+  const allConsentsAgreed = consentDocuments.length > 0 && consentDocuments.every((document) => agreedDocuments.includes(document.id))
+  const toggleConsent = (documentId: string) => setAgreedDocuments((current) => current.includes(documentId)
+    ? current.filter((item) => item !== documentId) : [...current, documentId])
+  useEffect(() => { setAgreedDocuments([]); setRiskAccepted(false); setConfirming(false) }, [r.id, tab])
 
   const transact = async () => {
     if (!me) { onLogin(); return }
     setBusy(true)
     try {
-      const result = await api<{ message: string; matched: number; queued: number }>(`/api/funds/${r.fund.id}/${tab}`, { method: 'POST', body: JSON.stringify({ amount }) })
+      if (!legal || !allConsentsAgreed) { notify('필수 약관과 고지사항을 확인하고 동의해주세요.'); return }
+      const result = await api<{ message: string; matched: number; queued: number }>(`/api/funds/${r.fund.id}/${tab}`, { method: 'POST', body: JSON.stringify({
+        amount, consent: { version: legal.version, documentIds: agreedDocuments, riskAcknowledged: riskAccepted },
+      }) })
       setLastResult(result)
       setConfirming(false)
       setRiskAccepted(false)
@@ -185,8 +200,9 @@ export default function FundDetailModal({ restaurant: r, me, onClose, onLogin, r
         <button className="trade-confirm-close" onClick={() => setConfirming(false)} aria-label="확인창 닫기"><X /></button>
         <span className="eyebrow coral">최종 확인</span><h3>{tab === 'invest' ? '투자 조건을 확인해주세요' : '회수 조건을 확인해주세요'}</h3>
         <dl><div><dt>식당</dt><dd>{r.name}</dd></div><div><dt>{tab === 'invest' ? '투자 금액' : '회수 요청'}</dt><dd>{won(amount)}</dd></div><div><dt>처리 방식</dt><dd>{r.fund.status === 'funding' ? '즉시 반영' : '1,000원 단위 예약 매칭'}</dd></div>{tab === 'invest' && <div><dt>쿠폰 조건</dt><dd>{r.fund.minIssueDiscount}%부터 발급 · 최대 {r.fund.maxDiscount}%</dd></div>}</dl>
+        <div className="trade-consent-list"><b>현재 적용 약관 {legal?.version || '불러오는 중'}</b><p>각 문서의 전문을 확인한 뒤 동의하면 이 버전과 동의 시각이 거래 기록에 남습니다.</p>{consentDocuments.map((document) => <LegalConsentReader key={document.id} documentId={document.id} title={document.title} summary={document.summary} agreed={agreedDocuments.includes(document.id)} onToggle={() => toggleConsent(document.id)} />)}{!consentDocuments.length && <span className="legal-loading">필수 약관을 불러오는 중이에요.</span>}</div>
         <label className="risk-confirm-check"><input type="checkbox" checked={riskAccepted} onChange={(event) => setRiskAccepted(event.target.checked)} /><span><i className="risk-checkbox" aria-hidden="true">{riskAccepted && <Check />}</i><AlertTriangle /><b>원금과 회수 시점이 보장되지 않으며 쿠폰은 금융수익이 아님을 확인했습니다.</b></span></label>
-        <button className="button full large" disabled={!riskAccepted || busy} onClick={transact}>{busy ? '처리 중...' : tab === 'invest' ? '확인하고 투자하기' : '확인하고 회수 요청하기'}</button>
+        <button className="button full large" disabled={!riskAccepted || !allConsentsAgreed || busy} onClick={transact}>{busy ? '처리 중...' : !legal ? '약관 불러오는 중' : !allConsentsAgreed ? '필수 약관에 동의해주세요' : tab === 'invest' ? '확인하고 투자하기' : '확인하고 회수 요청하기'}</button>
       </section></div>}
     </div>
   </div>

@@ -3,6 +3,7 @@ import { NavLink } from 'react-router-dom'
 import { BadgeCheck, ChevronRight, CircleAlert, Clock3, Eye, FileCheck2, Store, WalletCards } from 'lucide-react'
 import { api } from './lib/api.ts'
 import OwnerDashboard from './OwnerDashboard.tsx'
+import CouponVerify from './CouponVerify.tsx'
 import VerificationReport from './VerificationReport.tsx'
 import CreditGradePanel from './CreditGradePanel.tsx'
 import type { ApplicationResult, Fund, MeState, Restaurant } from './types.ts'
@@ -100,11 +101,12 @@ export default function OwnerMyPage({ me, refresh, notify }: { me: MeState; refr
     : restaurant?.verificationStatus !== 'submitted' && restaurant?.verificationStatus !== 'rejected' && Boolean(fund)
 
   return <div className="page-wrap owner-my-page">
-    <header className="owner-my-head"><div><span className="eyebrow coral"><Store /> 사장님 MY</span><h1>{me.user.name}님의<br />내 식당 펀드</h1><p>모집 현황과 AI 경영 리포트, 검증 결과를 한곳에서 확인하세요.</p></div><NavLink className="button" to="/owner">{hasFund ? '추가 펀딩 신청' : '펀딩 신청하기'} <ChevronRight /></NavLink></header>
+    <header className="owner-my-head"><div><span className="eyebrow coral"><Store /> 사장님 MY</span><h1>{me.user.name}님의<br />내 식당 펀드</h1><p>등록된 내 식당의 모집 현황과 운영 리포트, 검증 결과를 한곳에서 확인하세요.</p></div>{!hasFund && <NavLink className="button" to="/owner">펀딩 등록하기 <ChevronRight /></NavLink>}</header>
 
     {me.user.sessionMode === 'demo' && <div className="owner-my-demo"><Eye /><p><b>체험 모드 결과입니다.</b> 심사 화면과 결과 확인은 동일하지만 체험 식당은 다른 투자자 계정에 공개되지 않습니다.</p></div>}
 
     {hasFund && <OwnerDashboard data={owner} onDividend={sendDividend} />}
+    {restaurant && <CouponVerify refresh={refresh} notify={notify} />}
 
     {restaurant && <section className="sales-disclosure-control"><div><span><Eye /></span><div><b>투자자 매출 데이터 공개</b><p>보너스 산정 결과는 항상 공개하고, 정확한 월매출 그래프는 사장님이 선택합니다.</p></div></div><button className={restaurant.salesDisclosure ? 'active' : ''} onClick={toggleDisclosure}><i />{restaurant.salesDisclosure ? '월매출 공개 중' : '월매출 비공개'}</button></section>}
 

@@ -25,10 +25,11 @@ import {
 } from './knowledge.ts'
 import { COMMERCIAL_NOTE, COMMERCIAL_SOURCE, commercialInsight, findCommercialArea } from './commercial.ts'
 import {
-  INSIGHT_SUMMARY_SYSTEM, OWNER_REPORT_SYSTEM, buildOwnerReportFacts, factsFingerprint,
+  ANOMALY_EXPLANATION_SYSTEM, INSIGHT_SUMMARY_SYSTEM, OWNER_REPORT_SYSTEM,
+  anomalyExplanationPrompt, applyAnomalyExplanation, buildOwnerReportFacts, detectSalesAnomalies, factsFingerprint,
   insightFallback, insightPrompt, leaksFieldName, normalizeInsight, normalizeOwnerReport,
   ownerReportFallback, ownerReportPrompt,
-  type InsightFacts, type InsightSummary, type OwnerReport, type OwnerReportFacts,
+  type AnomalyDetection, type InsightFacts, type InsightSummary, type OwnerReport, type OwnerReportFacts,
 } from './ai-analysis.ts'
 import { orchestrateFinancialVerification, verifyBusiness } from './verification.ts'
 import { checkSwap, couponUsable, daysLeft, EXCHANGE_RULES, normalizePreferences, sweepExpired } from './exchange.ts'
@@ -388,6 +389,14 @@ function publicUser(user: User | SessionUser) {
   return { ...safe, sessionMode: 'sessionMode' in user ? user.sessionMode : 'account' as const }
 }
 
+function safeApplication(application: Application): Application {
+  const data = { ...application.data }
+  // 이전 버전에서 저장된 신청도 거래 CSV 원문을 API 응답으로 다시 내보내지 않는다.
+  delete data.documentContents
+  delete data.consent
+  return { ...application, data }
+}
+
 function audit(actorId: string | undefined, action: string, resourceType: string, resourceId: string, summary: string) {
   // 감사기록은 오래된 것부터 지우지 않는다. 투자·쿠폰 교환 분쟁이 생겼을 때
   // 무슨 일이 있었는지 말해줄 수 있는 유일한 근거이고, 그게 사라지면 되돌릴 방법이 없다.
@@ -401,7 +410,7 @@ function audit(actorId: string | undefined, action: string, resourceType: string
  */
 function recordConsent(
   userId: string, context: LegalContext, documentIds: string[],
-  extra: { resourceType?: string; resourceId?: string; amount?: number } = {},
+  extra: { resourceType?: string; resourceId?: string; amount?: number; riskAcknowledged?: boolean } = {},
 ) {
   if (!documentIds.length) return undefined
   db.legalConsents ??= []
@@ -1055,7 +1064,7 @@ async function handleDemoMutation(req: AuthedRequest, res: Response, user: Sessi
       sandbox.consents.unshift({
         id: demoId('consent'), userId: sandbox.id, context: fundAction[2] as 'invest' | 'withdraw',
         documentIds: demoConsent.documentIds, version: LEGAL_VERSION,
-        resourceType: 'fund', resourceId: fund.id, amount, agreedAt: now(),
+        resourceType: 'fund', resourceId: fund.id, amount, riskAcknowledged: demoConsent.riskAcknowledged, agreedAt: now(),
       })
       sandbox.consents = sandbox.consents.slice(0, 30)
     }
@@ -1291,7 +1300,7 @@ app.use('/api', async (req: AuthedRequest, res, next) => {
   if (viewer?.sessionMode !== 'demo') return next()
   const pathname = req.originalUrl.split('?')[0]
   // AI 상담·문서 판독·분석 리포트는 원래 경로를 그대로 쓴다. 셋 다 공유 원장에 쓰지 않는다.
-  const readOnlyAiPaths = ['/api/ai/chat', '/api/ai/ocr', '/api/ai/owner-report', '/api/ai/insight-summary']
+  const readOnlyAiPaths = ['/api/ai/chat', '/api/ai/ocr', '/api/ai/owner-report', '/api/ai/anomaly-detection', '/api/ai/insight-summary']
   if (readOnlyAiPaths.includes(pathname) || pathname.startsWith('/api/auth/')) return next()
   req.user = viewer
   try {
@@ -1596,7 +1605,7 @@ app.get('/api/admin/dashboard', auth('admin'), (_req, res) => {
       })),
     applications: applications.map((application) => {
       const owner = db.users.find((user) => user.id === application.userId)
-      return { ...application, owner: owner ? publicUser(owner) : undefined }
+      return { ...safeApplication(application), owner: owner ? publicUser(owner) : undefined }
     }),
     restaurants: db.restaurants,
     funds: db.funds,
@@ -1628,6 +1637,25 @@ app.patch('/api/admin/funds/:id', auth('admin'), async (req: AuthedRequest, res)
   if (!['funding', 'trading', 'closed'].includes(req.body.status)) return res.status(400).json({ error: '펀드 상태를 다시 선택해주세요.' })
   fund.status = req.body.status
   await saveDatabase(); changed(); res.json(fund)
+})
+
+app.get('/api/admin/applications/:id', auth('admin'), (req: AuthedRequest, res) => {
+  const application = db.applications.find((item) => item.id === req.params.id)
+  if (!application) return res.status(404).json({ error: '심사를 찾지 못했어요.' })
+  const owner = db.users.find((item) => item.id === application.userId)
+  const restaurant = db.restaurants.find((item) => item.sourceApplicationId === application.id)
+  const fund = restaurant && db.funds.find((item) => item.restaurantId === restaurant.id)
+  const data = application.data || {}
+  const analysisIds = Array.isArray(data.ocrAnalysisIds) ? data.ocrAnalysisIds.map(String) : []
+  const submittedAt = new Date(application.submittedAt).getTime()
+  const ocrAnalyses = db.ocrAnalyses
+    .filter((item) => item.userId === application.userId)
+    .filter((item) => analysisIds.length
+      ? analysisIds.includes(item.id)
+      : Math.abs(submittedAt - new Date(item.createdAt).getTime()) <= 24 * 3600_000)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  const consent = (db.legalConsents || []).find((item) => item.resourceType === 'application' && item.resourceId === application.id)
+  res.json({ application: safeApplication(application), owner: owner ? publicUser(owner) : undefined, restaurant, fund, ocrAnalyses, consent })
 })
 
 app.patch('/api/admin/applications/:id', auth('admin'), async (req: AuthedRequest, res) => {
@@ -1759,7 +1787,7 @@ app.post('/api/funds/:fundId/invest', auth('investor'), async (req: AuthedReques
   // 투자 건마다 어떤 위험고지 문서의 어느 버전에 동의했는지 남긴다.
   const investConsent = checkConsent('invest', req.body, 'investor')
   if (!investConsent.ok) return res.status(400).json({ error: investConsent.error })
-  recordConsent(user.id, 'invest', investConsent.documentIds, { resourceType: 'fund', resourceId: fund.id, amount })
+  recordConsent(user.id, 'invest', investConsent.documentIds, { resourceType: 'fund', resourceId: fund.id, amount, riskAcknowledged: investConsent.riskAcknowledged })
   if (ledgerRpcEnabled) {
     // 잔액 차감·포지션·모금액·FIFO 매칭을 Postgres 트랜잭션 하나로 처리한다.
     // 검증도 그 안에서 다시 하므로 여기서 미리 거를 필요가 없다.
@@ -1811,7 +1839,7 @@ app.post('/api/funds/:fundId/withdraw', auth('investor'), async (req: AuthedRequ
   if (amount < 1000) return res.status(400).json({ error: '회수는 1,000원 단위로 가능해요.' })
   const withdrawConsent = checkConsent('withdraw', req.body, 'investor')
   if (!withdrawConsent.ok) return res.status(400).json({ error: withdrawConsent.error })
-  recordConsent(user.id, 'withdraw', withdrawConsent.documentIds, { resourceType: 'fund', resourceId: fund.id, amount })
+  recordConsent(user.id, 'withdraw', withdrawConsent.documentIds, { resourceType: 'fund', resourceId: fund.id, amount, riskAcknowledged: withdrawConsent.riskAcknowledged })
   if (ledgerRpcEnabled) {
     // 돈이 오가는 부분만 트랜잭션으로 처리하고, 쿠폰 정산은 적립률 계산이
     // 서버에 있어 체결 결과를 받아 이어서 한다. 체결이 0원이면 쿠폰도 없다.
@@ -2781,10 +2809,16 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
         ? '자료가 부족하다는 이유만으로 탈락시키지 않고 추가 연결·서류와 사업주의 설명을 함께 보는 수동 심사로 넘겼어요.'
         : '교차검증에서 위험 신호가 커 바로 모금을 열기 어렵지만, 자료 보강과 개선 후 다시 신청할 수 있어요.'
 
+  // CSV 원문은 지표 계산에만 사용하고 신청 원장에는 남기지 않는다. 운영자는 파일명·크기·열·행,
+  // 산출 지표와 판독 결과를 보되 고객 거래 원문 전체를 대시보드 응답으로 받지 않는다.
+  const submittedFields = { ...data }
+  delete submittedFields.documentContents
+  delete submittedFields.consent
   const application: Application = {
     id: id('application'), userId: req.user!.id, restaurantName, submittedAt: now(), status,
     requestedLimit, approvedLimit, score,
-    data: { ...data, uploadedDocuments, documentMetadata, connectedSources, sourceProvenance, dataConfidence,
+    data: { ...submittedFields, uploadedDocuments, documentMetadata, connectedSources, sourceProvenance, dataConfidence,
+      ocrAnalysisIds: myAnalyses.map((item) => item.id),
       // 화면은 이름을 아는 지표만 그린다. 집계 중간값이 라벨 없이 새어 나가지 않게 한다.
       derivedMetrics: displayMetrics,
       // 신용평가가 다시 읽어야 하는 전체 집계값과, 어느 파일 몇 행에서 나왔는지의 근거.
@@ -3392,6 +3426,44 @@ app.post('/api/ai/owner-report', auth('owner'), async (req: AuthedRequest, res) 
     res.json({ facts, report, provider: 'openai', model, generatedAt: now(), cached: false })
   } catch (error) {
     console.error('AI owner report failed:', error instanceof Error ? error.message : error)
+    fallback()
+  }
+})
+
+/**
+ * 월매출 이상탐지. 숫자 판정은 재현 가능한 Median/MAD 엔진이 맡고,
+ * 생성형 AI는 판정을 바꾸지 않은 채 사장님용 설명과 확인 순서만 다듬는다.
+ */
+app.post('/api/ai/anomaly-detection', auth('owner'), async (req: AuthedRequest, res) => {
+  const demo = req.user!.sessionMode === 'demo'
+  const owned = demo ? db.restaurants.slice(0, 1) : db.restaurants.filter((item) => item.ownerId === req.user!.id)
+  const restaurant = (typeof req.body?.restaurantId === 'string' && owned.find((item) => item.id === req.body.restaurantId)) || owned[0]
+  if (!restaurant) return res.status(409).json({ error: '이상탐지할 가게가 없어요. 사장님 센터에서 펀딩 등록을 먼저 진행해주세요.' })
+
+  const detected = detectSalesAnomalies(restaurant.salesHistory || [])
+  const cacheKey = `anomaly:${restaurant.id}:${factsFingerprint({ history: restaurant.salesHistory, detected })}`
+  const refresh = Boolean(req.body?.refresh)
+  const cached = refresh ? undefined : cachedAnalysis<AnomalyDetection>(cacheKey)
+  if (cached) return res.json({ result: cached.value, provider: 'openai', model: cached.model, generatedAt: new Date(cached.at).toISOString(), cached: true })
+
+  const fallback = () => res.json({
+    result: detected, provider: 'meoktu-statistical-engine', model: detected.method,
+    generatedAt: now(), cached: false,
+  })
+  if (!aiApiUrl || !aiApiKey || detected.status === 'insufficient_data') return fallback()
+  if (!rateLimit(`anomaly:${req.user!.id}`, 12, 3600_000)) return fallback()
+
+  try {
+    const generated = await generateAnalysisOnce<AnomalyDetection>(cacheKey, async () => {
+      const { parsed, model } = await callAiJson(ANOMALY_EXPLANATION_SYSTEM, anomalyExplanationPrompt(detected), { maxTokens: 500 })
+      const result = applyAnomalyExplanation(detected, parsed)
+      if (!result || !safeAdvisoryText([result.summary, ...result.nextChecks])) throw new Error('anomaly explanation failed validation')
+      if (!demo) audit(req.user!.id, 'ai.anomaly_detection', 'restaurant', restaurant.id, `매출 이상탐지 ${detected.status} · ${model}`)
+      return { value: result, model }
+    })
+    res.json({ result: generated.value, provider: 'openai', model: generated.model, generatedAt: now(), cached: false })
+  } catch (error) {
+    console.error('AI anomaly explanation failed:', error instanceof Error ? error.message : error)
     fallback()
   }
 })

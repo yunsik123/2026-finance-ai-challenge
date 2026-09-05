@@ -31,7 +31,7 @@ const changed = new Promise<void>((resolve, reject) => {
 })
 await request('/api/funds/f-sobok/invest', { method: 'POST', body: JSON.stringify({
   amount: 1000,
-  consent: { version: legal.version, documentIds: legal.required.invest },
+  consent: { version: legal.version, documentIds: legal.required.invest, riskAcknowledged: true },
 }) }, login.token)
 await changed
 socket.disconnect()

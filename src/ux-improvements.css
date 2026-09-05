@@ -59,7 +59,9 @@
 
 .trade-confirm {
   position: relative;
-  width: min(460px, 100%);
+  width: min(620px, 100%);
+  max-height: min(90vh, 820px);
+  overflow-y: auto;
   border-radius: 22px;
   padding: 28px;
   background: #fff;
@@ -102,6 +104,24 @@
   text-align: right;
   font-weight: 800;
 }
+
+.trade-consent-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 4px;
+  padding-top: 4px;
+}
+
+.trade-consent-list > b { font-size: 12px; }
+.trade-consent-list > p {
+  margin: -3px 0 3px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.trade-consent-list .consent-reader { margin: 0; }
+.trade-consent-list .consent-reader-scroll { max-height: 210px; }
 
 .risk-confirm-check {
   display: block;

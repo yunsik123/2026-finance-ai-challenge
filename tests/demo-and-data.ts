@@ -34,7 +34,7 @@ assert(demoTopup.balance === demoInvestorMe.user.cash + 50000, '체험 충전이
 const demoTarget = (await ok('/api/public')).restaurants.find((item: any) => item.fund.status === 'funding')
 const demoInvest = await ok(`/api/funds/${demoTarget.fund.id}/invest`, { method: 'POST', body: JSON.stringify({
   amount: 20000,
-  consent: { version: legal.version, documentIds: legal.required.invest },
+  consent: { version: legal.version, documentIds: legal.required.invest, riskAcknowledged: true },
 }) }, demoInvestor.token)
 assert(demoInvest.ephemeral === true, '체험 투자 결과는 비영구임을 표시해야 합니다.')
 const demoAfterInvest = await ok('/api/me', {}, demoInvestor.token)

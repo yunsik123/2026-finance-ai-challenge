@@ -93,6 +93,27 @@ export interface InsightFacts {
 export interface InsightCard { id: string; name: string; traits: string[]; caution: string }
 export interface InsightSummary { cards: InsightCard[]; comparison: string }
 
+export interface SalesAnomaly {
+  month: string
+  sales: number
+  changeRate: number
+  robustScore: number
+  severity: 'warning' | 'critical'
+  direction: 'increase' | 'decrease'
+  reason: string
+}
+
+export interface AnomalyDetection {
+  status: 'normal' | 'watch' | 'critical' | 'insufficient_data'
+  method: string
+  sampleSize: number
+  baselineChangeRate: number
+  expectedRange: { min: number; max: number }
+  anomalies: SalesAnomaly[]
+  summary: string
+  nextChecks: string[]
+}
+
 const clampText = (value: unknown, max: number) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max)
 /**
  * 모델이 내부 필드명을 문장에 옮겨 적었는지 본다.
@@ -103,9 +124,89 @@ export const leaksFieldName = (values: string[]) => values.some((text) => /[a-z]
 const round1 = (value: number) => Number(value.toFixed(1))
 const won = (value: number) => `${Math.round(value).toLocaleString('ko-KR')}원`
 
+const median = (values: number[]) => {
+  if (!values.length) return 0
+  const sorted = [...values].sort((a, b) => a - b)
+  const middle = Math.floor(sorted.length / 2)
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2
+}
+
+/**
+ * 최근 월매출의 이상치를 강건 통계(Median/MAD)로 찾는다.
+ * 평균·표준편차만 쓰면 한 번의 급등락이 기준선까지 끌고 가므로 작은 표본에는
+ * 중앙값과 MAD를 쓴다. 탐지 수치와 판정은 생성형 AI가 바꾸지 못한다.
+ */
+export function detectSalesAnomalies(history: SalesPoint[]): AnomalyDetection {
+  const points = history
+    .filter((point) => /^\d{4}-\d{2}$/.test(point.month) && Number.isFinite(point.sales) && point.sales >= 0)
+    .slice(-24)
+  if (points.length < 6) return {
+    status: 'insufficient_data', method: 'robust-mad-v1', sampleSize: points.length,
+    baselineChangeRate: 0, expectedRange: { min: 0, max: 0 }, anomalies: [],
+    summary: `월매출 자료가 ${points.length}개월뿐이라 이상 여부를 판단하지 않았습니다. 최소 6개월 자료가 필요합니다.`,
+    nextChecks: ['최근 6개월 이상의 월별 POS 매출을 연결하기'],
+  }
+
+  const changes = points.slice(1).map((point, index) => {
+    const previous = points[index].sales
+    return previous > 0 ? (point.sales - previous) / previous * 100 : 0
+  })
+  const center = median(changes)
+  const mad = median(changes.map((value) => Math.abs(value - center)))
+  // 완만한 계열의 작은 잡음을 이상으로 오인하지 않도록 최소 변동 폭 4%p를 둔다.
+  const robustSigma = Math.max(4, mad / 0.6745)
+  const expectedHalfWidth = Math.max(12, robustSigma * 3.5)
+  const expectedRange = { min: round1(center - expectedHalfWidth), max: round1(center + expectedHalfWidth) }
+  const anomalies = changes.flatMap((change, index): SalesAnomaly[] => {
+    const robustScore = Math.abs(change - center) / robustSigma
+    // 통계 점수뿐 아니라 20% 이상의 실질 변화가 함께 있어야 경고한다.
+    if (robustScore < 3.5 || Math.abs(change) < 20) return []
+    const point = points[index + 1]
+    const severity = robustScore >= 5 || Math.abs(change) >= 35 ? 'critical' : 'warning'
+    const direction = change >= 0 ? 'increase' : 'decrease'
+    return [{
+      month: point.month, sales: point.sales, changeRate: round1(change), robustScore: round1(robustScore),
+      severity, direction,
+      reason: `${point.month.replace('-', '년 ')}월 매출 변화 ${change >= 0 ? '+' : ''}${round1(change)}%가 평소 변화 범위(${expectedRange.min}%~${expectedRange.max}%)를 벗어났습니다.`,
+    }]
+  })
+  const recent = anomalies.filter((item) => points.slice(-3).some((point) => point.month === item.month))
+  const status = recent.some((item) => item.severity === 'critical') ? 'critical'
+    : recent.length || anomalies.length ? 'watch' : 'normal'
+  return {
+    status, method: 'robust-mad-v1', sampleSize: points.length,
+    baselineChangeRate: round1(center), expectedRange, anomalies,
+    summary: anomalies.length
+      ? `최근 ${points.length}개월 중 평소 흐름을 벗어난 달이 ${anomalies.length}개 감지됐습니다. 원인을 단정하지 않고 POS 취소·영업일·행사·휴점 기록과 먼저 대조해야 합니다.`
+      : `최근 ${points.length}개월의 월매출 변화는 강건 통계 기준의 평소 범위 안에 있습니다.`,
+    nextChecks: anomalies.length
+      ? ['POS 취소·환불과 누락 거래 확인', '휴점·영업일수·행사 일정 대조', '카드 정산액과 사업계좌 입금액 교차확인']
+      : ['다음 달 매출 입력 후 같은 기준으로 다시 확인'],
+  }
+}
+
 /** 자료가 실제로 바뀌었을 때만 다시 분석하기 위한 지문. */
 export function factsFingerprint(value: unknown) {
   return crypto.createHash('sha1').update(JSON.stringify(value)).digest('hex').slice(0, 16)
+}
+
+export const ANOMALY_EXPLANATION_SYSTEM = `당신은 식당 월매출 이상탐지 결과를 설명하는 한국어 분석가입니다.
+- 수치 판정은 강건 통계 엔진이 확정했습니다. 탐지 건수·월·증감률을 바꾸거나 새 이상을 만들지 마세요.
+- 이상은 오류나 부정을 뜻하지 않습니다. 확인 순서만 설명하고 원인을 단정하지 마세요.
+- 수익·매출 회복을 보장하거나 투자 판단을 권유하지 마세요.
+- JSON 객체 하나만 출력하세요.`
+
+export function anomalyExplanationPrompt(result: AnomalyDetection) {
+  const schema = { summary: '<2문장 이내>', nextChecks: ['<확인할 일 1>', '<확인할 일 2>', '<확인할 일 3>'] }
+  return `다음 통계 탐지 결과를 사장님이 이해할 수 있게 설명하세요.\n${JSON.stringify(result)}\n\n${JSON.stringify(schema)}`
+}
+
+export function applyAnomalyExplanation(result: AnomalyDetection, parsed: Record<string, unknown>): AnomalyDetection | null {
+  const summary = clampText(parsed.summary, 320)
+  const nextChecks = (Array.isArray(parsed.nextChecks) ? parsed.nextChecks : [])
+    .map((item) => clampText(item, 100)).filter(Boolean).slice(0, 4)
+  if (!summary || nextChecks.length < 2 || leaksFieldName([summary, ...nextChecks])) return null
+  return { ...result, summary, nextChecks }
 }
 
 const sourceLabels: Record<string, string> = {
@@ -418,8 +519,14 @@ export function normalizeInsight(parsed: Record<string, unknown>, facts: Insight
     const found = raw.find((card) => String(card?.id || '') === item.id)
     const traits = (Array.isArray(found?.traits) ? found!.traits : []).map((trait) => clampText(trait, 140)).filter(Boolean).slice(0, 3)
     const caution = clampText(found?.caution, 160)
-    return traits.length ? { id: item.id, name: item.name, traits, caution } : null
+    const text = [...traits, caution].join(' ')
+    const allowedNumbers = [item.salesGrowth, item.repeatRate, item.stabilityScore, item.closingRate, item.footTrafficGrowth,
+      item.rating, item.reviewCount, item.openedYears, item.fundProgress, item.maxDiscount, item.minIssueDiscount]
+    const grounded = allowedNumbers.some((value) => new RegExp(`(^|[^\\d])${String(value).replace('.', '\\.')}([^\\d]|$)`).test(text))
+    const leaksPrivateSales = !item.salesDisclosure && /[\d,]+\s*원/.test(text)
+    return traits.length && grounded && !leaksPrivateSales ? { id: item.id, name: item.name, traits, caution } : null
   })
   // 한 가게라도 해석이 비면 화면에 빈 카드가 생긴다. 그럴 바에는 규칙 기반 전체를 쓴다.
-  return cards.every(Boolean) ? { cards: cards as InsightCard[], comparison } : null
+  const namesGrounded = facts.every((item) => comparison.includes(item.name))
+  return cards.every(Boolean) && namesGrounded ? { cards: cards as InsightCard[], comparison } : null
 }

@@ -32,11 +32,14 @@ function App() {
   const [me, setMe] = useState<MeState | null>(null)
   const [authOpen, setAuthOpen] = useState(false)
   const [selected, setSelected] = useState<Restaurant | null>(null)
+  const [selectedTrade, setSelectedTrade] = useState<'invest' | 'withdraw'>('invest')
+  const [selectedAmount, setSelectedAmount] = useState<number | undefined>()
   const [toast, setToast] = useState('')
   const [loading, setLoading] = useState(true)
   const navigate = useNavigate()
   const location = useLocation()
   const adminRoute = location.pathname.startsWith('/admin')
+  const adminOnly = me?.user.role === 'admin'
   const ownerOnly = me?.user.role === 'owner'
 
   const notify = (message: string) => {
@@ -94,6 +97,16 @@ function App() {
 
   const transact = async (kind: 'invest' | 'withdraw', fundId: string, amount: number) => {
     if (!requireLogin()) return
+    // 마이페이지의 빠른 회수 버튼도 약관 확인을 건너뛰지 않는다. 상세 확인창에서
+    // 금액과 현재 약관을 다시 확인한 뒤 거래하도록 이동만 시킨다.
+    const restaurant = state?.restaurants.find((item) => item.fund.id === fundId)
+    if (restaurant) {
+      setSelectedTrade(kind)
+      setSelectedAmount(amount)
+      setSelected(restaurant)
+      notify(kind === 'withdraw' ? '회수 금액과 현재 약관을 확인해주세요.' : '투자 금액과 현재 약관을 확인해주세요.')
+      return
+    }
     try {
       const result = await api<{ message: string }>(`/api/funds/${fundId}/${kind}`, { method: 'POST', body: JSON.stringify({ amount }) })
       notify(result.message); await refresh()
@@ -113,10 +126,13 @@ function App() {
 
   return (
     <div className="app-shell">
-      {!adminRoute && <Header user={me?.user} notifications={me?.notifications || []} unread={me?.unreadNotifications || 0} refresh={refresh} onLogin={() => setAuthOpen(true)} onLogout={logout} />}
+      {!adminRoute && !adminOnly && <Header user={me?.user} notifications={me?.notifications || []} unread={me?.unreadNotifications || 0} refresh={refresh} onLogin={() => setAuthOpen(true)} onLogout={logout} />}
       <main>
         <Routes>
-          {ownerOnly ? <>
+          {adminOnly ? <>
+            <Route path="/admin" element={<AdminCenter me={me} onLogin={() => setAuthOpen(true)} onLogout={logout} notify={notify} />} />
+            <Route path="*" element={<Navigate to="/admin" replace />} />
+          </> : ownerOnly ? <>
             <Route path="/owner" element={<OwnerCenter me={me} onLogin={() => setAuthOpen(true)} refresh={refresh} notify={notify} />} />
             <Route path="/owner/my" element={<OwnerMyPage me={me} refresh={refresh} notify={notify} />} />
             <Route path="/legal" element={<LegalCenter me={me} />} />
@@ -129,7 +145,7 @@ function App() {
             <Route path="/market" element={<MarketPage state={state} me={me} requireLogin={requireLogin} onSelect={setSelected} refresh={refresh} notify={notify} />} />
             <Route path="/insight" element={<InsightPage state={state} onSelect={setSelected} />} />
             <Route path="/owner" element={<OwnerCenter me={me} onLogin={() => setAuthOpen(true)} refresh={refresh} notify={notify} />} />
-            <Route path="/admin" element={<AdminCenter me={me} onLogin={() => setAuthOpen(true)} notify={notify} />} />
+            <Route path="/admin" element={<AdminCenter me={me} onLogin={() => setAuthOpen(true)} onLogout={logout} notify={notify} />} />
             <Route path="/my" element={<MyPage me={me} state={state} restaurants={state.restaurants} requireLogin={requireLogin} onSelect={setSelected} transact={transact} refresh={refresh} notify={notify} />} />
             <Route path="/support" element={<SupportPage me={me} state={state} onLogin={() => setAuthOpen(true)} notify={notify} />} />
             <Route path="/legal" element={<LegalCenter me={me} />} />
@@ -138,12 +154,12 @@ function App() {
           </>}
         </Routes>
       </main>
-      {!adminRoute && !ownerOnly && <Footer />}
-      {!adminRoute && <MobileNav user={me?.user} />}
+      {!adminRoute && !ownerOnly && !adminOnly && <Footer />}
+      {!adminRoute && !adminOnly && <MobileNav user={me?.user} />}
       {authOpen && <AuthModal onClose={() => setAuthOpen(false)} onAuth={onAuth} notify={notify} />}
-      {!ownerOnly && selected && <FundDetailModal restaurant={state.restaurants.find((r) => r.id === selected.id) || selected} me={me} onClose={() => setSelected(null)} onLogin={() => setAuthOpen(true)} refresh={refresh} notify={notify} />}
+      {!ownerOnly && selected && <FundDetailModal restaurant={state.restaurants.find((r) => r.id === selected.id) || selected} me={me} initialTab={selectedTrade} initialAmount={selectedAmount} onClose={() => { setSelected(null); setSelectedTrade('invest'); setSelectedAmount(undefined) }} onLogin={() => setAuthOpen(true)} refresh={refresh} notify={notify} />}
       {toast && <div className="toast"><Check size={18} />{toast}</div>}
-      {!adminRoute && <FloatingAiChat role={me?.user.role || 'investor'} />}
+      {!adminRoute && !adminOnly && <FloatingAiChat role={me?.user.role || 'investor'} />}
     </div>
   )
 }

@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { NavLink } from 'react-router-dom'
-import { BadgeCheck, Banknote, Building2, Check, ChevronRight, Database, Download, Eraser, FileSpreadsheet, FolderDown, Landmark, Link2, LockKeyhole, PlugZap, ReceiptText, ShieldCheck, Sparkles, Store, UploadCloud, UserCheck, Users, type LucideIcon } from 'lucide-react'
+import { BadgeCheck, Banknote, Building2, Check, Database, Download, Eraser, FileSpreadsheet, FolderDown, Landmark, Link2, LockKeyhole, PlugZap, ReceiptText, ShieldCheck, Sparkles, Store, UploadCloud, UserCheck, Users, type LucideIcon } from 'lucide-react'
 import { api } from './lib/api.ts'
-import CouponVerify from './CouponVerify.tsx'
 import VerificationReport from './VerificationReport.tsx'
 import CreditGradePanel from './CreditGradePanel.tsx'
 import { LegalConsentReader, useLegalIndex } from './LegalCenter.tsx'
@@ -123,7 +122,6 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
 
   useEffect(() => { if (owner) api<any>('/api/owner').then(setOwnerData).catch(() => undefined) }, [owner, me?.applications.length])
   const restaurant = ownerData?.restaurants?.[0]
-  const fund = ownerData?.funds?.[0]
   const metrics = result?.data?.derivedMetrics || {}
   const confidence = result?.data?.dataConfidence || 0
   const uploadedCount = useMemo(() => Object.keys(uploadedFiles).length, [uploadedFiles])
@@ -281,13 +279,11 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
       <div className="review-flow data-flow"><b>펀딩 등록 흐름</b>{['사업자·대표자 인증','직접 업로드/기관연동 선택','최소 필수 동의 확인','35지표 먹투 성장성 예비평가','결측·위험 관리자 확인','펀딩 등록과 공개범위 선택'].map((title,index) => <div key={title}><span>{index+1}</span><p>{title}</p><Check /></div>)}</div>
     </section>
     <div className="owner-body">
-      {owner && restaurant && !result && <section className="owner-funding-status">
+      {owner && !result && <section className="owner-funding-status">
         <div className="owner-funding-status-head">
-          <div><span className="eyebrow coral"><Store /> {restaurant.name}{fund ? ` · ${fund.round}차 라운드 운영 중` : ''}</span><h2>다음 라운드 신청서를 작성하고 있어요</h2><p>모집 현황·AI 경영 리포트·검증 결과는 마이페이지에서 보고, 이 화면에서는 최근 자료만 갱신해 제출하면 됩니다.</p></div>
-          <NavLink className="button secondary" to="/owner/my">내 펀드 현황 보기 <ChevronRight /></NavLink>
+          <div><span className="eyebrow coral"><Store /> 펀딩 등록</span><h2>펀딩 등록 자료를 제출해주세요</h2><p>이 화면에서는 신규 펀딩 신청과 심사 자료 제출만 진행합니다. 등록 후 펀드 현황과 운영 기능은 마이페이지에서 확인할 수 있어요.</p></div>
         </div>
       </section>}
-      {owner && restaurant && !result && <CouponVerify refresh={refresh} notify={notify} />}
 
       {demoMode && <section className="demo-mode-banner"><ShieldCheck /><div><b>사장님 체험 모드 · 저장되지 않아요</b><p>기관 연결, 샘플 자료 업로드, AI 문서 확인, 심사 접수, 먹투 성장성 예비평가 확인까지 실제와 똑같이 눌러볼 수 있어요. 이 체험 기록은 다른 사용자에게 보이지 않고 브라우저를 닫으면 사라집니다.</p></div></section>}
 
@@ -307,7 +303,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
       </section> : <form ref={formRef} className={`application-form source-application ${!owner ? 'locked' : ''}`} onSubmit={submit}>
         {!owner && <div className="owner-lock-overlay"><LockKeyhole /><h2>사장님 계정 전용 기능이에요</h2><p>상호명과 자료 업로드를 포함한 모든 입력은 소상공인 계정으로 로그인한 뒤 사용할 수 있습니다.</p><button type="button" className="button" onClick={onLogin}>{me ? '소상공인 계정으로 다시 로그인' : '로그인·회원가입'}</button></div>}
         <fieldset disabled={!owner}>
-          <div className="form-heading"><span>원천데이터 기반 예비심사</span><h2>{owner && restaurant ? '다음 라운드 자료를 갱신해주세요' : '필요한 자료를 하나씩 제출해주세요'}</h2><p>매출액·성장률·재방문율은 직접 입력하지 않습니다. 각 자료의 정확한 범위와 항목을 확인하고 파일을 선택하면 먹투가 계산합니다.{owner && restaurant ? ' 기존 운영 순서와 다운로드 자료는 그대로 유지됩니다.' : ''}</p></div>
+          <div className="form-heading"><span>원천데이터 기반 예비심사</span><h2>필요한 자료를 하나씩 제출해주세요</h2><p>매출액·성장률·재방문율은 직접 입력하지 않습니다. 각 자료의 정확한 범위와 항목을 확인하고 파일을 선택하면 먹투가 계산합니다.</p></div>
 
           <section className="form-section">
             <div className="form-section-title"><span>1</span><div><h3>사업체 기본정보와 대표자 확인</h3><p>상권 자료는 주소를 기준으로 먹투가 직접 수집합니다.</p></div></div>

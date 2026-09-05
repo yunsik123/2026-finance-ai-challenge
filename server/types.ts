@@ -273,6 +273,7 @@ export interface LegalConsent {
   resourceType?: string
   resourceId?: string
   amount?: number
+  riskAcknowledged?: boolean
   agreedAt: string
 }
 

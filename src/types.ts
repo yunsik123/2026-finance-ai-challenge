@@ -43,11 +43,39 @@ export interface OwnerReport {
 export interface OwnerReportFacts {
   reportMonth: string; monthlySales: number; salesChange: number; repeatRate: number
   couponUseRate: number; couponExposure: number; outstandingCoupon: number; maxDiscount: number
+  area?: { name: string; footTrafficGrowth: number; localSalesGrowth: number; closureRate: number; competitorDensity: number; rentGrowthRate: number }
 }
 
 export interface OwnerReportResponse {
   facts: OwnerReportFacts; report: OwnerReport
   provider: 'openai' | 'meoktu-rule-engine'; model: string; generatedAt: string; cached: boolean
+}
+
+export interface SalesAnomaly {
+  month: string
+  sales: number
+  changeRate: number
+  robustScore: number
+  severity: 'warning' | 'critical'
+  direction: 'increase' | 'decrease'
+  reason: string
+}
+
+export interface AnomalyDetectionResponse {
+  result: {
+    status: 'insufficient_data' | 'normal' | 'watch' | 'critical'
+    method: 'robust-mad-v1'
+    sampleSize: number
+    baselineChangeRate: number
+    expectedRange: { min: number; max: number }
+    anomalies: SalesAnomaly[]
+    summary: string
+    nextChecks: string[]
+  }
+  provider: 'openai' | 'meoktu-statistical-engine'
+  model: string
+  generatedAt: string
+  cached: boolean
 }
 
 export interface InsightCard { id: string; name: string; traits: string[]; caution: string }
@@ -172,6 +200,7 @@ export interface LegalConsentRecord {
   resourceType?: string
   resourceId?: string
   amount?: number
+  riskAcknowledged?: boolean
   agreedAt: string
 }
 
