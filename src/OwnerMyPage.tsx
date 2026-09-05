@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { NavLink, useNavigate } from 'react-router-dom'
+import { NavLink } from 'react-router-dom'
 import { BadgeCheck, ChevronRight, CircleAlert, Clock3, Eye, FileCheck2, Store, WalletCards } from 'lucide-react'
 import { api } from './lib/api.ts'
 import OwnerDashboard from './OwnerDashboard.tsx'
@@ -62,7 +62,6 @@ const auditActionLabel = (action: string) => auditActions[action] || action.spli
 export default function OwnerMyPage({ me, refresh, notify }: { me: MeState; refresh: () => Promise<void>; notify: (message: string) => void }) {
   const [owner, setOwner] = useState<OwnerState | null>(null)
   const [selectedId, setSelectedId] = useState('')
-  const navigate = useNavigate()
   const applications = useMemo(() => [...(owner?.applications || me.applications)].sort((a, b) => b.submittedAt.localeCompare(a.submittedAt)), [owner, me.applications])
   const selected = applications.find((item) => item.id === selectedId) || applications[0]
   const restaurant = owner?.restaurants.find((item) => item.sourceApplicationId === selected?.id)
@@ -105,7 +104,7 @@ export default function OwnerMyPage({ me, refresh, notify }: { me: MeState; refr
 
     {me.user.sessionMode === 'demo' && <div className="owner-my-demo"><Eye /><p><b>체험 모드 결과입니다.</b> 심사 화면과 결과 확인은 동일하지만 체험 식당은 다른 투자자 계정에 공개되지 않습니다.</p></div>}
 
-    {hasFund && <OwnerDashboard data={owner} onDividend={sendDividend} onNewFund={() => navigate('/owner')} />}
+    {hasFund && <OwnerDashboard data={owner} onDividend={sendDividend} />}
 
     {restaurant && <section className="sales-disclosure-control"><div><span><Eye /></span><div><b>투자자 매출 데이터 공개</b><p>보너스 산정 결과는 항상 공개하고, 정확한 월매출 그래프는 사장님이 선택합니다.</p></div></div><button className={restaurant.salesDisclosure ? 'active' : ''} onClick={toggleDisclosure}><i />{restaurant.salesDisclosure ? '월매출 공개 중' : '월매출 비공개'}</button></section>}
 
@@ -143,7 +142,7 @@ export default function OwnerMyPage({ me, refresh, notify }: { me: MeState; refr
       </div>
     </>}
 
-    {!selected && restaurant && <section className="owner-my-empty owner-my-empty-inline"><FileCheck2 /><h2>이 펀드는 운영자 검증으로 등록됐어요</h2><p>AI 예비평가 리포트와 신용등급 카드는 다음 펀딩을 신청하면 이곳에 함께 쌓입니다.</p><NavLink className="button" to="/owner">추가 펀딩 신청하기 <ChevronRight /></NavLink></section>}
+    {!selected && restaurant && <section className="owner-my-empty owner-my-empty-inline"><FileCheck2 /><h2>이 펀드는 운영자 검증으로 등록됐어요</h2><p>AI 예비평가 리포트와 신용등급 카드는 위 <b>추가 펀딩 신청</b>으로 다음 라운드를 접수하면 이곳에 함께 쌓입니다.</p></section>}
 
     {applications.length > 0 && <section className="owner-application-history">
       <div className="subheading"><div><span>APPLICATION HISTORY</span><h2>심사 신청 내역</h2></div><NavLink to="/legal">내 동의 기록 보기 <ChevronRight /></NavLink></div>

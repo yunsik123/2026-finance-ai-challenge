@@ -4,10 +4,10 @@ import { api } from './lib/api.ts'
 import type { OwnerReportResponse } from './types.ts'
 import './owner-dashboard.css'
 
-type Props = { data: any; onDividend: (fundId: string) => void; onNewFund: () => void }
+type Props = { data: any; onDividend: (fundId: string) => void }
 const won = (value: number) => `${Math.round(value).toLocaleString('ko-KR')}원`
 
-export default function OwnerDashboard({ data, onDividend, onNewFund }: Props) {
+export default function OwnerDashboard({ data, onDividend }: Props) {
   const restaurant = data.restaurants[0]
   const fund = data.funds[0]
   const history = restaurant.salesHistory || []
@@ -48,7 +48,7 @@ export default function OwnerDashboard({ data, onDividend, onNewFund }: Props) {
   const aiGenerated = analysis?.provider === 'openai'
 
   return <div className="owner-dashboard">
-    <div className="dashboard-heading"><div><span>사장님 운영 대시보드</span><h2>{restaurant.name}의 현재 운영 현황</h2><p>투자금, 쿠폰 부담과 월간 경영 지표를 함께 확인하세요.</p></div><button className="button" onClick={onNewFund}>추가 펀딩 준비</button></div>
+    <div className="dashboard-heading"><div><span>사장님 운영 대시보드</span><h2>{restaurant.name}의 현재 운영 현황</h2><p>투자금, 쿠폰 부담과 월간 경영 지표를 함께 확인하세요.</p></div></div>
     <div className="owner-kpis"><div><Store /><span>모인 투자금</span><b>{won(fund.raised)}</b><small>목표의 {Math.round(fund.raised / fund.goal * 100)}%</small></div><div><Users /><span>함께한 투자자</span><b>{fund.investorCount}명</b><small>현재 참여 인원</small></div><div><Ticket /><span>발급 쿠폰 혜택</span><b>{won(fund.totalCouponIssued)}</b><small>누적 최대 할인액 기준</small></div><div><BarChart3 /><span>실제 사용 혜택</span><b>{won(fund.totalCouponUsed)}</b><small>발급액의 {useRate}% 사용</small></div></div>
 
     <section className="ai-owner-report">

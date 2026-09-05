@@ -76,7 +76,36 @@
 .risk-doc-links svg{width:13px}
 .risk-terms-version{display:block;margin-top:8px;font-size:10px;color:var(--muted);text-align:center}
 
+/* 전문을 펼쳐 읽고 맨 아래에서 동의하는 카드 */
+.consent-reader{border:1px solid var(--line);border-radius:14px;background:#fff;margin-top:10px;overflow:hidden}
+.consent-reader.agreed{border-color:#82ba93;background:#f7fcf9}
+.consent-reader.open{border-color:#c3d2c8}
+.consent-reader-head{width:100%;display:grid;grid-template-columns:30px minmax(0,1fr) auto auto;gap:11px;align-items:center;padding:14px 15px;border:0;background:transparent;text-align:left;cursor:pointer}
+.consent-reader-mark{display:grid;place-items:center;width:28px;height:28px;border-radius:9px;background:var(--surface-soft);color:#a8aea9}
+.consent-reader-mark svg{width:15px}
+.consent-reader.agreed .consent-reader-mark{background:#e4f4e9;color:var(--green)}
+.consent-reader-copy{display:grid;gap:3px;min-width:0}
+.consent-reader-copy strong{font-size:12px}
+.consent-reader-copy small{font-size:11px;line-height:1.5;color:var(--muted)}
+.consent-reader-state{font-size:11px;font-weight:800;color:var(--coral);white-space:nowrap}
+.consent-reader.agreed .consent-reader-state{color:var(--green)}
+.consent-reader-toggle{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:800;color:var(--green);white-space:nowrap}
+.consent-reader-toggle svg{width:14px;transition:transform .15s}
+.consent-reader.open .consent-reader-toggle svg{transform:rotate(180deg)}
+.consent-reader-panel{border-top:1px solid var(--line)}
+.consent-reader-scroll{max-height:280px;overflow-y:auto;padding:4px 17px 12px;background:var(--surface-soft)}
+.consent-reader-scroll .legal-body p{font-size:12px;line-height:1.75}
+.consent-reader-scroll .legal-body h3{font-size:13px}
+.consent-reader-scroll .legal-body section{padding:14px 0}
+.consent-reader-agree{display:grid;grid-template-columns:18px 16px minmax(0,1fr);gap:9px;align-items:center;padding:14px 16px;border-top:1px solid var(--line);background:#fff;font-size:12px;line-height:1.5;cursor:pointer}
+.consent-reader-agree input{width:17px;height:17px;accent-color:var(--green)}
+.consent-reader-agree>svg{width:16px;color:#c2c8c4}
+.consent-reader.agreed .consent-reader-agree{background:#f1faf4}
+.consent-reader.agreed .consent-reader-agree>svg{color:var(--green)}
+
 @media(max-width:680px){
+  .consent-reader-head{grid-template-columns:30px minmax(0,1fr);row-gap:6px}
+  .consent-reader-state,.consent-reader-toggle{grid-column:2}
   .legal-head h1{font-size:26px}
   .legal-doc-card{align-items:flex-start}
   .legal-modal-head,.legal-modal-scroll,.legal-modal-foot{padding-left:18px;padding-right:18px}

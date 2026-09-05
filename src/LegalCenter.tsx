@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, NavLink, useNavigate } from 'react-router-dom'
-import { BadgeCheck, ChevronLeft, ChevronRight, FileText, ScrollText, ShieldAlert, X } from 'lucide-react'
+import { BadgeCheck, Check, ChevronDown, ChevronLeft, ChevronRight, FileText, ScrollText, ShieldAlert, X } from 'lucide-react'
 import { api } from './lib/api.ts'
 import type { LegalConsentRecord, LegalDocument, LegalIndex, MeState } from './types.ts'
 import './legal.css'
@@ -79,6 +79,48 @@ export function LegalDocModal({ documentId, onClose }: { documentId: string; onC
         <button className="button" onClick={onClose}>닫기</button>
       </footer>
     </div>
+  </div>
+}
+
+/**
+ * 전문을 펼쳐 읽고 그 맨 아래에서 동의하는 카드.
+ * 요약만 보고 체크하는 대신 실제 문서를 읽은 뒤 동의하도록 순서를 맞췄다.
+ * 동의 여부는 상위 화면의 상태로만 관리한다. 접었을 때 체크박스가 사라져도 동의는 유지된다.
+ */
+export function LegalConsentReader({ documentId, title, summary, agreed, onToggle }: {
+  documentId: string; title: string; summary: string; agreed: boolean; onToggle: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [document, setDocument] = useState<LegalDocument | undefined>(documentCache.get(documentId))
+  const [error, setError] = useState('')
+  useEffect(() => {
+    if (!open || document) return
+    let live = true
+    loadLegalDocument(documentId)
+      .then((result) => { if (live) setDocument(result) })
+      .catch((cause) => { if (live) setError((cause as Error).message) })
+    return () => { live = false }
+  }, [open, document, documentId])
+
+  return <div className={`consent-reader ${agreed ? 'agreed' : ''} ${open ? 'open' : ''}`}>
+    <button type="button" className="consent-reader-head" onClick={() => setOpen((current) => !current)} aria-expanded={open}>
+      <span className="consent-reader-mark">{agreed ? <Check /> : <FileText />}</span>
+      <span className="consent-reader-copy"><strong>[필수] {title}</strong><small>{summary}</small></span>
+      <span className="consent-reader-state">{agreed ? '동의 완료' : '전문 확인 필요'}</span>
+      <span className="consent-reader-toggle">{open ? '접기' : '전문 보기'} <ChevronDown /></span>
+    </button>
+    {open && <div className="consent-reader-panel">
+      <div className="consent-reader-scroll">
+        {error ? <p className="legal-error"><ShieldAlert /> {error}</p>
+          : document ? <DocumentBody document={document} />
+          : <p className="legal-loading">전문을 불러오는 중이에요.</p>}
+      </div>
+      <label className="consent-reader-agree">
+        <input type="checkbox" checked={agreed} onChange={onToggle} disabled={!document} />
+        <Check />
+        <span>위 <b>{title}</b> 전문을 확인했고, 수집·이용에 동의합니다.</span>
+      </label>
+    </div>}
   </div>
 }
 
