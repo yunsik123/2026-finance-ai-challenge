@@ -8,6 +8,9 @@ import CreditGradePanel from './CreditGradePanel.tsx'
 import { LegalConsentReader, useLegalIndex } from './LegalCenter.tsx'
 import type { ApplicationResult, MeState, OcrAnalysis } from './types.ts'
 
+/** AI 판독 이미지 상한(MB). 서버 LIMITS.uploadMb 기본값과 같은 값을 유지한다. */
+const UPLOAD_MB = 12
+
 const won = (value: number) => `${Math.round(value).toLocaleString('ko-KR')}원`
 
 type UploadOption = {
@@ -235,7 +238,9 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
   const analyzeDocument = async (sourceId: string) => {
     const file = selectedFiles[sourceId]
     if (!file || !/^image\/(png|jpeg|webp)$/.test(file.type)) return notify('PNG, JPG 또는 WebP 이미지 문서만 AI 판독할 수 있어요.')
-    if (file.size > 6 * 1024 * 1024) return notify('AI 판독 이미지는 6MB 이하여야 해요.')
+    // 서버 LIMITS.uploadMb 의 기본값과 맞춘다. 서버에서 이 값을 올렸다면 여기서 막히더라도
+    // 실제 판정은 서버가 하므로, 최종 안내 문구는 서버 응답의 메시지를 따른다.
+    if (file.size > UPLOAD_MB * 1024 * 1024) return notify(`AI 판독 이미지는 ${UPLOAD_MB}MB 이하여야 해요.`)
     setAnalyzingSource(sourceId)
     try {
       const image = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(new Error('파일을 읽지 못했어요.')); reader.readAsDataURL(file) })
