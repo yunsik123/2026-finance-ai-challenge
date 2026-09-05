@@ -24,6 +24,12 @@ import {
   knowledgeAsOf, matchSupportPrograms, ownerSituation, ownerSituationGraph, supportProgramNodes,
 } from './knowledge.ts'
 import { COMMERCIAL_NOTE, COMMERCIAL_SOURCE, commercialInsight, findCommercialArea } from './commercial.ts'
+import {
+  INSIGHT_SUMMARY_SYSTEM, OWNER_REPORT_SYSTEM, buildOwnerReportFacts, factsFingerprint,
+  insightFallback, insightPrompt, leaksFieldName, normalizeInsight, normalizeOwnerReport,
+  ownerReportFallback, ownerReportPrompt,
+  type InsightFacts, type InsightSummary, type OwnerReport, type OwnerReportFacts,
+} from './ai-analysis.ts'
 import { orchestrateFinancialVerification, verifyBusiness } from './verification.ts'
 import { checkSwap, couponUsable, daysLeft, EXCHANGE_RULES, normalizePreferences, sweepExpired } from './exchange.ts'
 import { FileStateStore, SupabaseStateStore, TableStateStore, type StateStore } from './store.ts'
@@ -1274,8 +1280,9 @@ app.use('/api', async (req: AuthedRequest, res, next) => {
   const viewer = await userFromAuthorization(req.headers.authorization).catch(() => undefined)
   if (viewer?.sessionMode !== 'demo') return next()
   const pathname = req.originalUrl.split('?')[0]
-  // AI 상담·문서 판독은 원래 경로를 그대로 쓴다. 둘 다 공유 원장에 쓰지 않는다.
-  if (pathname === '/api/ai/chat' || pathname === '/api/ai/ocr' || pathname.startsWith('/api/auth/')) return next()
+  // AI 상담·문서 판독·분석 리포트는 원래 경로를 그대로 쓴다. 셋 다 공유 원장에 쓰지 않는다.
+  const readOnlyAiPaths = ['/api/ai/chat', '/api/ai/ocr', '/api/ai/owner-report', '/api/ai/insight-summary']
+  if (readOnlyAiPaths.includes(pathname) || pathname.startsWith('/api/auth/')) return next()
   req.user = viewer
   try {
     if (await handleDemoMutation(req, res, viewer) === false) return next()
@@ -1372,6 +1379,10 @@ app.get('/api/health', (_req, res) => res.json({
   authProvider: supabaseAuthConfigured ? 'supabase-with-local-demo-fallback' : 'local-demo',
   stateStore: store.kind,
   stateVersion: store.kind === 'file' ? undefined : stateVersion,
+  // 키 자체는 절대 노출하지 않고 '생성형이 붙어 있는지'만 알린다.
+  // 이게 있어야 배포본이 조용히 규칙 폴백으로만 도는 상황을 밖에서 잡아낼 수 있다.
+  ai: aiApiUrl && aiApiKey ? 'configured' : 'off',
+  aiModel: aiApiUrl && aiApiKey ? (process.env.OPENAI_CHAT_MODEL || process.env.AI_MODEL || 'gpt-4o-mini') : undefined,
 }))
 app.get('/api/public', async (req: AuthedRequest, res) => {
   const viewer = await userFromAuthorization(req.headers.authorization).catch(() => undefined)
@@ -3231,7 +3242,8 @@ app.post('/api/ai/management-credit-diagnosis', auth('owner'), async (req: Authe
   }
 
   res.json({
-    provider: aiApiUrl && aiApiKey ? 'meoktu-credit-engine+ai' : 'meoktu-credit-engine',
+    // 이 진단은 규칙 엔진(assessCredit)만으로 만든다. 생성형은 개입하지 않으므로 키가 있어도 +ai 로 표기하지 않는다.
+    provider: 'meoktu-credit-engine',
     restaurantId: restaurant?.id ?? null,
     modelVersion: credit.modelVersion,
     report,
@@ -3241,6 +3253,191 @@ app.post('/api/ai/management-credit-diagnosis', auth('owner'), async (req: Authe
     situation,
     references: credit.references,
   })
+})
+
+/**
+ * 생성형 호출을 한 곳으로 모은다. OCR·상담과 같은 자격증명을 쓰되,
+ * 여기서는 항상 JSON 객체 하나만 받아 파싱한다. 실패는 예외로 올려 호출부가 폴백을 쓰게 한다.
+ */
+async function callAiJson(system: string, user: string, options: { model?: string; maxTokens?: number } = {}) {
+  if (!aiApiUrl || !aiApiKey) throw new Error('AI API not configured')
+  const model = options.model || process.env.OPENAI_CHAT_MODEL || process.env.AI_MODEL || process.env.MOA_CHAT_MODEL || 'gpt-4o-mini'
+  const response = await fetch(aiApiUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${aiApiKey}` },
+    signal: AbortSignal.timeout(45_000),
+    body: JSON.stringify({
+      model,
+      messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+      response_format: { type: 'json_object' },
+      temperature: .3,
+      max_tokens: options.maxTokens || 1200,
+    }),
+  })
+  if (!response.ok) throw new Error(`AI API ${response.status}`)
+  const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }>; model?: string }
+  const parsed = jsonObject(payload.choices?.[0]?.message?.content || '')
+  if (!Object.keys(parsed).length) throw new Error('AI API returned an empty object')
+  return { parsed, model: payload.model || model }
+}
+
+/**
+ * 같은 자료로 두 번 분석하지 않기 위한 캐시.
+ * 키에 자료 지문이 들어 있으므로 매출·쿠폰·연결자료가 바뀌면 자동으로 새 분석이 돌고,
+ * 화면을 다시 열기만 한 경우에는 이미 만든 해석을 그대로 돌려준다.
+ */
+const aiAnalysisCache = new Map<string, { value: unknown; model: string; at: number }>()
+const aiAnalysisInFlight = new Map<string, Promise<{ value: unknown; model: string }>>()
+const AI_ANALYSIS_TTL = 12 * 3600_000
+
+function cachedAnalysis<T>(key: string) {
+  const hit = aiAnalysisCache.get(key)
+  if (!hit || Date.now() - hit.at > AI_ANALYSIS_TTL) { aiAnalysisCache.delete(key); return undefined }
+  return hit as { value: T; model: string; at: number }
+}
+
+function storeAnalysis(key: string, value: unknown, model: string) {
+  aiAnalysisCache.set(key, { value, model, at: Date.now() })
+  if (aiAnalysisCache.size <= 400) return
+  for (const [entry, item] of aiAnalysisCache) if (Date.now() - item.at > AI_ANALYSIS_TTL) aiAnalysisCache.delete(entry)
+  while (aiAnalysisCache.size > 400) aiAnalysisCache.delete(aiAnalysisCache.keys().next().value!)
+}
+
+/** 같은 지문의 요청이 동시에 들어와도 외부 생성형 호출은 하나만 실행한다. */
+async function generateAnalysisOnce<T>(key: string, generate: () => Promise<{ value: T; model: string }>) {
+  const running = aiAnalysisInFlight.get(key)
+  if (running) return running as Promise<{ value: T; model: string }>
+  const pending = generate().then((result) => {
+    storeAnalysis(key, result.value, result.model)
+    return result
+  }).finally(() => aiAnalysisInFlight.delete(key))
+  aiAnalysisInFlight.set(key, pending as Promise<{ value: unknown; model: string }>)
+  return pending
+}
+
+/** 생성형이 만든 문장에 투자 권유·보장 표현이 섞이면 통째로 버린다. 다듬어 쓰는 것보다 안전하다. */
+function safeAdvisoryText(values: string[]) {
+  return values.every((text) => {
+    if (!text) return true
+    if (/(보장|원금\s*손실\s*없|반드시\s*오릅|확실히\s*늘)/.test(text)) return false
+    return enforceInvestmentAdvicePolicy(text) === text
+  })
+}
+
+/**
+ * AI 점주 경영 리포트.
+ * 매출·재방문·쿠폰 수치는 서버가 확정해 facts 로 넘기고, 생성형은 해석과 실행안만 쓴다.
+ * 키가 없거나 호출·검증이 실패하면 같은 facts 로 만든 규칙 기반 리포트를 내려준다.
+ */
+app.post('/api/ai/owner-report', auth('owner'), async (req: AuthedRequest, res) => {
+  const demo = req.user!.sessionMode === 'demo'
+  const owned = demo ? db.restaurants.slice(0, 1) : db.restaurants.filter((item) => item.ownerId === req.user!.id)
+  const restaurant = (typeof req.body?.restaurantId === 'string' && owned.find((item) => item.id === req.body.restaurantId)) || owned[0]
+  if (!restaurant) return res.status(409).json({ error: '아직 등록된 가게가 없어요. 사장님 센터에서 펀딩 신청을 먼저 진행해주세요.' })
+
+  const fund = db.funds.find((item) => item.restaurantId === restaurant.id)
+  const connections = demo
+    ? demoSandbox(req.user!.id, 'owner').connections
+    : db.dataConnections.filter((item) => item.userId === req.user!.id)
+  const located = findCommercialArea(restaurant)
+  const facts = buildOwnerReportFacts({
+    restaurant, fund,
+    connectedSources: connections.filter((item) => item.status === 'active').map((item) => item.sourceId),
+    area: located && {
+      name: located.area.areaName,
+      footTrafficGrowth: located.area.footTraffic.growthRate,
+      localSalesGrowth: located.area.spending.localSalesGrowth,
+      closureRate: located.area.marketDynamics.closureRate,
+      competitorDensity: located.area.marketDynamics.competitorDensity,
+      rentGrowthRate: located.area.realEstate.rentGrowthRate,
+    },
+  })
+
+  const cacheKey = `owner-report:${restaurant.id}:${factsFingerprint(facts)}`
+  const refresh = Boolean(req.body?.refresh)
+  const cached = refresh ? undefined : cachedAnalysis<OwnerReport>(cacheKey)
+  if (cached) return res.json({ facts, report: cached.value, provider: 'openai', model: cached.model, generatedAt: new Date(cached.at).toISOString(), cached: true })
+
+  const fallback = () => res.json({
+    facts, report: ownerReportFallback(facts), provider: 'meoktu-rule-engine',
+    model: 'meoktu-owner-report-rules-v1', generatedAt: now(), cached: false,
+  })
+  if (!aiApiUrl || !aiApiKey) return fallback()
+  // 분석 한 번이 곧 외부 호출 한 번이다. 새로고침 연타로 비용이 새지 않게 계정 단위로 막는다.
+  if (!rateLimit(`owner-report:${req.user!.id}`, 12, 3600_000)) return fallback()
+
+  try {
+    const generated = await generateAnalysisOnce<OwnerReport>(cacheKey, async () => {
+      const { parsed, model } = await callAiJson(OWNER_REPORT_SYSTEM, ownerReportPrompt(facts), { maxTokens: 1400 })
+      const report = normalizeOwnerReport(parsed, facts)
+      if (!report) throw new Error('owner report failed validation')
+      const texts = [report.headline, report.salesCause.body, report.repeatPlan.body, report.couponPlan.body, report.costCheck.body, report.watchout, ...report.tasks]
+      if (!safeAdvisoryText(texts)) throw new Error('owner report tripped advisory policy')
+      if (leaksFieldName(texts)) throw new Error('owner report leaked internal field names')
+      if (!demo) audit(req.user!.id, 'ai.owner_report', 'restaurant', restaurant.id, `${facts.reportMonth} 경영 리포트 생성 · ${model}`)
+      return { value: report, model }
+    })
+    const { value: report, model } = generated
+    res.json({ facts, report, provider: 'openai', model, generatedAt: now(), cached: false })
+  } catch (error) {
+    console.error('AI owner report failed:', error instanceof Error ? error.message : error)
+    fallback()
+  }
+})
+
+/**
+ * AI 인사이트의 공개정보 해석.
+ * 로그인 없이도 열리는 화면이라 IP 단위로 제한하고, 비공개 매출은 facts 단계에서 이미 제외한다.
+ */
+app.post('/api/ai/insight-summary', async (req: AuthedRequest, res) => {
+  const requested = Array.isArray(req.body?.restaurantIds)
+    ? [...new Set<string>(req.body.restaurantIds.map((item: unknown) => String(item)))].slice(0, 3)
+    : []
+  const views = restaurantView()
+  const selected = requested.map((wanted: string) => views.find((item) => item.id === wanted)).filter(Boolean) as ReturnType<typeof restaurantView>
+  if (selected.length < 2) return res.status(400).json({ error: '비교할 가게를 2개 이상 선택해주세요.' })
+
+  const facts: InsightFacts[] = selected.map((item) => ({
+    id: item.id, name: item.name, category: item.category, neighborhood: item.neighborhood,
+    salesGrowth: item.salesGrowth, repeatRate: item.repeatRate, stabilityScore: item.stabilityScore,
+    closingRate: item.closingRate, footTrafficGrowth: item.footTrafficGrowth, competition: item.competition,
+    rating: item.rating, reviewCount: item.reviewCount, openedYears: item.openedYears,
+    riskLevel: item.fund?.riskLevel || '보통',
+    fundProgress: item.fund?.goal ? Math.round(item.fund.raised / item.fund.goal * 100) : 0,
+    maxDiscount: item.fund?.maxDiscount || 0, minIssueDiscount: item.fund?.minIssueDiscount || 0,
+    // 사장님이 비공개로 둔 월매출은 생성형에게도 넘기지 않는다.
+    monthlySales: item.salesDisclosure ? item.monthlySales : undefined,
+    salesDisclosure: Boolean(item.salesDisclosure),
+  }))
+
+  const cacheKey = `insight:${factsFingerprint(facts)}`
+  const cached = cachedAnalysis<InsightSummary>(cacheKey)
+  if (cached) return res.json({ summary: cached.value, provider: 'openai', model: cached.model, generatedAt: new Date(cached.at).toISOString(), cached: true })
+
+  const fallback = () => res.json({
+    summary: insightFallback(facts), provider: 'meoktu-rule-engine',
+    model: 'meoktu-insight-rules-v1', generatedAt: now(), cached: false,
+  })
+  if (!aiApiUrl || !aiApiKey) return fallback()
+  const caller = (await userFromAuthorization(req.headers.authorization).catch(() => undefined))?.id || callerIp(req)
+  if (!rateLimit(`insight:${caller}`, 20, 3600_000)) return fallback()
+
+  try {
+    const generated = await generateAnalysisOnce<InsightSummary>(cacheKey, async () => {
+      const { parsed, model } = await callAiJson(INSIGHT_SUMMARY_SYSTEM, insightPrompt(facts), { maxTokens: 1100 })
+      const summary = normalizeInsight(parsed, facts)
+      if (!summary) throw new Error('insight summary failed validation')
+      const insightTexts = [summary.comparison, ...summary.cards.flatMap((card) => [...card.traits, card.caution])]
+      if (!safeAdvisoryText(insightTexts)) throw new Error('insight summary tripped advisory policy')
+      if (leaksFieldName(insightTexts)) throw new Error('insight summary leaked internal field names')
+      return { value: summary, model }
+    })
+    const { value: summary, model } = generated
+    res.json({ summary, provider: 'openai', model, generatedAt: now(), cached: false })
+  } catch (error) {
+    console.error('AI insight summary failed:', error instanceof Error ? error.message : error)
+    fallback()
+  }
 })
 
 type AiChatHistoryTurn = { role: 'user' | 'assistant'; content: string }

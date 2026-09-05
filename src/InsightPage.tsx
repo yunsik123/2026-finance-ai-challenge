@@ -1,20 +1,11 @@
-import { useMemo, useState } from 'react'
-import { ArrowRight, Bot, Check, ExternalLink, Scale, Sparkles, X } from 'lucide-react'
-import type { PublicState, Restaurant } from './types.ts'
+import { useEffect, useMemo, useState } from 'react'
+import { ArrowRight, Bot, Check, ExternalLink, Loader2, Scale, Sparkles, X } from 'lucide-react'
+import { api } from './lib/api.ts'
+import type { InsightSummaryResponse, PublicState, Restaurant } from './types.ts'
 import './insight.css'
 
 const shortDate = (value: string) => new Date(value).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })
 const progress = (restaurant: Restaurant) => Math.min(100, Math.round(restaurant.fund.raised / restaurant.fund.goal * 100))
-
-function fitSummary(restaurant: Restaurant) {
-  const traits: string[] = []
-  if (restaurant.salesGrowth >= 22) traits.push('빠른 매출 성장을 중요시하는 성향')
-  if (restaurant.repeatRate >= 65) traits.push('단골 기반의 꾸준함을 중요시하는 성향')
-  if (restaurant.stabilityScore >= 88) traits.push('상권과 운영 안정성을 우선하는 성향')
-  if (restaurant.fund.maxDiscount >= 45) traits.push('쿠폰 혜택을 적극 활용하는 성향')
-  if (progress(restaurant) < 65) traits.push('모집 초기의 불확실성을 감수할 수 있는 성향')
-  return traits.slice(0, 2)
-}
 
 export default function InsightPage({ state, onSelect }: { state: PublicState; onSelect: (restaurant: Restaurant) => void }) {
   const [articleId, setArticleId] = useState<string | null>(null)
@@ -22,6 +13,22 @@ export default function InsightPage({ state, onSelect }: { state: PublicState; o
   const article = state.articles.find((item) => item.id === articleId)
   const selected = useMemo(() => selectedIds.map((id) => state.restaurants.find((restaurant) => restaurant.id === id)).filter(Boolean) as Restaurant[], [selectedIds, state.restaurants])
   const toggleCompare = (id: string) => setSelectedIds((ids) => ids.includes(id) ? ids.filter((item) => item !== id) : ids.length < 3 ? [...ids, id] : ids)
+  // 비교 대상이 정해지면 그 조합의 공개 지표를 서버로 보내 해석을 받는다.
+  // 서버가 같은 조합·같은 수치면 만들어둔 해석을 재사용하고, AI 연결이 없으면 규칙 기반 해석을 내려준다.
+  const [interpretation, setInterpretation] = useState<InsightSummaryResponse | null>(null)
+  const [interpreting, setInterpreting] = useState(false)
+  const comparisonKey = selectedIds.join(',')
+  useEffect(() => {
+    if (selected.length < 2) { setInterpretation(null); return }
+    let live = true
+    setInterpreting(true)
+    api<InsightSummaryResponse>('/api/ai/insight-summary', { method: 'POST', body: JSON.stringify({ restaurantIds: selectedIds }) })
+      .then((result) => { if (live) setInterpretation(result) })
+      .catch(() => { if (live) setInterpretation(null) })
+      .finally(() => { if (live) setInterpreting(false) })
+    return () => { live = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [comparisonKey, selected.length])
   const comparisonRows = [
     ['매출 성장률', '최근 매출의 성장 방향', (restaurant: Restaurant) => `${restaurant.salesGrowth > 0 ? '+' : ''}${restaurant.salesGrowth}%`],
     ['재방문율', '단골 고객 기반의 참고 지표', (restaurant: Restaurant) => `${restaurant.repeatRate}%`],
@@ -37,7 +44,9 @@ export default function InsightPage({ state, onSelect }: { state: PublicState; o
         <div className="compare-selector">{state.restaurants.map((restaurant) => { const checked = selectedIds.includes(restaurant.id); return <button key={restaurant.id} className={checked ? 'selected' : ''} disabled={!checked && selectedIds.length >= 3} onClick={() => toggleCompare(restaurant.id)} aria-pressed={checked}><span style={{ background: `${restaurant.color}35` }}>{restaurant.emoji}</span><div><b>{restaurant.name}</b><small>{restaurant.neighborhood} · {restaurant.category}</small></div><i>{checked && <Check />}</i></button> })}</div>
         {selected.length < 2 ? <div className="compare-empty"><Scale /><b>비교할 가게를 2개 이상 선택해주세요.</b><span>최대 3개까지 한눈에 비교할 수 있어요.</span></div> : <>
           <div className="compare-table-wrap"><table className="compare-table"><thead><tr><th>비교 항목</th>{selected.map((restaurant) => <th key={restaurant.id}><button onClick={() => onSelect(restaurant)}>{restaurant.emoji} {restaurant.name}</button></th>)}</tr></thead><tbody>{comparisonRows.map(([label, note, value]) => <tr key={label}><th><b>{label}</b><small>{note}</small></th>{selected.map((restaurant) => <td key={restaurant.id}>{value(restaurant)}</td>)}</tr>)}</tbody></table></div>
-          <div className="compare-explanations"><div className="compare-explanation-head"><Sparkles /><div><span>AI 공개정보 해석</span><h3>수치가 보여주는 특징</h3></div></div><div className="fit-grid">{selected.map((restaurant) => <article key={restaurant.id} style={{ borderColor: `${restaurant.color}75` }}><div><span style={{ background: `${restaurant.color}35` }}>{restaurant.emoji}</span><b>{restaurant.name}</b></div>{fitSummary(restaurant).length ? <ul>{fitSummary(restaurant).map((trait) => <li key={trait}>{trait}에 참고할 만합니다.</li>)}</ul> : <p>여러 지표가 중간 범위에 있어 한 가지 성향보다 균형 비교가 필요합니다.</p>}<small>공개정보 요약일 뿐 투자 추천이나 수익 보장이 아닙니다.</small></article>)}</div></div>
+          <div className="compare-explanations"><div className="compare-explanation-head"><Sparkles /><div><span>AI 공개정보 해석</span><h3>수치가 보여주는 특징</h3></div>{interpreting ? <em className="insight-status"><Loader2 className="spin" /> 해석 중</em> : interpretation?.provider === 'openai' ? <em className="insight-status ai"><Bot /> AI 분석</em> : interpretation ? <em className="insight-status">자동 규칙 요약</em> : null}</div>
+            {interpreting && !interpretation ? <div className="fit-grid">{selected.map((restaurant) => <article key={restaurant.id} className="fit-skeleton" style={{ borderColor: `${restaurant.color}75` }}><div><span style={{ background: `${restaurant.color}35` }}>{restaurant.emoji}</span><b>{restaurant.name}</b></div><i /><i /></article>)}</div> : <div className="fit-grid">{selected.map((restaurant) => { const card = interpretation?.summary.cards.find((item) => item.id === restaurant.id); return <article key={restaurant.id} style={{ borderColor: `${restaurant.color}75` }}><div><span style={{ background: `${restaurant.color}35` }}>{restaurant.emoji}</span><b>{restaurant.name}</b></div>{card?.traits.length ? <ul>{card.traits.map((trait) => <li key={trait}>{trait}</li>)}</ul> : <p>여러 지표가 중간 범위에 있어 한 가지 성향보다 균형 비교가 필요합니다.</p>}{card?.caution && <em className="fit-caution">{card.caution}</em>}<small>공개정보 요약일 뿐 투자 추천이나 수익 보장이 아닙니다.</small></article> })}</div>}
+            {interpretation && <p className="compare-narrative">{interpretation.summary.comparison}</p>}</div>
           <div className="compare-disclaimer"><b>비교 전 확인</b><p>모든 수치는 데모 데이터입니다. 투자 결정에는 최신 원자료와 본인의 상황을 별도로 확인해야 합니다.</p></div>
         </>}
       </section><div className="ai-picks"><div className="subheading"><div><span>가게 한 눈에 보기</span><h2>성장·단골 지표 상위 가게</h2></div><Sparkles /></div>{[...state.restaurants].sort((a,b) => b.opportunityScore - a.opportunityScore).slice(0,3).map((restaurant, index) => <button className="pick-row" key={restaurant.id} onClick={() => onSelect(restaurant)}><span className="pick-rank">0{index+1}</span><span className="food-mini" style={{ background: `${restaurant.color}35` }}>{restaurant.emoji}</span><div><b>{restaurant.name}</b><small>{restaurant.neighborhood} · 성장 {restaurant.salesGrowth}% · 평점 {restaurant.rating}</small></div><span className="score-ring">{restaurant.opportunityScore}</span></button>)}</div>

@@ -27,6 +27,36 @@ export interface Restaurant {
   salesDisclosure?: boolean; salesHistory?: SalesPoint[]; reviews?: Review[]; opportunityScore: number; fund: Fund
 }
 
+/** AI 점주 경영 리포트. 생성형이 만들든 규칙 폴백이든 서버가 같은 모양으로 내려준다. */
+export interface ReportBlock { title: string; body: string }
+
+export interface OwnerReport {
+  headline: string
+  salesCause: ReportBlock
+  repeatPlan: ReportBlock
+  couponPlan: ReportBlock & { discount: number }
+  costCheck: ReportBlock & { items: string[] }
+  tasks: string[]
+  watchout: string
+}
+
+export interface OwnerReportFacts {
+  reportMonth: string; monthlySales: number; salesChange: number; repeatRate: number
+  couponUseRate: number; couponExposure: number; outstandingCoupon: number; maxDiscount: number
+}
+
+export interface OwnerReportResponse {
+  facts: OwnerReportFacts; report: OwnerReport
+  provider: 'openai' | 'meoktu-rule-engine'; model: string; generatedAt: string; cached: boolean
+}
+
+export interface InsightCard { id: string; name: string; traits: string[]; caution: string }
+
+export interface InsightSummaryResponse {
+  summary: { cards: InsightCard[]; comparison: string }
+  provider: 'openai' | 'meoktu-rule-engine'; model: string; generatedAt: string; cached: boolean
+}
+
 export interface PublicState {
   restaurants: Restaurant[]
   funds: Fund[]
