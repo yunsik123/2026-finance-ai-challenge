@@ -31,7 +31,30 @@ NEO4J_IP="$(gcloud compute instances describe meoktu-neo4j --zone="$ZONE" --form
 
 echo "▶ 이미지 빌드 (Cloud Build)"
 # 로컬 Docker 없이 클라우드에서 빌드한다. Apple Silicon 과 배포 아키텍처가 달라도 안전하다.
-gcloud builds submit --tag "${IMAGE}:latest" --quiet
+#
+# CI 에서는 빌드를 비동기로 던지고 상태만 직접 확인한다.
+#
+# 왜냐하면 gcloud builds submit 은 기본 로그 버킷(GCS)에서 로그를 읽어 화면에 흘리는데,
+# 그러려면 호출자가 프로젝트 Viewer/Owner 여야 한다. 배포 전용 계정에 그만큼 넓은 권한을
+# 주고 싶지 않다. 그렇다고 두면 빌드가 성공해도 이 명령이 오류로 끝나 배포까지 가지 못한다.
+# (--suppress-logs 로도 이 검사는 피하지 못한다.)
+if [[ -n "${CI:-}" ]]; then
+  BUILD_ID="$(gcloud builds submit --tag "${IMAGE}:latest" --quiet --async --format='value(id)')"
+  echo "  빌드 ${BUILD_ID} 진행 중 (로그: 콘솔에서 확인)"
+  while true; do
+    BUILD_STATUS="$(gcloud builds describe "$BUILD_ID" --format='value(status)')"
+    case "$BUILD_STATUS" in
+      SUCCESS) echo "  빌드 성공"; break ;;
+      FAILURE|TIMEOUT|CANCELLED|EXPIRED|INTERNAL_ERROR)
+        echo "  빌드 실패: ${BUILD_STATUS}"
+        echo "  로그: https://console.cloud.google.com/cloud-build/builds/${BUILD_ID}?project=${PROJECT}"
+        exit 1 ;;
+    esac
+    sleep 10
+  done
+else
+  gcloud builds submit --tag "${IMAGE}:latest" --quiet
+fi
 
 echo "▶ Cloud Run 배포"
 gcloud run deploy "$SERVICE" \
