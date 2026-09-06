@@ -1494,7 +1494,6 @@ function ReadingField({ field, onConfirm, onCorrect }: { field: DocumentField; o
           <button type="button" className={field.state !== 'ai' ? 'on' : ''} onClick={onConfirm}>
             {field.state === 'ai' ? '맞아요' : field.state === 'corrected' ? '수정됨' : '확인됨'}
           </button>
-          <button type="button" onClick={() => setEditing(true)}>고치기</button>
         </>}
     </div>
   </div>
