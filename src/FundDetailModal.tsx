@@ -40,7 +40,7 @@ function RevenueChart({ restaurant }: { restaurant: Restaurant }) {
   const points = history.map(pointAt)
   const line = points.map((point) => `${point.x},${point.y}`).join(' ')
   const area = `${padX},${height - padY} ${line} ${width - padX},${height - padY}`
-  const selected = history[selectedIndex]
+  const selected = history[Math.min(selectedIndex, history.length - 1)]
   return <section className="revenue-section">
     <div className="detail-section-head"><div><span>가상 POS 검증 데이터</span><h3>월매출 성장과 쿠폰 보너스</h3></div><div className="chart-legend"><i /> 월매출 <b>●</b> 매출 보너스</div></div>
     <div className="chart-summary"><div><span>{selected.month.replace('-', '.')}</span><b>{compactWon(selected.sales)}</b></div><div><span>전월 대비</span><b className={selected.growthRate >= 0 ? 'up' : 'down'}>{selected.growthRate >= 0 ? '+' : ''}{selected.growthRate}%</b></div><div><span>이달 매출 보너스</span><b className="bonus">+{selected.bonusRate}%</b></div></div>
@@ -107,6 +107,7 @@ export default function FundDetailModal({ restaurant: r, me, initialTab = 'inves
 
   const transact = async () => {
     if (!me) { onLogin(); return }
+    if (busy) return
     setBusy(true)
     try {
       if (!legal || !allConsentsAgreed) { notify('필수 약관과 고지사항을 확인하고 동의해주세요.'); return }

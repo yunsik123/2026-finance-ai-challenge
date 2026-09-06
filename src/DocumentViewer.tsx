@@ -140,11 +140,16 @@ export function LocalFileViewer({ file }: { file: File }) {
   const [table, setTable] = useState<TablePreview | undefined>()
   const [text, setText] = useState('')
   const [state, setState] = useState<'loading' | 'ready' | 'unsupported'>('loading')
-  const objectUrl = useMemo(() => URL.createObjectURL(file), [file])
-  useEffect(() => () => URL.revokeObjectURL(objectUrl), [objectUrl])
+  const [objectUrl, setObjectUrl] = useState('')
+  useEffect(() => {
+    const url = URL.createObjectURL(file)
+    setObjectUrl(url)
+    return () => URL.revokeObjectURL(url)
+  }, [file])
 
   useEffect(() => {
     let live = true
+    setTable(undefined); setText(''); setState('loading')
     const load = async () => {
       if (isImageDocument(file.name, file.type) || isPdfDocument(file.name, file.type)) { setState('ready'); return }
       if (/\.csv$/i.test(file.name)) {

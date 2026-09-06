@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { BadgeCheck, ChevronRight, CircleAlert, Clock3, Eye, FileCheck2, History, ListChecks, Store, WalletCards } from 'lucide-react'
 import { api } from './lib/api.ts'
@@ -104,8 +104,13 @@ export default function OwnerMyPage({ me, refresh, notify }: { me: MeState; refr
   const auditEvents = owner?.auditEvents || []
   const visibleAuditEvents = auditEvents.filter((event) => event.action !== 'coupon.dividend_issued').slice(0, 8)
 
-  const load = useCallback(async () => { setOwner(await api<OwnerState>('/api/owner')) }, [])
-  useEffect(() => { load().catch(() => undefined) }, [load, me.applications.length])
+  const loadId = useRef(0)
+  const load = useCallback(async () => {
+    const requestId = ++loadId.current
+    const result = await api<OwnerState>('/api/owner')
+    if (requestId === loadId.current) setOwner(result)
+  }, [])
+  useEffect(() => { void load().catch(() => undefined); return () => { ++loadId.current } }, [load, me])
 
   const toggleDisclosure = async () => {
     if (!restaurant) return
@@ -157,7 +162,7 @@ export default function OwnerMyPage({ me, refresh, notify }: { me: MeState; refr
       })}</div>
     </section>}
 
-    {restaurant && fund && <OwnerDashboard restaurant={restaurant} fund={fund} />}
+    {restaurant && fund && <OwnerDashboard key={`${restaurant.id}:${fund.id}`} restaurant={restaurant} fund={fund} />}
     {restaurant && <CouponVerify refresh={refresh} notify={notify} />}
 
     {restaurant && <section className={`sales-disclosure-control ${restaurant.salesDisclosure ? 'is-public' : ''}`}>

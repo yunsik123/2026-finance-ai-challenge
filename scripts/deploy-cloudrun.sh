@@ -69,7 +69,7 @@ gcloud run deploy "$SERVICE" \
   --session-affinity \
   --add-cloudsql-instances="$CONNECTION_NAME" \
   --network=default --subnet=default --vpc-egress=private-ranges-only \
-  --set-env-vars="NODE_ENV=production,STATE_STORE=postgres,INSTANCE_CONNECTION_NAME=${CONNECTION_NAME},DB_USER=postgres,DB_NAME=meoktu,GOOGLE_CLOUD_PROJECT=${PROJECT},VERTEX_LOCATION=global,VERTEX_CHAT_MODEL=gemini-3-flash-preview,VERTEX_OCR_MODEL=gemini-3-flash-preview,NEO4J_URI=bolt://${NEO4J_IP}:7687,NEO4J_USER=neo4j" \
+  --set-env-vars="NODE_ENV=production,STATE_STORE=postgres,INSTANCE_CONNECTION_NAME=${CONNECTION_NAME},DB_USER=postgres,DB_NAME=meoktu,GOOGLE_CLOUD_PROJECT=${PROJECT},VERTEX_LOCATION=global,VERTEX_CHAT_MODEL=gemini-3.8-flash,VERTEX_OCR_MODEL=gemini-3.8-flash,NEO4J_URI=bolt://${NEO4J_IP}:7687,NEO4J_USER=neo4j" \
   --set-secrets="DB_PASSWORD=meoktu-db-password:latest,NEO4J_PASSWORD=meoktu-neo4j-password:latest,APP_SECRET=meoktu-app-secret:latest" \
   --quiet
 

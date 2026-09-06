@@ -18,6 +18,8 @@ export default function FloatingAiChat({ role }: { role: Role }) {
     ? '안녕하세요, 사장님! 내 심사 현황과 필요한 자료, 추가 펀딩, 쿠폰 확인, 경영 리포트까지 현재 원장과 화면 순서에 맞춰 안내해드릴게요. 😊'
     : '안녕하세요! 내 투자·쿠폰·예약 거래 현황과 식당 정보, 화면 이용 방법을 현재 원장에 맞춰 안내해드릴게요. 😊'
   const [messages, setMessages] = useState<Message[]>([{ role: 'ai', text: intro }])
+  const request = useRef<AbortController | null>(null)
+  useEffect(() => () => { request.current?.abort() }, [])
   const scrollRef = useRef<HTMLDivElement>(null)
   const suggestions = role === 'owner'
     ? ['내 심사는 지금 몇 단계야?', '내 가게 모금과 쿠폰 부담 현황 알려줘', '추가 펀딩은 어디서 시작해?']
@@ -28,7 +30,9 @@ export default function FloatingAiChat({ role }: { role: Role }) {
 
   const ask = async (suggestion?: string) => {
     const value = (suggestion || question).trim()
-    if (!value || asking) return
+    if (!value || request.current) return
+    const controller = new AbortController()
+    request.current = controller
     setOpen(true); setQuestion(''); setAsking(true)
     setMessages((current) => [...current, { role: 'user', text: value }])
     try {
@@ -38,13 +42,15 @@ export default function FloatingAiChat({ role }: { role: Role }) {
         content: message.text,
       }))
       const result = await api<{ answer: string; mode: string }>('/api/ai/chat', {
-        method: 'POST', body: JSON.stringify({ question: value, history, role, currentPath: location.pathname }),
+        signal: controller.signal, method: 'POST', body: JSON.stringify({ question: value, history, role, currentPath: location.pathname }),
       })
+      if (controller.signal.aborted) return
       setMode(result.mode)
       setMessages((current) => [...current, { role: 'ai', text: result.answer }])
     } catch (error) {
+      if (controller.signal.aborted) return
       setMessages((current) => [...current, { role: 'ai', text: `잠시 연결이 원활하지 않아요. ${(error as Error).message}` }])
-    } finally { setAsking(false) }
+    } finally { request.current = null; if (!controller.signal.aborted) setAsking(false) }
   }
 
   const submit = (event: FormEvent) => { event.preventDefault(); ask() }

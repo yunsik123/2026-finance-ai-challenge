@@ -27,12 +27,12 @@ const REFRESH_MARGIN_MS = 5 * 60_000
 
 /**
  * 기본 모델. Vertex 의 OpenAI 호환 경로는 'google/' 접두사를 요구한다.
- * gemini-3-flash-preview 는 응답이 빠르면서 JSON 형식 강제와 이미지 입력을 모두 받는다.
+ * gemini-3.8-flash 는 응답이 빠르면서 JSON 형식 강제와 이미지 입력을 모두 받는다.
  * (상담·요약·영수증 판독이 전부 이 한 모델로 처리된다.)
  */
-const DEFAULT_CHAT_MODEL = 'gemini-3-flash-preview'
+const DEFAULT_CHAT_MODEL = 'gemini-3.8-flash'
 /** 근거를 길게 엮어야 하는 자리에서 쓸 모델. 필요하면 pro 계열로 올린다. */
-const DEFAULT_REASONING_MODEL = 'gemini-3-flash-preview'
+const DEFAULT_REASONING_MODEL = 'gemini-3.8-flash'
 
 export type AiProvider = 'vertex' | 'off'
 
@@ -202,6 +202,7 @@ async function fetchToken() {
  * 요청 처리 중이 아니라 기동 시점에 끝내야 첫 요청이 느려지지 않는다.
  */
 export async function initAiProvider(): Promise<AiProvider> {
+  if (/^(1|true|yes)$/i.test(trimmed(process.env.AI_DISABLED))) return 'off'
   // .env 가 이미 로드된 뒤에 불린다. 여기서부터 환경변수를 믿을 수 있다.
   cachedProject = trimmed(process.env.GOOGLE_CLOUD_PROJECT || process.env.GCLOUD_PROJECT || process.env.VERTEX_PROJECT)
   const hasCredentials = await ensureCredentials()

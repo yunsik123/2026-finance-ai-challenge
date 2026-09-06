@@ -17,10 +17,11 @@ export default function InsightPage({ state, onSelect }: { state: PublicState; o
   // 서버가 같은 조합·같은 수치면 만들어둔 해석을 재사용하고, AI 연결이 없으면 규칙 기반 해석을 내려준다.
   const [interpretation, setInterpretation] = useState<InsightSummaryResponse | null>(null)
   const [interpreting, setInterpreting] = useState(false)
-  const comparisonKey = selectedIds.join(',')
+  const comparisonKey = JSON.stringify(selected)
   useEffect(() => {
-    if (selected.length < 2) { setInterpretation(null); return }
+    if (selected.length < 2) { setInterpretation(null); setInterpreting(false); return }
     let live = true
+    setInterpretation(null)
     setInterpreting(true)
     api<InsightSummaryResponse>('/api/ai/insight-summary', { method: 'POST', body: JSON.stringify({ restaurantIds: selectedIds }) })
       .then((result) => { if (live) setInterpretation(result) })

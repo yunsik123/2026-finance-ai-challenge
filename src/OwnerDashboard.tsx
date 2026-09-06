@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Activity, AlertTriangle, BarChart3, Bot, CalendarDays, Check, ReceiptText, RefreshCw, Repeat2, Store, Ticket, TrendingUp, Users } from 'lucide-react'
 import { api } from './lib/api.ts'
 import type { AnomalyDetectionResponse, Fund, OwnerReportResponse, Restaurant } from './types.ts'
@@ -22,7 +22,7 @@ export default function OwnerDashboard({ restaurant, fund }: Props) {
   const reportMonth = current?.month || new Date().toISOString().slice(0, 7)
   const useRate = fund.totalCouponIssued ? Math.round(fund.totalCouponUsed / fund.totalCouponIssued * 100) : 0
   const outstanding = Math.max(0, fund.totalCouponIssued - fund.totalCouponUsed)
-  const exposure = Math.min(100, Math.round(outstanding / restaurant.monthlySales * 100))
+  const exposure = Math.min(100, Math.round(outstanding / Math.max(1, restaurant.monthlySales) * 100))
 
   // 리포트 문장은 서버에서 받아온다. 매출·재방문·쿠폰 수치를 그대로 넘기고 생성형이 해석하며,
   // AI 키가 없거나 호출이 실패하면 서버가 같은 모양의 규칙 기반 리포트를 대신 내려준다.
@@ -32,7 +32,10 @@ export default function OwnerDashboard({ restaurant, fund }: Props) {
   const [anomalyLoading, setAnomalyLoading] = useState(true)
   const [error, setError] = useState('')
 
+  const reportId = useRef(0)
+  const anomalyId = useRef(0)
   const loadReport = useCallback(async (refresh = false) => {
+    const requestId = ++reportId.current
     setLoading(true)
     setError('')
     try {
@@ -40,28 +43,32 @@ export default function OwnerDashboard({ restaurant, fund }: Props) {
         method: 'POST',
         body: JSON.stringify({ restaurantId: restaurant.id, refresh }),
       })
-      setAnalysis(result)
+      if (requestId === reportId.current) setAnalysis(result)
     } catch (issue) {
-      setError(issue instanceof Error ? issue.message : '경영 리포트를 불러오지 못했어요.')
+      if (requestId === reportId.current) setError(issue instanceof Error ? issue.message : '경영 리포트를 불러오지 못했어요.')
     } finally {
-      setLoading(false)
+      if (requestId === reportId.current) setLoading(false)
     }
   }, [restaurant.id])
 
   const loadAnomalies = useCallback(async (refresh = false) => {
+    const requestId = ++anomalyId.current
     setAnomalyLoading(true)
     try {
-      setAnomaly(await api<AnomalyDetectionResponse>('/api/ai/anomaly-detection', {
+      const result = await api<AnomalyDetectionResponse>('/api/ai/anomaly-detection', {
         method: 'POST', body: JSON.stringify({ restaurantId: restaurant.id, refresh }),
-      }))
+      })
+      if (requestId === anomalyId.current) setAnomaly(result)
     } catch (issue) {
-      setError(issue instanceof Error ? issue.message : '매출 이상탐지를 불러오지 못했어요.')
-    } finally { setAnomalyLoading(false) }
+      if (requestId === anomalyId.current) setError(issue instanceof Error ? issue.message : '매출 이상탐지를 불러오지 못했어요.')
+    } finally { if (requestId === anomalyId.current) setAnomalyLoading(false) }
   }, [restaurant.id])
 
   // 매출 이력·쿠폰 사용액이 바뀌면 서버 지문도 바뀌어 새 분석이 돌고, 그대로면 만들어둔 해석을 재사용한다.
-  useEffect(() => { void loadReport() }, [loadReport, current?.month, fund.totalCouponUsed, fund.totalCouponIssued])
-  useEffect(() => { void loadAnomalies() }, [loadAnomalies, current?.month, current?.sales])
+  const reportKey = JSON.stringify([restaurant.salesHistory, restaurant.monthlySales, restaurant.repeatRate, fund])
+  useEffect(() => { void loadReport(); return () => { ++reportId.current } }, [loadReport, reportKey])
+  const historyKey = JSON.stringify(restaurant.salesHistory)
+  useEffect(() => { void loadAnomalies(); return () => { ++anomalyId.current } }, [loadAnomalies, historyKey])
 
   const report = analysis?.report
   const aiGenerated = analysis?.provider === 'google-vertex-ai'

@@ -285,8 +285,8 @@ gcloud auth application-default login
 
 - `GOOGLE_CLOUD_PROJECT`: GCP 프로젝트 ID (없으면 자격증명에서 자동 추론)
 - `VERTEX_LOCATION`: 기본값 `global` — **리전 엔드포인트는 모델에 따라 404가 납니다. 바꾸지 마세요.**
-- `VERTEX_CHAT_MODEL`: 상담 모델 (기본값 `gemini-3-flash-preview`)
-- `VERTEX_OCR_MODEL`: 증빙 판독 모델 (기본값 `gemini-3-flash-preview`)
+- `VERTEX_CHAT_MODEL`: 상담 모델 (기본값 `gemini-3.8-flash`)
+- `VERTEX_OCR_MODEL`: 증빙 판독 모델 (기본값 `gemini-3.8-flash`)
 - `VERTEX_THINKING_BUDGET`: 생각 토큰 상한 (기본값 `512`)
 
 > **생각 토큰 주의**: Gemini 3 는 답을 쓰기 전 "생각"에 토큰을 쓰고 그 토큰도 `max_tokens`
@@ -422,7 +422,7 @@ DEMO=1 bash scripts/deploy-cloudrun.sh     # 시연용 (min-instances=2, 콜드�
 - `INSTANCE_CONNECTION_NAME` — Cloud Run 이 `/cloudsql` 소켓으로 붙는다
 - `DB_USER`, `DB_NAME` (암호는 Secret Manager)
 - `GOOGLE_CLOUD_PROJECT`, `VERTEX_LOCATION=global`
-- `VERTEX_CHAT_MODEL`, `VERTEX_OCR_MODEL` (선택, 기본 `gemini-3-flash-preview`)
+- `VERTEX_CHAT_MODEL`, `VERTEX_OCR_MODEL` (선택, 기본 `gemini-3.8-flash`)
 - `NEO4J_URI`, `NEO4J_USER` (암호는 Secret Manager)
 - `LIMIT_*` (선택 — 아래 '운영 한도' 참고)
 

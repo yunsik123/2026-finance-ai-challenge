@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowDownToLine, ArrowUpFromLine, Banknote, Clock3, Info, ListOrdered, RotateCcw, ShieldCheck, Store, TrendingUp } from 'lucide-react'
 import { api } from './lib/api.ts'
 import type { MeState, PublicState, Restaurant } from './types.ts'
@@ -40,15 +40,17 @@ export default function FundOrderbook({ state, me, requireLogin, onSelect, refre
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState('')
 
+  const loadId = useRef(0)
   const load = useCallback(async () => {
+    const requestId = ++loadId.current
     try {
       const result = await api<{ rule: string; books: Book[] }>('/api/market/orderbook')
-      setBooks(result.books); setRule(result.rule)
+      if (requestId === loadId.current) { setBooks(result.books); setRule(result.rule) }
     } catch (error) { notify((error as Error).message) }
-    finally { setLoading(false) }
+    finally { if (requestId === loadId.current) setLoading(false) }
   }, [])
 
-  useEffect(() => { load() }, [load, state])
+  useEffect(() => { void load(); return () => { ++loadId.current } }, [load, state, me])
 
   const cancel = async (orderId: string) => {
     if (!requireLogin()) return

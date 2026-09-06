@@ -35,16 +35,20 @@ export default function SupportPage({ me, state, onLogin, notify }: {
   const demo = me?.user.sessionMode === 'demo'
 
   useEffect(() => {
-    if (!me) return
+    if (!me) { setRequests([]); setTypes([]); return }
+    let live = true
     api<{ requests: SupportRequest[]; types: SupportType[] }>('/api/support/requests')
-      .then((result) => { setRequests(result.requests); setTypes(result.types) })
+      .then((result) => { if (live) { setRequests(result.requests); setTypes(result.types) } })
       .catch(() => undefined)
+    return () => { live = false }
   }, [me])
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!me) { onLogin(); return }
-    const form = new FormData(event.currentTarget)
+    if (busy) return
+    const element = event.currentTarget
+    const form = new FormData(element)
     setBusy(true)
     try {
       const result = await api<{ message: string; request: SupportRequest }>('/api/support/requests', {
@@ -58,7 +62,7 @@ export default function SupportPage({ me, state, onLogin, notify }: {
       })
       notify(result.message)
       if (!demo) setRequests((current) => [result.request, ...current])
-      event.currentTarget.reset()
+      element.reset()
     } catch (error) { notify((error as Error).message) }
     finally { setBusy(false) }
   }

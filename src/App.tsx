@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { io } from 'socket.io-client'
 import {
@@ -6,7 +6,7 @@ import {
   HandCoins, Heart, LogOut, MapPin, Menu, MessageCircleQuestion, Search,
   ScrollText, ShieldCheck, Sparkles, Store, Ticket, TrendingUp, UserRound, Users, WalletCards, X,
 } from 'lucide-react'
-import { api, clearToken, getToken, setToken } from './lib/api.ts'
+import { api, ApiError, clearToken, getToken, setToken, TOKEN_KEY } from './lib/api.ts'
 import MarketPage from './MarketPage.tsx'
 import CouponWallet from './CouponWallet.tsx'
 import NotificationBell from './NotificationBell.tsx'
@@ -36,6 +36,9 @@ function App() {
   const [selectedAmount, setSelectedAmount] = useState<number | undefined>()
   const [toast, setToast] = useState('')
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
+  const refreshId = useRef(0)
+  const toastTimer = useRef<number | undefined>(undefined)
   const navigate = useNavigate()
   const location = useLocation()
   const adminRoute = location.pathname.startsWith('/admin')
@@ -44,21 +47,36 @@ function App() {
 
   const notify = (message: string) => {
     setToast(message)
-    window.setTimeout(() => setToast(''), 3200)
+    window.clearTimeout(toastTimer.current)
+    toastTimer.current = window.setTimeout(() => setToast(''), 3200)
   }
 
   const refresh = async () => {
-    try {
-      const publicData = await api<PublicState>('/api/public')
-      setState(publicData)
-      if (getToken()) {
-        try { setMe(await api<MeState>('/api/me')) }
-        catch { clearToken(); setMe(null) }
-      }
-    } finally {
-      // 통신이 실패해도 로딩 화면에 갇히지 않게 한다.
-      setLoading(false)
+    const requestId = ++refreshId.current
+    const token = getToken()
+    const current = () => requestId === refreshId.current && token === getToken()
+    const [publicResult, meResult] = await Promise.allSettled([
+      api<PublicState>('/api/public'),
+      token ? api<MeState>('/api/me') : Promise.resolve(null),
+    ])
+    if (!current()) return
+    if (publicResult.status === 'fulfilled') {
+      setState(publicResult.value)
+      setLoadError('')
+    } else {
+      setLoadError('데이터를 불러오지 못했어요. 연결을 확인하고 다시 시도해주세요.')
     }
+    if (meResult.status === 'fulfilled') setMe(meResult.value)
+    else if (meResult.reason instanceof ApiError && meResult.reason.status === 401) {
+      clearToken()
+      setMe(null)
+      setSelected(null)
+      // 공개 응답에도 계정별 교환 가능 여부가 들어 있으므로 익명 상태로 다시 읽는다.
+      void refresh()
+    } else {
+      setLoadError('계정 정보를 갱신하지 못했어요. 잠시 후 다시 시도해주세요.')
+    }
+    setLoading(false)
   }
 
   useEffect(() => {
@@ -82,7 +100,7 @@ function App() {
       if (document.visibilityState !== 'visible') return
       try {
         const { version } = await api<{ version: number }>('/api/version')
-        if (lastVersion !== undefined && version !== lastVersion) reload()
+        if (lastVersion === undefined || version !== lastVersion) reload()
         lastVersion = version
       } catch {
         // 버전 확인이 실패하면(네트워크 순단 등) 소켓조차 없을 때만 전체를 다시 받는다.
@@ -91,9 +109,16 @@ function App() {
     }
     const timer = window.setInterval(poll, 10000)
     // 탭으로 돌아왔을 때는 다음 주기를 기다리지 않고 즉시 따라잡는다.
-    const onFocus = () => { void poll() }
+    const onFocus = () => { reload(); void poll() }
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== TOKEN_KEY && event.key !== null) return
+      ++refreshId.current
+      setMe(null); setState(null); setSelected(null); setLoading(true)
+      reload()
+    }
     window.addEventListener('focus', onFocus)
-    return () => { socket.disconnect(); window.clearInterval(timer); window.removeEventListener('focus', onFocus) }
+    window.addEventListener('storage', onStorage)
+    return () => { ++refreshId.current; socket.disconnect(); window.clearInterval(timer); window.clearTimeout(toastTimer.current); window.removeEventListener('focus', onFocus); window.removeEventListener('storage', onStorage) }
   }, [])
 
   // 체험 세션도 그대로 진행시킨다. 서버가 공유 원장 대신 체험 원장에 기록한다.
@@ -105,14 +130,18 @@ function App() {
 
   const onAuth = async (token: string, destination?: string) => {
     setToken(token)
+    setMe(null); setState(null); setLoading(true)
     setAuthOpen(false)
     await refresh()
     if (destination) navigate(destination)
-    notify('반가워요! 먹투에 로그인했어요.')
+    if (getToken() === token) notify('반가워요! 먹투에 로그인했어요.')
   }
 
   const logout = () => {
-    clearToken(); setMe(null); navigate('/'); notify('안전하게 로그아웃했어요.')
+    ++refreshId.current
+    clearToken(); setMe(null); setState(null); setSelected(null); setLoading(true)
+    navigate('/'); notify('안전하게 로그아웃했어요.')
+    void refresh()
   }
 
   const transact = async (kind: 'invest' | 'withdraw', fundId: string, amount: number) => {
@@ -142,13 +171,15 @@ function App() {
     } catch (error) { notify((error as Error).message) }
   }
 
+  if (!loading && !state) return <div className="loading-screen"><span className="brand-mark">먹</span><p role="alert">{loadError}</p><button className="button" onClick={() => { setLoading(true); void refresh() }}>다시 시도</button></div>
   if (loading || !state) return <div className="loading-screen"><span className="brand-mark">먹</span><p>맛있는 기회를 찾는 중...</p></div>
 
   return (
     <div className="app-shell">
       {!adminRoute && !adminOnly && <Header user={me?.user} notifications={me?.notifications || []} unread={me?.unreadNotifications || 0} refresh={refresh} onLogin={() => setAuthOpen(true)} onLogout={logout} />}
+      {loadError && <div className="legal-error" role="alert">{loadError} <button className="button small" onClick={() => void refresh()}>다시 시도</button></div>}
       <main>
-        <Routes>
+        <Routes key={me?.user.id || 'anonymous'}>
           {adminOnly ? <>
             <Route path="/admin" element={<AdminCenter me={me} onLogin={() => setAuthOpen(true)} onLogout={logout} notify={notify} />} />
             <Route path="*" element={<Navigate to="/admin" replace />} />
@@ -177,9 +208,9 @@ function App() {
       {!adminRoute && !ownerOnly && !adminOnly && <Footer />}
       {!adminRoute && !adminOnly && <MobileNav user={me?.user} />}
       {authOpen && <AuthModal onClose={() => setAuthOpen(false)} onAuth={onAuth} notify={notify} />}
-      {!ownerOnly && selected && <FundDetailModal restaurant={state.restaurants.find((r) => r.id === selected.id) || selected} me={me} initialTab={selectedTrade} initialAmount={selectedAmount} onClose={() => { setSelected(null); setSelectedTrade('invest'); setSelectedAmount(undefined) }} onLogin={() => setAuthOpen(true)} refresh={refresh} notify={notify} />}
+      {!ownerOnly && selected && <FundDetailModal key={`${me?.user.id || 'anonymous'}:${selected.id}`} restaurant={state.restaurants.find((r) => r.id === selected.id) || selected} me={me} initialTab={selectedTrade} initialAmount={selectedAmount} onClose={() => { setSelected(null); setSelectedTrade('invest'); setSelectedAmount(undefined) }} onLogin={() => setAuthOpen(true)} refresh={refresh} notify={notify} />}
       {toast && <div className="toast"><Check size={18} />{toast}</div>}
-      {!adminRoute && !adminOnly && <FloatingAiChat role={me?.user.role || 'investor'} />}
+      {!adminRoute && !adminOnly && <FloatingAiChat key={me?.user.id || 'anonymous'} role={me?.user.role || 'investor'} />}
     </div>
   )
 }

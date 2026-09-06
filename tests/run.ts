@@ -34,6 +34,10 @@ const run = (file: string, env: NodeJS.ProcessEnv) => new Promise<void>((resolve
 let server: ChildProcess | undefined
 const existing = await healthy()
 if (existing) {
+  if (!process.env.MEOKTU_TEST_BASE) {
+    await rm(testDataDir, { recursive: true, force: true })
+    throw new Error('테스트 포트가 사용 중입니다. MEOKTU_TEST_PORT에 비어 있는 포트를 지정하세요. 기존 개발 원장은 자동으로 사용하지 않습니다.')
+  }
   if (existing.authProvider !== 'local-demo') {
     console.error('이미 떠 있는 8787 서버가 Supabase Auth 모드입니다. 테스트가 실제 Supabase에 계정을 만들 수 있어요.')
     console.error('그 서버를 끄고 `npm run test:integration` 을 다시 실행하세요.')
@@ -44,7 +48,7 @@ if (existing) {
   server = spawn(process.execPath, [tsxCli, 'server/index.ts'], {
     cwd: root,
     stdio: 'ignore',
-    env: { ...process.env, SUPABASE_AUTH_DISABLED: '1', MEOKTU_DATA_DIR: testDataDir, PORT: String(port) },
+    env: { ...process.env, STATE_STORE: 'file', NEO4J_URI: '', AI_DISABLED: '1', SUPABASE_AUTH_DISABLED: '1', MEOKTU_DATA_DIR: testDataDir, PORT: String(port) },
   })
   const deadline = Date.now() + 60_000
   while (Date.now() < deadline) {

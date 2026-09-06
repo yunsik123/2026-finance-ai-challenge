@@ -108,6 +108,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
   const [ownerData, setOwnerData] = useState<any>(null)
   const [uploadedFiles, setUploadedFiles] = useState<Record<string, string>>({})
   const [selectedFiles, setSelectedFiles] = useState<Record<string, File>>({})
+  const filesRef = useRef<Record<string, File>>({})
   const [documentMetadata, setDocumentMetadata] = useState<Record<string, DocumentMetadata>>({})
   const [ocrResults, setOcrResults] = useState<Record<string, OcrAnalysis>>({})
   const [analyzingSource, setAnalyzingSource] = useState('')
@@ -126,7 +127,12 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
   const toggleConsent = (documentId: string) => setAgreedDocuments((current) => current.includes(documentId)
     ? current.filter((item) => item !== documentId) : [...current, documentId])
 
-  useEffect(() => { if (owner) api<any>('/api/owner').then(setOwnerData).catch(() => undefined) }, [owner, me?.applications.length])
+  useEffect(() => {
+    if (!owner) { setOwnerData(null); return }
+    let live = true
+    api<any>('/api/owner').then((result) => { if (live) setOwnerData(result) }).catch(() => undefined)
+    return () => { live = false }
+  }, [owner, me])
   const restaurant = ownerData?.restaurants?.[0]
   const metrics = result?.data?.derivedMetrics || {}
   const confidence = result?.data?.dataConfidence || 0
@@ -139,6 +145,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
   const resetApplication = () => {
     setOpenedDocument('')
     setUploadedFiles({})
+    filesRef.current = {}
     setSelectedFiles({})
     setDocumentMetadata({})
     setOcrResults({})
@@ -155,6 +162,11 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
       notify('업로드 파일은 10MB 이하여야 해요.')
       return
     }
+    filesRef.current = { ...filesRef.current }
+    if (file) filesRef.current[sourceId] = file
+    else delete filesRef.current[sourceId]
+    setOcrResults((current) => { const next = { ...current }; delete next[sourceId]; return next })
+    setDocumentMetadata((current) => { const next = { ...current }; delete next[sourceId]; return next })
     setUploadedFiles((current) => {
       const next = { ...current }
       if (file) next[sourceId] = file.name
@@ -168,13 +180,13 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
       return next
     })
     if (file) {
+      try {
       const metadata = await readDocumentMetadata(file)
+      if (filesRef.current[sourceId] !== file) return
       setDocumentMetadata((current) => ({ ...current, [sourceId]: metadata }))
       notify(metadata.rowCount ? `${file.name}: ${metadata.headers.length}개 열·${metadata.rowCount}개 행을 확인했어요.` : `${file.name} 파일 형식과 크기를 확인했어요.`)
-    } else {
-      setDocumentMetadata((current) => { const next = { ...current }; delete next[sourceId]; return next })
+      } catch (error) { if (filesRef.current[sourceId] === file) notify((error as Error).message) }
     }
-    setOcrResults((current) => { const next = { ...current }; delete next[sourceId]; return next })
   }
   /**
    * 샘플 자료 한 번에 올리기. 로그인한 모든 사장님 계정에서 사용할 수 있다.
@@ -198,6 +210,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
         metadata[option.id] = metadataList[index]
       })
       setUploadedFiles(names)
+      filesRef.current = picked
       setSelectedFiles(picked)
       setDocumentMetadata(metadata)
       setOcrResults({})
@@ -218,6 +231,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
   const clearUploads = () => {
     setOpenedDocument('')
     setUploadedFiles({})
+    filesRef.current = {}
     setSelectedFiles({})
     setDocumentMetadata({})
     setOcrResults({})
@@ -241,10 +255,12 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
     // 서버 LIMITS.uploadMb 의 기본값과 맞춘다. 서버에서 이 값을 올렸다면 여기서 막히더라도
     // 실제 판정은 서버가 하므로, 최종 안내 문구는 서버 응답의 메시지를 따른다.
     if (file.size > UPLOAD_MB * 1024 * 1024) return notify(`AI 판독 이미지는 ${UPLOAD_MB}MB 이하여야 해요.`)
+    if (analyzingSource) return
     setAnalyzingSource(sourceId)
     try {
       const image = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => reject(new Error('파일을 읽지 못했어요.')); reader.readAsDataURL(file) })
       const response = await api<{ message: string; analysis: OcrAnalysis }>('/api/ai/ocr', { method: 'POST', body: JSON.stringify({ image, filename: file.name, sourceId, plan: '펀딩 신청 원천자료 사전검증' }) })
+      if (filesRef.current[sourceId] !== file) return
       setOcrResults((current) => ({ ...current, [sourceId]: response.analysis })); notify(response.message)
     } catch (error) { notify((error as Error).message) }
     finally { setAnalyzingSource('') }
@@ -253,33 +269,36 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
     event.preventDefault()
     if (!owner) { onLogin(); return }
     if (!legal || !allConsentsAgreed) { notify('필수 고지사항을 모두 확인하고 동의해주세요.'); return }
-    const form = new FormData(event.currentTarget)
-    const connectedSources = [...Object.keys(uploadedFiles), ...(identityVerified ? ['identity'] : [])]
-    // CSV 본문을 함께 보낸다. 서버가 이 원자료를 직접 합산해 심사 지표를 만든다.
-    // (이걸 보내지 않으면 서버가 매출·현금흐름을 계산할 방법이 없다.)
-    // 이미지·PDF 는 보내지 않는다. 문서는 'AI 문서 판독' 경로가 따로 있고,
-    // 원본 이미지는 저장하지 않는다는 약속을 지켜야 하기 때문이다.
-    const documentContents: Record<string, string> = {}
-    for (const [sourceId, file] of Object.entries(selectedFiles)) {
-      if (!/\.csv$/i.test(file.name)) continue
-      documentContents[sourceId] = await file.text()
-    }
-    const payload: Record<string, unknown> = {
-      connectedSources,
-      uploadedDocuments: uploadedFiles,
-      documentContents,
-      documentMetadata,
-      identityVerified,
-      privacyConsent: agreedDocuments.includes('privacy'),
-      creditConsent: agreedDocuments.includes('credit-info'),
-      consent: { version: legal.version, documentIds: agreedDocuments },
-    }
-    for (const [key, value] of form.entries()) {
-      if (key.startsWith('document-') || key.endsWith('Consent')) continue
-      payload[key] = value
-    }
+    if (submitting || fillingSamples) return
     setSubmitting(true)
-    try { const response = await api<{ message: string; application: ApplicationResult }>('/api/applications', { method: 'POST', body: JSON.stringify(payload) }); setResult(response.application); notify(response.message); await refresh() }
+    try {
+      const form = new FormData(event.currentTarget)
+      const connectedSources = [...Object.keys(uploadedFiles), ...(identityVerified ? ['identity'] : [])]
+      // CSV 본문을 함께 보낸다. 서버가 이 원자료를 직접 합산해 심사 지표를 만든다.
+      // (이걸 보내지 않으면 서버가 매출·현금흐름을 계산할 방법이 없다.)
+      // 이미지·PDF 는 보내지 않는다. 문서는 'AI 문서 판독' 경로가 따로 있고,
+      // 원본 이미지는 저장하지 않는다는 약속을 지켜야 하기 때문이다.
+      const documentContents: Record<string, string> = {}
+      for (const [sourceId, file] of Object.entries(selectedFiles)) {
+        if (!/\.csv$/i.test(file.name)) continue
+        documentContents[sourceId] = await file.text()
+      }
+      const payload: Record<string, unknown> = {
+        connectedSources,
+        uploadedDocuments: uploadedFiles,
+        documentContents,
+        documentMetadata,
+        identityVerified,
+        privacyConsent: agreedDocuments.includes('privacy'),
+        creditConsent: agreedDocuments.includes('credit-info'),
+        consent: { version: legal.version, documentIds: agreedDocuments },
+      }
+      for (const [key, value] of form.entries()) {
+        if (key.startsWith('document-') || key.endsWith('Consent')) continue
+        payload[key] = value
+      }
+      const response = await api<{ message: string; application: ApplicationResult }>('/api/applications', { method: 'POST', body: JSON.stringify(payload) }); setResult(response.application); notify(response.message); await refresh()
+  }
     catch (error) { notify((error as Error).message) }
     finally { setSubmitting(false) }
   }
@@ -313,7 +332,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
         <div className="owner-result-actions"><NavLink className="button" to="/owner/my">마이페이지에서 결과 확인</NavLink><button className="button secondary" onClick={goBack}>새 펀딩 신청서 작성</button></div>
       </section> : <form ref={formRef} className={`application-form source-application ${!owner ? 'locked' : ''}`} onSubmit={submit}>
         {!owner && <div className="owner-lock-overlay"><LockKeyhole /><h2>사장님 계정 전용 기능이에요</h2><p>상호명과 자료 업로드를 포함한 모든 입력은 소상공인 계정으로 로그인한 뒤 사용할 수 있습니다.</p><button type="button" className="button" onClick={onLogin}>{me ? '소상공인 계정으로 다시 로그인' : '로그인·회원가입'}</button></div>}
-        <fieldset disabled={!owner}>
+        <fieldset disabled={!owner || submitting || fillingSamples}>
           <div className="form-heading"><span>원천데이터 기반 예비심사</span><h2>필요한 자료를 하나씩 제출해주세요</h2><p>매출액·성장률·재방문율은 직접 입력하지 않습니다. 각 자료의 정확한 범위와 항목을 확인하고 파일을 선택하면 먹투가 계산합니다.</p></div>
 
           <section className="form-section">

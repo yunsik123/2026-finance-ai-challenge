@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { NavLink, useSearchParams } from 'react-router-dom'
 import { ArrowRight, ArrowLeftRight, Check, Clock3, Filter, Handshake, Inbox, Plus, RotateCcw, Search, Send, Ticket, TriangleAlert, WalletCards, X } from 'lucide-react'
 import { api } from './lib/api.ts'
@@ -131,14 +131,19 @@ export default function CouponMarket({ state, me, requireLogin, refresh, notify 
     })
   }
 
+  const loadId = useRef(0)
   const loadMine = useCallback(async () => {
+    const requestId = ++loadId.current
     if (!me) { setMine(null); return }
-    try { setMine(await api<MarketMine>('/api/market/mine')) }
+    try {
+      const result = await api<MarketMine>('/api/market/mine')
+      if (requestId === loadId.current) setMine(result)
+    }
     catch (error) { notify((error as Error).message) }
   }, [me])
 
   useEffect(() => { if (tab === 'mine' && !me) requireLogin() }, [tab, me])
-  useEffect(() => { loadMine() }, [loadMine, state])
+  useEffect(() => { void loadMine(); return () => { ++loadId.current } }, [loadMine, state])
 
   const run = async (id: string, task: () => Promise<{ message: string }>) => {
     if (!requireLogin()) return
