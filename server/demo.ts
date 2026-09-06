@@ -17,6 +17,16 @@ import type {
   LegalConsent, Notification, OwnerDocument, Position, Review, Role, VisitVerification, WalletTransaction,
 } from './types.ts'
 
+/**
+ * 투자자가 처음 받는 먹투머니.
+ *
+ * 회원가입한 투자자와 체험 투자자가 같은 금액에서 시작한다.
+ * 체험이 더 적으면 "이 금액으로는 못 사네" 하고 끝나서
+ * 정작 보여주려던 투자 흐름을 못 보고 나가기 때문이다.
+ * 회원가입 경로(server/index.ts)도 이 값을 쓴다. 한쪽만 바뀌지 않게 여기 한 곳에 둔다.
+ */
+export const INVESTOR_STARTING_CASH = 2_000_000
+
 /** 4시간. 체험 토큰의 만료 시간과 맞춘다. */
 const TTL = 1000 * 60 * 60 * 4
 /** 한 서버가 들고 있을 체험 세션 수 상한. 넘으면 오래된 것부터 버린다. */
@@ -74,7 +84,8 @@ export function sandboxFor(id: string, role: Role): DemoSandbox {
   const created: DemoSandbox = {
     id, role, createdAt: Date.now(), touchedAt: Date.now(),
     // 체험자가 첫 화면에서 바로 투자 버튼을 눌러볼 수 있게 시작 잔액을 준다.
-    cash: role === 'investor' ? 300_000 : 0,
+    // 세션마다 새로 만들어지므로 들어올 때마다 늘 이 금액에서 시작한다.
+    cash: role === 'investor' ? INVESTOR_STARTING_CASH : 0,
     positions: [], coupons: [], listings: [], offers: [], trades: [],
     reviews: [], visits: [], favorites: [], connections: [],
     applications: [], documents: [], notifications: [], walletTransactions: [], consents: [],

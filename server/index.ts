@@ -21,7 +21,7 @@ import {
   assessCredit, combineAssessments, creditModelVersion, creditReferences, deriveCreditInput,
   featureSpecs, industries, industryProfiles, toIndustry, type CreditAssessment,
 } from './credit.ts'
-import { DEMO_NOTICE, demoId, demoNotification, sandboxFor, type DemoSandbox } from './demo.ts'
+import { DEMO_NOTICE, INVESTOR_STARTING_CASH, demoId, demoNotification, sandboxFor, type DemoSandbox } from './demo.ts'
 import {
   answerOwnerStatusQuestion, answerSupportQuestion, defaultSupportPrograms, isOwnerStatusQuestion, isSupportQuestion,
   knowledgeAsOf, matchSupportPrograms, ownerSituation, ownerSituationGraph, supportProgramGraph, supportProgramNodes, supportPrograms,
@@ -221,7 +221,7 @@ async function supabaseUserFromAuthorization(value?: string) {
         name: String(authUser.user_metadata?.name || authUser.user_metadata?.full_name || email.split('@')[0]).slice(0, 80),
         role,
         passwordHash: `supabase:${authUser.id}`,
-        cash: role === 'investor' ? 2000000 : 0,
+        cash: role === 'investor' ? INVESTOR_STARTING_CASH : 0,
         createdAt: now(),
       }
       db.users.push(user)
@@ -1633,7 +1633,7 @@ function demoMeState(user: SessionUser) {
     rules: EXCHANGE_RULES,
     legalConsents: sandbox.consents,
     legalVersion: LEGAL_VERSION,
-    demo: { notice: DEMO_NOTICE, startingCash: 300000 },
+    demo: { notice: DEMO_NOTICE, startingCash: INVESTOR_STARTING_CASH },
   }
 }
 
@@ -1851,7 +1851,7 @@ app.post('/api/auth/signup', async (req, res) => {
       return res.status(status >= 400 && status < 500 ? status : 502).json({ error: `Supabase 회원가입에 실패했어요. ${(error as Error).message}` })
     }
   }
-  const user: User = { id: id('user'), email: email.toLowerCase(), name: name.trim(), role, passwordHash: await hashPassword(password), cash: role === 'investor' ? 2000000 : 0, createdAt: now() }
+  const user: User = { id: id('user'), email: email.toLowerCase(), name: name.trim(), role, passwordHash: await hashPassword(password), cash: role === 'investor' ? INVESTOR_STARTING_CASH : 0, createdAt: now() }
   db.users.push(user)
   recordConsent(user.id, 'signup', signupConsent.documentIds)
   const welcomeCoupons = grantWelcomeCoupons(user)
