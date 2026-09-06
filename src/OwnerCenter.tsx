@@ -14,7 +14,7 @@
  * 그 확인·수정 결과가 문서함에 정답으로 쌓여 다음 판독을 개선할 재료가 된다.
  */
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
-import { NavLink } from 'react-router-dom'
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, ArrowRight, BadgeCheck, Banknote, Building2, Check, ChevronRight, Database, Download, Eraser, Eye,
   FileSpreadsheet, FileText, FolderDown, Image as ImageIcon, Landmark, Link2, LockKeyhole, PlugZap, ReceiptText,
@@ -160,12 +160,49 @@ type IntakeRow = {
   alternatives?: string[]
 }
 
+/**
+ * 단계마다 주소가 하나씩 있다.
+ *
+ * 한 화면에서 보였다/숨겼다 하는 방식이 아니라 실제로 페이지가 넘어간다. 그래서
+ * 브라우저 뒤로·앞으로 버튼이 그대로 동작하고, 지금 어느 단계인지 주소만 봐도 알 수 있고,
+ * "2단계 주소"를 그대로 공유·북마크할 수 있다.
+ *
+ * 대신 단계가 바뀌면 그 단계의 입력칸은 화면에서 사라진다. 그래서 입력값을 DOM 이 아니라
+ * fields 상태에 들고 있어야 한다(아래 emptyFields). 고른 파일도 마찬가지로 상위 상태에 남는다.
+ */
 const stepDefinitions = [
-  { id: 'store', title: '가게 정보', hint: '사업자등록증에 적힌 대로 넣어주세요.' },
-  { id: 'upload', title: '자료 올리기', hint: '가지고 계신 파일을 그냥 올려주세요. 무엇인지는 먹투가 알아봅니다.' },
-  { id: 'reading', title: '읽은 값 확인', hint: 'AI가 읽은 값이 맞는지만 봐주세요.' },
-  { id: 'plan', title: '동의와 계획', hint: '꼭 필요한 동의와 자금 계획만 받습니다.' },
+  { id: 'store', slug: 'store', title: '가게 정보', hint: '사업자등록증에 적힌 대로 넣어주세요.' },
+  { id: 'upload', slug: 'upload', title: '자료 올리기', hint: '가지고 계신 파일을 그냥 올려주세요. 무엇인지는 먹투가 알아봅니다.' },
+  { id: 'reading', slug: 'reading', title: '읽은 값 확인', hint: 'AI가 읽은 값이 맞는지만 봐주세요.' },
+  { id: 'plan', slug: 'plan', title: '동의와 계획', hint: '꼭 필요한 동의와 자금 계획만 받습니다.' },
 ] as const
+
+/** 결과 화면도 자기 주소를 갖는다. 새로고침해도 결과가 남아 있어야 하기 때문이다. */
+const RESULT_SLUG = 'result'
+
+/** 신청서에 사장님이 직접 적는 값. 단계를 넘나들어도 살아 있어야 해서 상태로 들고 있는다. */
+type ApplicationFields = Record<string, string>
+const emptyFields = (): ApplicationFields => ({
+  restaurantName: '', ownerName: '', category: '한식', signature: '', avgPrice: '12000',
+  businessNumber: '', licenseNumber: '', address: '',
+  requestedLimit: '30000000', fundingPeriodMonths: '18', ownCapital: '10000000', maxDiscount: '40',
+  fundPurpose: '', businessPlan: '', expectedEffect: '',
+})
+/** 1단계에서 반드시 채워야 하는 칸. */
+const storeFieldRules: Array<[string, string]> = [
+  ['restaurantName', '상호명을 입력해주세요.'],
+  ['ownerName', '대표자명을 입력해주세요.'],
+  ['signature', '대표 메뉴를 입력해주세요.'],
+  ['businessNumber', '사업자등록번호를 입력해주세요.'],
+  ['licenseNumber', '영업신고번호를 입력해주세요.'],
+  ['address', '사업장 주소를 입력해주세요. 상권 분석에 사용됩니다.'],
+]
+/** 4단계에서 반드시 채워야 하는 칸. */
+const planFieldRules: Array<[string, string]> = [
+  ['fundPurpose', '자금 사용계획을 적어주세요.'],
+  ['businessPlan', '사업계획과 차별성을 적어주세요.'],
+  ['expectedEffect', '예상 효과를 적어주세요.'],
+]
 
 export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeState | null; onLogin: () => void; refresh: () => Promise<void>; notify: (message: string) => void }) {
   const owner = me?.user.role === 'owner'
@@ -190,12 +227,21 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
   const [dragging, setDragging] = useState(false)
   /** 지금 열어 본 업로드 자료의 출처 id. 파일은 브라우저 안에만 있고 서버로 보내지 않는다. */
   const [openedDocument, setOpenedDocument] = useState('')
-  const [step, setStep] = useState(0)
-  const [maxStep, setMaxStep] = useState(0)
-  const [direction, setDirection] = useState<'next' | 'back'>('next')
+  const [fields, setFields] = useState<ApplicationFields>(emptyFields)
   const legal = useLegalIndex()
   const [agreedDocuments, setAgreedDocuments] = useState<string[]>([])
-  const formRef = useRef<HTMLFormElement | null>(null)
+
+  // 단계는 주소에서 읽는다. 상태로 들고 있으면 뒤로 가기가 동작하지 않는다.
+  const location = useLocation()
+  const navigate = useNavigate()
+  const slug = location.pathname.replace(/^\/owner\/?/, '').split('/')[0]
+  const showingResult = slug === RESULT_SLUG
+  const routeStep = stepDefinitions.findIndex((definition) => definition.slug === slug)
+  const step = routeStep < 0 ? 0 : routeStep
+  /** 어느 방향으로 넘어왔는지. 전환 애니메이션 방향에만 쓴다. */
+  const previousStep = useRef(step)
+  const direction: 'next' | 'back' = step >= previousStep.current ? 'next' : 'back'
+  useEffect(() => { previousStep.current = step }, [step])
   useEffect(() => { setAgreedDocuments([]) }, [legal?.version])
 
   const consentDocuments = (legal?.documents || []).filter((document) => legal?.required.owner_application.includes(document.id))
@@ -209,7 +255,21 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
     api<any>('/api/owner').then((result) => { if (live) setOwnerData(result) }).catch(() => undefined)
     return () => { live = false }
   }, [owner, me])
+  const setField = (name: string) => (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
+    setFields((current) => ({ ...current, [name]: event.target.value }))
+
   const restaurant = ownerData?.restaurants?.[0]
+  // 이미 등록된 가게가 있으면 비어 있는 칸만 채워준다. 사장님이 고쳐 쓴 값은 덮지 않는다.
+  useEffect(() => {
+    if (!restaurant) return
+    setFields((current) => ({
+      ...current,
+      restaurantName: current.restaurantName || restaurant.name || '',
+      category: current.category === '한식' && restaurant.category ? restaurant.category : current.category,
+      signature: current.signature || restaurant.signature || '',
+      avgPrice: current.avgPrice === '12000' && restaurant.avgPrice ? String(restaurant.avgPrice) : current.avgPrice,
+    }))
+  }, [restaurant?.id])
   const metrics = result?.data?.derivedMetrics || {}
   const confidence = result?.data?.dataConfidence || 0
   const uploadedCount = useMemo(() => Object.keys(uploadedFiles).length, [uploadedFiles])
@@ -244,46 +304,53 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
     setIntakeRows([])
     setIdentityVerified(false)
     setAgreedDocuments([])
+    setFields(emptyFields())
     setResult(null)
-    setStep(0)
-    setMaxStep(0)
+    navigate('/owner/store')
   }
   /** 결과 화면에서 다시 신청 화면으로 돌아온다. 사장님 센터의 기본 화면은 항상 펀딩 신청이다. */
   const goBack = () => resetApplication()
 
-  const goToStep = (next: number) => {
-    setDirection(next >= step ? 'next' : 'back')
-    setStep(next)
-    setMaxStep((current) => Math.max(current, next))
-    // 단계가 바뀌면 화면 위쪽부터 읽어야 한다.
+  /** 단계 이동 = 주소 이동. 뒤로 가기가 그대로 동작해야 하므로 상태로 넘기지 않는다. */
+  const goToStep = (next: number, replace = false) => {
+    const target = stepDefinitions[Math.max(0, Math.min(stepDefinitions.length - 1, next))]
+    navigate(`/owner/${target.slug}`, { replace })
+    // 새 단계는 화면 위쪽부터 읽어야 한다.
     window.requestAnimationFrame(() => window.scrollTo({ top: 0, behavior: 'smooth' }))
   }
 
+  /**
+   * 그 단계를 끝냈는지 조용히 판정한다.
+   * 안내 문구를 띄우지 않는 판정이 따로 필요하다. 주소로 바로 들어온 사람을
+   * 앞 단계로 되돌릴 때 경고를 쏟아붓지 않아야 하고, 단계 표시줄의 활성 여부도 이 값으로 정한다.
+   */
+  const stepComplete = (index: number) => {
+    if (index === 0) return storeFieldRules.every(([name]) => fields[name]?.trim()) && identityVerified
+    if (index === 1) return missingRequired.length === 0
+    if (index === 2) return unreviewedReadings.length === 0
+    if (index === 3) {
+      return planFieldRules.every(([name]) => fields[name]?.trim())
+        && Number(fields.requestedLimit) >= 5000000
+        && allConsentsAgreed
+    }
+    return true
+  }
+
+  /** 아직 못 끝낸 첫 단계. 여기까지만 주소로 열 수 있다. */
+  const firstIncompleteStep = () => {
+    for (let index = 0; index < stepDefinitions.length; index += 1) if (!stepComplete(index)) return index
+    return stepDefinitions.length - 1
+  }
+
   /** 지금 단계를 떠나도 되는지. 못 넘어가면 이유를 알려주고 그 칸으로 커서를 옮긴다. */
+  const focusField = (name: string) => {
+    const element = document.querySelector<HTMLElement>(`[name="${name}"]`)
+    element?.focus()
+  }
   const validateStep = (index: number) => {
-    const form = formRef.current
     if (index === 0) {
-      const required: Array<[string, string]> = [
-        ['restaurantName', '상호명을 입력해주세요.'],
-        ['ownerName', '대표자명을 입력해주세요.'],
-        ['businessNumber', '사업자등록번호를 입력해주세요.'],
-        ['licenseNumber', '영업신고번호를 입력해주세요.'],
-        ['address', '사업장 주소를 입력해주세요. 상권 분석에 사용됩니다.'],
-      ]
-      for (const [name, message] of required) {
-        const field = form?.elements.namedItem(name)
-        const value = field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement ? field.value.trim() : ''
-        if (!value) {
-          notify(message)
-          if (field instanceof HTMLElement) field.focus()
-          return false
-        }
-      }
-      const signature = form?.elements.namedItem('signature')
-      if (signature instanceof HTMLInputElement && !signature.value.trim()) {
-        notify('대표 메뉴를 입력해주세요.')
-        signature.focus()
-        return false
+      for (const [name, message] of storeFieldRules) {
+        if (!fields[name]?.trim()) { notify(message); focusField(name); return false }
       }
       if (!identityVerified) { notify('대표자 본인인증을 먼저 완료해주세요.'); return false }
       return true
@@ -304,27 +371,12 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
       return true
     }
     if (index === 3) {
-      // 브라우저 기본 검증을 끄고 단계별로 직접 확인한다. 숨어 있는 칸은 브라우저가 포커스할 수 없어
-      // required 만 걸어두면 제출이 조용히 막히기 때문이다.
-      const required: Array<[string, string]> = [
-        ['fundPurpose', '자금 사용계획을 적어주세요.'],
-        ['businessPlan', '사업계획과 차별성을 적어주세요.'],
-        ['expectedEffect', '예상 효과를 적어주세요.'],
-      ]
-      for (const [name, message] of required) {
-        const field = form?.elements.namedItem(name)
-        const value = field instanceof HTMLTextAreaElement || field instanceof HTMLInputElement ? field.value.trim() : ''
-        if (!value) {
-          notify(message)
-          if (field instanceof HTMLElement) field.focus()
-          return false
-        }
+      for (const [name, message] of planFieldRules) {
+        if (!fields[name]?.trim()) { notify(message); focusField(name); return false }
       }
-      const limitField = form?.elements.namedItem('requestedLimit')
-      const limit = limitField instanceof HTMLInputElement ? Number(limitField.value) : 0
-      if (!Number.isFinite(limit) || limit < 5000000) {
+      if (!(Number(fields.requestedLimit) >= 5000000)) {
         notify('희망 펀딩액은 500만원 이상으로 입력해주세요.')
-        if (limitField instanceof HTMLElement) limitField.focus()
+        focusField('requestedLimit')
         return false
       }
       if (!allConsentsAgreed) { notify('필수 고지사항을 모두 확인하고 동의해주세요.'); return false }
@@ -335,8 +387,31 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
 
   const nextStep = () => {
     if (!validateStep(step)) return
-    goToStep(Math.min(stepDefinitions.length - 1, step + 1))
+    goToStep(step + 1)
   }
+
+  /**
+   * 주소를 정리한다.
+   *
+   * /owner 로 들어오면 첫 단계로 보내고, 없는 주소도 첫 단계로 돌린다.
+   * 앞 단계를 끝내지 않은 채 뒤 단계 주소를 직접 열었으면(새로고침·북마크·직접 입력)
+   * 못 끝낸 첫 단계로 조용히 되돌린다. 그 단계의 입력값은 화면에 없으므로 그냥 두면
+   * 빈 신청서가 제출되기 때문이다.
+   */
+  useEffect(() => {
+    if (!owner) return
+    if (showingResult) {
+      // 결과 없이 결과 주소를 열었으면 신청서로 돌려보낸다(새로고침 후가 대표적이다).
+      if (!result) goToStep(firstIncompleteStep(), true)
+      return
+    }
+    if (routeStep < 0) { goToStep(result ? 0 : firstIncompleteStep(), true); return }
+    const allowed = firstIncompleteStep()
+    if (step > allowed) goToStep(allowed, true)
+  }, [owner, slug, showingResult, Boolean(result), step, routeStep,
+    fields.restaurantName, fields.ownerName, fields.signature, fields.businessNumber, fields.licenseNumber, fields.address,
+    fields.fundPurpose, fields.businessPlan, fields.expectedEffect, fields.requestedLimit,
+    identityVerified, missingRequired.length, unreviewedReadings.length, allConsentsAgreed])
 
   /* ── 파일 받기 ───────────────────────────────────────────── */
 
@@ -570,13 +645,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
         confidence: 1,
         message: `${set.id === 'rough' && set.overrides?.[option.id] ? '어긋난 샘플' : '샘플'} 자료를 ${option.title} 칸에 넣었어요.`,
       })))
-      const form = formRef.current
-      if (form) {
-        for (const [name, value] of Object.entries(sampleProfile)) {
-          const field = form.elements.namedItem(name)
-          if (field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement || field instanceof HTMLSelectElement) field.value = value
-        }
-      }
+      setFields((current) => ({ ...current, ...sampleProfile }))
       setIdentityVerified(true)
       const rows = metadataList.reduce((sum, item) => sum + item.rowCount, 0)
       goToStep(1)
@@ -602,8 +671,8 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
     setOcrImages({})
     setIntakeRows([])
     for (const option of uploadOptions) {
-      const field = formRef.current?.elements.namedItem(`document-${option.id}`)
-      if (field instanceof HTMLInputElement) field.value = ''
+      const field = document.querySelector<HTMLInputElement>(`input[name="document-${option.id}"]`)
+      if (field) field.value = ''
     }
     notify('업로드한 자료를 모두 비웠어요.')
   }
@@ -688,7 +757,6 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
     }
     setSubmitting(true)
     try {
-      const form = new FormData(event.currentTarget)
       const connectedSources = [...Object.keys(uploadedFiles), ...(identityVerified ? ['identity'] : [])]
       // CSV 본문을 함께 보낸다. 서버가 이 원자료를 직접 합산해 심사 지표를 만든다.
       // 이미지·PDF 는 보내지 않는다. 문서는 'AI 판독' 경로가 따로 있고 원본은 저장하지 않는다.
@@ -697,7 +765,9 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
         if (!/\.csv$/i.test(file.name)) continue
         documentContents[sourceId] = await file.text()
       }
+      // 입력값은 폼(DOM)이 아니라 상태에서 모은다. 단계가 넘어가면 앞 단계의 칸은 화면에 없다.
       const payload: Record<string, unknown> = {
+        ...fields,
         connectedSources,
         uploadedDocuments: uploadedFiles,
         documentContents,
@@ -707,13 +777,11 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
         creditConsent: agreedDocuments.includes('credit-info'),
         consent: { version: legal.version, documentIds: agreedDocuments },
       }
-      for (const [key, value] of form.entries()) {
-        if (key.startsWith('document-') || key.endsWith('Consent')) continue
-        payload[key] = value
-      }
       const response = await api<{ message: string; application: ApplicationResult }>('/api/applications', { method: 'POST', body: JSON.stringify(payload) })
       setResult(response.application)
       notify(response.message)
+      // 결과도 자기 주소로 넘어간다. 뒤로 가기를 누르면 신청서 마지막 단계로 돌아온다.
+      navigate(`/owner/${RESULT_SLUG}`)
       await refresh()
       window.scrollTo({ top: 0, behavior: 'smooth' })
     }
@@ -721,9 +789,11 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
     finally { setSubmitting(false) }
   }
 
+  /** 주소로 열 수 있는 마지막 단계. 앞 단계를 끝내야 다음 주소가 열린다. */
+  const reachableStep = Math.max(step, firstIncompleteStep())
   const stepState = (index: number) => {
     if (index === step) return 'current'
-    if (index < step || index <= maxStep) return 'done'
+    if (stepComplete(index)) return 'done'
     return ''
   }
 
@@ -742,7 +812,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
       </section>}
       {demoMode && <section className="demo-mode-banner"><ShieldCheck /><div><b>사장님 체험 모드 · 저장되지 않아요</b><p>만능 업로드함, 자동 분류, AI 판독값 확인, 심사 접수, 자료 일치도 확인까지 실제와 똑같이 눌러볼 수 있어요. 이 체험 기록은 다른 사용자에게 보이지 않고 브라우저를 닫으면 사라집니다.</p></div></section>}
 
-      {result ? <section className="source-review-result">
+      {showingResult && result ? <section className="source-review-result">
         <div className="result-heading">
           <span className={`result-badge ${result.status}`}>{result.status === 'approved' ? '펀딩 가능' : result.status === 'conditional' ? '조건부 승인' : result.status === 'manual_review' ? '운영자 확인 필요' : '보완 필요'}</span>
           <h2>먹투가 자동 계산한 Restaurant Health Profile</h2>
@@ -761,7 +831,16 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
         <div className="result-explanation"><b>심사 설명</b><p>{result.explanation}</p><span>AI 제안 한도 {won(result.approvedLimit)}{result.requestedLimit ? ` · 희망 ${won(result.requestedLimit)}` : ''} · 운영자 확정 전 참고값</span></div>
         <div className="result-why"><b>왜 바로 탈락시키지 않았나요?</b><p>먹투는 기존 신용점수만으로 판단하지 않습니다. 실제 고객의 재방문과 최근 성장 흐름이 보이면 조건부 승인이나 사람의 추가 검토 기회를 드려요. 자료가 부족하다는 이유만으로 자동 거절하지 않습니다.</p></div>
         <div className="owner-result-actions"><NavLink className="button" to="/owner/my">마이페이지에서 결과 확인</NavLink><button className="button secondary" onClick={goBack}>새 펀딩 신청서 작성</button></div>
-      </section> : <form ref={formRef} noValidate className={`application-form source-application owner-wizard ${!owner ? 'locked' : ''}`} onSubmit={submit}>
+      </section> : <form
+        noValidate
+        className={`application-form source-application owner-wizard ${!owner ? 'locked' : ''}`}
+        onSubmit={(event) => {
+          // 단계마다 폼이 따로 있다. 마지막 단계에서만 실제로 접수하고, 그 전에는 다음 주소로 넘긴다.
+          if (step === stepDefinitions.length - 1) { void submit(event); return }
+          event.preventDefault()
+          nextStep()
+        }}
+      >
         {!owner && <div className="owner-lock-overlay"><LockKeyhole /><h2>사장님 계정 전용 기능이에요</h2><p>상호명과 자료 업로드를 포함한 모든 입력은 소상공인 계정으로 로그인한 뒤 사용할 수 있습니다.</p><button type="button" className="button" onClick={onLogin}>{me ? '소상공인 계정으로 다시 로그인' : '로그인·회원가입'}</button></div>}
         <fieldset disabled={!owner || submitting || Boolean(fillingSample)}>
           <div className="form-heading"><span>원천데이터 기반 예비심사</span><h2>{stepDefinitions[step].title}</h2><p>{stepDefinitions[step].hint}</p></div>
@@ -769,7 +848,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
           {/* 샘플 자료 버튼은 어느 단계에서든 보이게 둔다.
               2단계 안에만 두었더니, 1단계를 채우지 못한 사장님은 1·4단계 입력까지
               함께 채워주는 이 버튼에 도달할 방법이 없었다(실제 브라우저 검사에서 걸렸다). */}
-          {owner && !result && <div className="sample-sets">
+          {owner && <div className="sample-sets">
             {sampleSets.map((set) => <button
               type="button" key={set.id} className={`sample-set ${set.id}`}
               disabled={Boolean(fillingSample)} onClick={() => void fillWithSamples(set)}
@@ -784,26 +863,40 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
             {stepDefinitions.map((definition, index) => <button
               type="button" key={definition.id}
               className={stepState(index)}
-              disabled={index > maxStep}
-              onClick={() => { if (index <= maxStep) goToStep(index) }}
+              disabled={index > reachableStep}
+              onClick={() => { if (index <= reachableStep) goToStep(index) }}
             >
-              <i>{index < step ? <Check /> : index + 1}</i>
-              <span><b>{definition.title}</b><small>{index === step ? '진행 중' : index < step ? '완료' : '대기'}</small></span>
+              <i>{stepComplete(index) && index !== step ? <Check /> : index + 1}</i>
+              <span><b>{definition.title}</b><small>{index === step ? '진행 중' : stepComplete(index) ? '완료' : index <= reachableStep ? '작성 중' : '대기'}</small></span>
             </button>)}
           </nav>
+          {/* 지금 어느 주소에 있는지 그대로 보여준다. 단계가 진짜로 넘어간다는 걸 알 수 있게. */}
+          <p className="wizard-route" aria-live="polite">
+            <span>{step + 1}/{stepDefinitions.length}</span>
+            <code>/owner/{stepDefinitions[step].slug}</code>
+          </p>
 
           <div className="wizard-stage">
             {/* ── 1단계 · 가게 정보 ─────────────────────────── */}
-            <section className={`wizard-step ${step === 0 ? 'active' : ''} ${direction === 'back' ? 'back' : ''}`} aria-hidden={step !== 0}>
+            {step === 0 && <section className={`wizard-step active ${direction === 'back' ? 'back' : ''}`}>
               <div className="form-section">
                 <div className="form-section-title"><span>1</span><div><h3>사업체 기본정보와 대표자 확인</h3><p>상권 자료는 주소를 기준으로 먹투가 직접 수집합니다.</p></div></div>
-                <div className="field-grid"><label className="field"><span>상호명</span><input name="restaurantName" required placeholder="예: 소복소복" defaultValue={restaurant?.name} /></label><label className="field"><span>대표자명</span><input name="ownerName" required placeholder="사업자등록증과 동일하게" /></label><label className="field"><span>업종</span><select name="category" required defaultValue={restaurant?.category || '한식'}><option>한식</option><option>중식</option><option>일식</option><option>양식</option><option>카페·베이커리</option><option>분식</option><option>주점</option><option>기타</option></select></label><label className="field"><span>대표 메뉴</span><input name="signature" required placeholder="예: 들기름 고등어 한상" defaultValue={restaurant?.signature} /></label><label className="field"><span>평균 식사 가격</span><div className="number-field"><input type="number" name="avgPrice" min={1000} step={1000} defaultValue={restaurant?.avgPrice || 12000} required /><span>원</span></div></label><label className="field"><span>사업자등록번호</span><input name="businessNumber" required placeholder="000-00-00000" /></label><label className="field"><span>영업신고번호</span><input name="licenseNumber" required placeholder="신고번호 입력" /></label><label className="field full-field"><span>사업장 주소</span><input name="address" required placeholder="상권·경쟁·생활인구 분석에 사용됩니다." /></label></div>
+                <div className="field-grid">
+                  <label className="field"><span>상호명</span><input name="restaurantName" placeholder="예: 소복소복" value={fields.restaurantName} onChange={setField('restaurantName')} /></label>
+                  <label className="field"><span>대표자명</span><input name="ownerName" placeholder="사업자등록증과 동일하게" value={fields.ownerName} onChange={setField('ownerName')} /></label>
+                  <label className="field"><span>업종</span><select name="category" value={fields.category} onChange={setField('category')}><option>한식</option><option>중식</option><option>일식</option><option>양식</option><option>카페·베이커리</option><option>분식</option><option>주점</option><option>기타</option></select></label>
+                  <label className="field"><span>대표 메뉴</span><input name="signature" placeholder="예: 들기름 고등어 한상" value={fields.signature} onChange={setField('signature')} /></label>
+                  <label className="field"><span>평균 식사 가격</span><div className="number-field"><input type="number" name="avgPrice" min={1000} step={1000} value={fields.avgPrice} onChange={setField('avgPrice')} /><span>원</span></div></label>
+                  <label className="field"><span>사업자등록번호</span><input name="businessNumber" placeholder="000-00-00000" value={fields.businessNumber} onChange={setField('businessNumber')} /></label>
+                  <label className="field"><span>영업신고번호</span><input name="licenseNumber" placeholder="신고번호 입력" value={fields.licenseNumber} onChange={setField('licenseNumber')} /></label>
+                  <label className="field full-field"><span>사업장 주소</span><input name="address" placeholder="상권·경쟁·생활인구 분석에 사용됩니다." value={fields.address} onChange={setField('address')} /></label>
+                </div>
                 <button type="button" className={`identity-action ${identityVerified ? 'verified' : ''}`} onClick={() => setIdentityVerified(true)}><UserCheck />{identityVerified ? '대표자 본인인증 완료' : '휴대전화로 대표자 본인인증'}<span>{identityVerified ? '신청자와 대표자 일치 여부를 확인했습니다.' : 'MVP에서는 버튼을 누르면 시연용 인증이 완료됩니다.'}</span></button>
               </div>
-            </section>
+            </section>}
 
             {/* ── 2단계 · 자료 올리기 ───────────────────────── */}
-            <section className={`wizard-step ${step === 1 ? 'active' : ''} ${direction === 'back' ? 'back' : ''}`} aria-hidden={step !== 1}>
+            {step === 1 && <section className={`wizard-step active ${direction === 'back' ? 'back' : ''}`}>
               <UniversalIntake
                 dragging={dragging} busy={intakeBusy} rows={intakeRows}
                 onDragState={setDragging}
@@ -826,10 +919,10 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
                 <div className="evidence-lane upload-lane"><div className="evidence-lane-heading"><UploadCloud /><div><b>B. 자료가 들어간 칸</b><p>위에서 올린 파일이 여기에 자동으로 들어갑니다. 비어 있는 칸은 직접 골라 넣어도 됩니다. 엑셀은 표로 바꿔서 넣습니다.</p></div></div><SamplePack /><div className="document-upload-grid">{uploadOptions.map((option) => <DocumentUploadCard key={option.id} option={option} fileName={uploadedFiles[option.id]} metadata={documentMetadata[option.id]} classification={classifications[option.id]} required={Boolean(option.required && !connectedIds.has(option.id))} onChange={(event) => selectFile(option.id, event)} onOpen={() => setOpenedDocument(option.id)} />)}</div></div>
                 <p className="mvp-source-note">MVP는 직접 업로드 파일의 이름·크기·형식과 CSV 열·행 수를 검증해 심사 출처로 기록합니다. 사진·PDF 는 브라우저에서 그림으로 바꿔 판독 요청만 서버로 보내며 원본 이미지는 저장하지 않습니다. 실제 기관 연결은 현재 모의 어댑터이고, 운영 전 기관 OAuth·전자서명·암호화 보관으로 교체해야 합니다.</p>
               </div>
-            </section>
+            </section>}
 
             {/* ── 3단계 · 읽은 값 확인 ─────────────────────── */}
-            <section className={`wizard-step ${step === 2 ? 'active' : ''} ${direction === 'back' ? 'back' : ''}`} aria-hidden={step !== 2}>
+            {step === 2 && <section className={`wizard-step active ${direction === 'back' ? 'back' : ''}`}>
               <div className="form-section">
                 <div className="form-section-title"><span>3</span><div><h3>AI가 읽은 값이 맞는지 봐주세요</h3><p>틀린 값을 고쳐주시면 그 자리에서 바로 반영되고, 다음 판독을 더 정확하게 만드는 데도 쓰입니다.</p></div></div>
                 <ReadingConfirm
@@ -847,10 +940,10 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
                   onOpen={(sourceId) => setOpenedDocument(sourceId)}
                 />
               </div>
-            </section>
+            </section>}
 
             {/* ── 4단계 · 동의와 계획 ──────────────────────── */}
-            <section className={`wizard-step ${step === 3 ? 'active' : ''} ${direction === 'back' ? 'back' : ''}`} aria-hidden={step !== 3}>
+            {step === 3 && <section className={`wizard-step active ${direction === 'back' ? 'back' : ''}`}>
               <div className="form-section legal-consent-section">
                 <div className="form-section-title"><span>4</span><div><h3>분석에 꼭 필요한 동의만 확인</h3><p>마케팅·광고 동의는 받지 않습니다. ‘전문 보기’를 누르면 수집 항목·목적·보유기간과 이의제기 절차가 펼쳐지고, 그 전문 맨 아래에서 동의할 수 있습니다.</p></div></div>
                 <div className="consent-progress"><b>{consentDocuments.filter((document) => agreedDocuments.includes(document.id)).length}/{consentDocuments.length}</b><span>필수 고지 동의 완료</span><small>각 항목의 전문을 펼치면 맨 아래에서 동의할 수 있어요.</small></div>
@@ -861,12 +954,19 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
 
               <div className="form-section">
                 <div className="form-section-title"><span>5</span><div><h3>사장님이 직접 작성할 내용</h3><p>데이터만으로 알 수 없는 자금 목적과 실행계획만 직접 설명해주세요.</p></div></div>
-                <div className="field-grid"><label className="field"><span>희망 펀딩액</span><div className="number-field"><input type="number" name="requestedLimit" defaultValue={30000000} min={5000000} step={1000000} required /><span>원</span></div></label><label className="field"><span>필요 기간</span><div className="number-field"><input type="number" name="fundingPeriodMonths" defaultValue={18} min={3} max={36} required /><span>개월</span></div></label><label className="field"><span>사장 자기자금</span><div className="number-field"><input type="number" name="ownCapital" defaultValue={10000000} min={0} step={1000000} required /><span>원</span></div></label><label className="field"><span>최대 쿠폰 할인율</span><select name="maxDiscount" defaultValue="40"><option value="30">30%</option><option value="35">35%</option><option value="40">40%</option><option value="45">45%</option><option value="50">50%</option></select></label></div>
-                <label className="field"><span>자금 사용계획</span><textarea name="fundPurpose" rows={3} required placeholder="예: 저온 저장고 1,800만원 / 주방 동선 개선 1,200만원" /></label><label className="field"><span>사업계획과 차별성</span><textarea name="businessPlan" rows={4} required placeholder="왜 고객이 다시 찾는지, 자금을 어떻게 성장으로 연결할지 설명해주세요." /></label><label className="field"><span>예상 효과</span><textarea name="expectedEffect" rows={3} required placeholder="예: 좌석 24→38석, 점심 회전율 개선, 품절 감소" /></label>
+                <div className="field-grid">
+                  <label className="field"><span>희망 펀딩액</span><div className="number-field"><input type="number" name="requestedLimit" min={5000000} step={1000000} value={fields.requestedLimit} onChange={setField('requestedLimit')} /><span>원</span></div></label>
+                  <label className="field"><span>필요 기간</span><div className="number-field"><input type="number" name="fundingPeriodMonths" min={3} max={36} value={fields.fundingPeriodMonths} onChange={setField('fundingPeriodMonths')} /><span>개월</span></div></label>
+                  <label className="field"><span>사장 자기자금</span><div className="number-field"><input type="number" name="ownCapital" min={0} step={1000000} value={fields.ownCapital} onChange={setField('ownCapital')} /><span>원</span></div></label>
+                  <label className="field"><span>최대 쿠폰 할인율</span><select name="maxDiscount" value={fields.maxDiscount} onChange={setField('maxDiscount')}><option value="30">30%</option><option value="35">35%</option><option value="40">40%</option><option value="45">45%</option><option value="50">50%</option></select></label>
+                </div>
+                <label className="field"><span>자금 사용계획</span><textarea name="fundPurpose" rows={3} placeholder="예: 저온 저장고 1,800만원 / 주방 동선 개선 1,200만원" value={fields.fundPurpose} onChange={setField('fundPurpose')} /></label>
+                <label className="field"><span>사업계획과 차별성</span><textarea name="businessPlan" rows={4} placeholder="왜 고객이 다시 찾는지, 자금을 어떻게 성장으로 연결할지 설명해주세요." value={fields.businessPlan} onChange={setField('businessPlan')} /></label>
+                <label className="field"><span>예상 효과</span><textarea name="expectedEffect" rows={3} placeholder="예: 좌석 24→38석, 점심 회전율 개선, 품절 감소" value={fields.expectedEffect} onChange={setField('expectedEffect')} /></label>
               </div>
 
               <section className="three-check-system"><h3>먹투 3중 검증</h3><div><span>① 공식자료</span><p>사업자·홈택스·대출·임대차</p></div><div><span>② 실제 영업자료</span><p>POS·카드·계좌·배달</p></div><div><span>③ 외부자료</span><p>상권·리뷰·고객수요·경쟁</p></div><small>서로 맞지 않는 값은 원인을 분류하고 수동 심사 대상으로 표시합니다.</small></section>
-            </section>
+            </section>}
           </div>
 
           <div className="wizard-nav">

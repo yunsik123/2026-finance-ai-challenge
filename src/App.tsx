@@ -184,8 +184,9 @@ function App() {
             <Route path="/admin" element={<AdminCenter me={me} onLogin={() => setAuthOpen(true)} onLogout={logout} notify={notify} />} />
             <Route path="*" element={<Navigate to="/admin" replace />} />
           </> : ownerOnly ? <>
-            <Route path="/owner" element={<OwnerCenter me={me} onLogin={() => setAuthOpen(true)} refresh={refresh} notify={notify} />} />
             <Route path="/owner/my" element={<OwnerMyPage me={me} refresh={refresh} notify={notify} />} />
+            {/* 신청서는 단계마다 주소가 하나씩 있다(/owner/store · upload · reading · plan · result). */}
+            <Route path="/owner/*" element={<OwnerCenter me={me} onLogin={() => setAuthOpen(true)} refresh={refresh} notify={notify} />} />
             <Route path="/legal" element={<LegalCenter me={me} />} />
             <Route path="/legal/:documentId" element={<LegalCenter me={me} />} />
             <Route path="/support" element={<SupportPage me={me} state={state} onLogin={() => setAuthOpen(true)} notify={notify} />} />
@@ -195,7 +196,8 @@ function App() {
             <Route path="/discover" element={<Discover restaurants={state.restaurants} onSelect={setSelected} favoriteIds={me?.favoriteRestaurantIds || []} onFavorite={toggleFavorite} />} />
             <Route path="/market" element={<MarketPage state={state} me={me} requireLogin={requireLogin} onSelect={setSelected} refresh={refresh} notify={notify} />} />
             <Route path="/insight" element={<InsightPage state={state} onSelect={setSelected} />} />
-            <Route path="/owner" element={<OwnerCenter me={me} onLogin={() => setAuthOpen(true)} refresh={refresh} notify={notify} />} />
+            {/* 사장님 마이페이지는 사장님으로 로그인했을 때의 화면 묶음에만 있다. */}
+            <Route path="/owner/*" element={<OwnerCenter me={me} onLogin={() => setAuthOpen(true)} refresh={refresh} notify={notify} />} />
             <Route path="/admin" element={<AdminCenter me={me} onLogin={() => setAuthOpen(true)} onLogout={logout} notify={notify} />} />
             <Route path="/my" element={<MyPage me={me} state={state} restaurants={state.restaurants} requireLogin={requireLogin} onSelect={setSelected} transact={transact} refresh={refresh} notify={notify} />} />
             <Route path="/support" element={<SupportPage me={me} state={state} onLogin={() => setAuthOpen(true)} notify={notify} />} />

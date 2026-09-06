@@ -173,15 +173,20 @@ try {
   await waitFor('Boolean(document.querySelector(".report-grid h3"))', 'owner report')
   // 사장님 센터는 네 단계로 넘어간다. 단계가 실제로 전환되는지, 필수 자료가 없으면
   // 넘어가지 못하는지, 마지막 단계에서만 제출 버튼이 나오는지까지 실제 브라우저로 확인한다.
+  // /owner 로 들어가면 첫 단계 주소로 넘어간다. 단계마다 주소가 실제로 바뀌어야 한다.
   await visit('/owner')
+  await waitFor('location.pathname === "/owner/store"', 'owner redirects to first step url')
   await waitFor('document.querySelectorAll(".wizard-rail button").length === 4', 'owner wizard rail')
   await waitFor('Boolean(document.querySelector(".wizard-step.active .identity-action"))', 'wizard starts on store step')
-  // 1단계: 아무것도 채우지 않고 다음을 누르면 그 자리에 머물러야 한다.
+  // 1단계: 아무것도 채우지 않고 다음을 누르면 주소가 바뀌지 않아야 한다.
   await click('다음')
-  await waitFor('Boolean(document.querySelector(".wizard-step.active .identity-action"))', 'wizard blocks empty store step')
+  await waitFor('location.pathname === "/owner/store" && Boolean(document.querySelector(".wizard-step.active .identity-action"))', 'wizard blocks empty store step')
+  // 앞 단계를 끝내지 않은 채 뒤 단계 주소를 직접 열면 되돌려보낸다.
+  await evaluate('history.pushState({}, "", "/owner/plan"); window.dispatchEvent(new PopStateEvent("popstate"))')
+  await waitFor('location.pathname === "/owner/store"', 'direct access to a later step is redirected back')
   await evaluate('document.querySelector(".sample-set.clean").click()')
   await waitFor('document.querySelectorAll(".document-upload-card.uploaded").length === 11', 'sample uploads')
-  await waitFor('Boolean(document.querySelector(".wizard-step.active .intake-zone"))', 'sample fill moves to upload step')
+  await waitFor('location.pathname === "/owner/upload" && Boolean(document.querySelector(".wizard-step.active .intake-zone"))', 'sample fill moves to upload step url')
   await waitFor('document.querySelectorAll(".intake-row").length === 11', 'intake rows listed')
   await click('올린 자료 열어보기')
   await waitFor('Boolean(document.querySelector(".doc-figure img")?.naturalWidth)', 'uploaded image preview')
@@ -231,25 +236,31 @@ try {
 
   // 2 → 3단계 전환. 자료가 모두 있으니 넘어가야 한다.
   await click('다음')
-  await waitFor('document.body.innerText.includes("AI가 읽은 값이 맞는지")', 'reading step')
+  await waitFor('location.pathname === "/owner/reading" && document.body.innerText.includes("AI가 읽은 값이 맞는지")', 'reading step url')
   await waitFor('Boolean(document.querySelector(".reading-tables li"))', 'table summary on reading step')
+  // 브라우저 뒤로 가기로 앞 단계에 돌아가야 한다. 단계가 진짜 페이지라는 뜻이다.
+  await evaluate('history.back()')
+  await waitFor('location.pathname === "/owner/upload" && Boolean(document.querySelector(".intake-zone"))', 'browser back returns to upload step')
+  await evaluate('history.forward()')
+  await waitFor('location.pathname === "/owner/reading"', 'browser forward returns to reading step')
   await click('다음')
-  await waitFor('Boolean(document.querySelector(".wizard-step.active .consent-reader-head"))', 'consent step')
+  await waitFor('location.pathname === "/owner/plan" && Boolean(document.querySelector(".wizard-step.active .consent-reader-head"))', 'consent step url')
   await evaluate('document.querySelectorAll(".consent-reader-head").forEach(button => button.click())')
   await waitFor('[...document.querySelectorAll(".consent-reader-agree input")].length === 3 && [...document.querySelectorAll(".consent-reader-agree input")].every(input => !input.disabled)', 'application consent documents')
   await evaluate('document.querySelectorAll(".consent-reader-agree input").forEach(input => input.click())')
   // 이전으로 돌아가도 입력이 남아 있어야 한다. 단계 전환으로 값이 사라지면 신청을 다시 써야 한다.
   await evaluate('document.querySelectorAll(".wizard-rail button")[0].click()')
-  await waitFor('document.querySelector("[name=restaurantName]").value === "샘플식당"', 'store input survives step change')
+  await waitFor('location.pathname === "/owner/store" && document.querySelector("[name=restaurantName]").value === "샘플식당"', 'store input survives page change')
   await evaluate('document.querySelectorAll(".wizard-rail button")[3].click()')
+  await waitFor('location.pathname === "/owner/plan"', 'rail navigates by url')
   await click('먹투 자동분석 시작')
-  await waitFor('Boolean(document.querySelector(".source-review-result")) || document.body.innerText.includes("Restaurant Health Profile")', 'application submitted')
+  await waitFor('location.pathname === "/owner/result" && (Boolean(document.querySelector(".source-review-result")) || document.body.innerText.includes("Restaurant Health Profile"))', 'application submitted on result url')
   // 증거 원장이 결과 화면에 실제로 그려지는지. 서버가 값을 만들어도 화면에 길이 없으면 의미가 없다.
   await waitFor('Boolean(document.querySelector(".evidence-panel .quality-dial"))', 'evidence quality dial')
   await waitFor('document.querySelectorAll(".evidence-panel .crosscheck").length > 0', 'cross-check cards')
   await evaluate('document.querySelector(".evidence-links li > button").click()')
   await waitFor('document.querySelectorAll(".evidence-links li.open .support").length > 0', 'metric evidence expands')
-  console.log('PASS: public routes, owner dashboard, AI report, wizard step flow, samples, document preview, evidence ledger, funding application')
+  console.log('PASS: public routes, owner dashboard, AI report, per-step URL navigation, samples, document preview, evidence ledger, funding application')
   await login('admin')
   await waitFor('Boolean(document.querySelector(".admin-hub"))', 'admin dashboard')
   for (let index = 0; index < 9; index++) {
