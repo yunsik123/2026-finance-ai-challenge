@@ -59,17 +59,138 @@ type UploadOption = {
   sampleAltLabel?: string
 }
 const uploadOptions: UploadOption[] = [
-  { id: 'business', icon: Building2, title: '사업자등록 자료', exact: '사업자등록증명 또는 사업자등록증 사본 1부', columns: '확인 항목: 상호, 대표자, 개업일, 사업장 주소, 업태·종목', accept: '.pdf,.jpg,.jpeg,.png', sampleUrl: '/samples/meoktu-business-sample.png', sampleLabel: 'PNG 샘플', samplePdfUrl: '/samples/meoktu-business-sample.pdf' },
-  { id: 'license', icon: BadgeCheck, title: '영업신고 자료', exact: '일반·휴게음식점 영업신고증 사본 1부', columns: '확인 항목: 신고번호, 영업소 명칭·주소, 영업 종류, 대표자', accept: '.pdf,.jpg,.jpeg,.png', sampleUrl: '/samples/meoktu-license-sample.png', sampleLabel: 'PNG 샘플', samplePdfUrl: '/samples/meoktu-license-sample.pdf' },
-  { id: 'pos', icon: FileSpreadsheet, title: 'POS 매출 원자료', exact: '최근 12개월 주문 단위 내역 CSV 1개', columns: '필요한 열: 영업일, 주문금액, 결제수단, 취소환불액', accept: '.csv,.xlsx', sampleUrl: '/samples/meoktu-pos-sample.csv', sampleLabel: 'CSV 샘플' },
-  { id: 'account', icon: Landmark, title: '사업용 계좌 내역', exact: '최근 12개월 입출금 거래내역 CSV 또는 엑셀 1개', columns: '필요한 열: 거래일시, 입금액, 출금액, 잔액 (은행 화면의 “맡기신금액·찾으신금액·거래후잔액”도 그대로 읽습니다)', accept: '.csv,.xlsx', sampleUrl: '/samples/meoktu-account-sample.csv', sampleLabel: 'CSV 샘플', sampleAltUrl: '/samples/meoktu-account-sample.xlsx', sampleAltLabel: '엑셀 샘플' },
-  { id: 'card', icon: ReceiptText, title: '카드 매출·정산', exact: '최근 12개월 카드 승인·정산 내역 CSV 1개', columns: '필요한 열: 승인일, 승인금액, 취소금액, 수수료, 실제입금액', accept: '.csv,.xlsx', sampleUrl: '/samples/meoktu-card-settlement-sample.csv', sampleLabel: 'CSV 샘플' },
-  { id: 'delivery', icon: Link2, title: '배달 플랫폼 정산', exact: '최근 12개월 배달앱 정산 내역 CSV 1개', columns: '필요한 열: 주문일, 주문금액, 주문건수, 재주문건수', accept: '.csv,.xlsx', sampleUrl: '/samples/meoktu-delivery-sample.csv', sampleLabel: 'CSV 샘플' },
-  { id: 'tax', icon: Database, title: '납세 자료', exact: '최근 2개 과세기간 부가세 신고서 또는 납세증명 1부', columns: '확인 항목: 과세기간, 신고 매출액, 납세 상태', accept: '.pdf,.jpg,.jpeg,.png', sampleUrl: '/samples/meoktu-tax-sample.png', sampleLabel: 'PNG 샘플', samplePdfUrl: '/samples/meoktu-tax-sample.pdf' },
-  { id: 'customer', icon: Users, title: '고객 방문 자료', exact: '가명처리된 고객 방문 이력 CSV 1개', columns: '필요한 열: 고객해시, 첫방문일, 방문횟수', accept: '.csv,.xlsx', sampleUrl: '/samples/meoktu-customer-sample.csv', sampleLabel: 'CSV 샘플' },
-  { id: 'lease', icon: Building2, title: '임대차 자료', exact: '임대차계약서 사본 1부 또는 월 임차료 내역', columns: '확인 항목: 보증금, 월 임차료, 계약기간, 주소', accept: '.pdf,.jpg,.jpeg,.png,.csv', sampleUrl: '/samples/meoktu-lease-sample.png', sampleLabel: 'PNG 샘플', samplePdfUrl: '/samples/meoktu-lease-sample.pdf' },
-  { id: 'debt', icon: Banknote, title: '부채·상환 자료', exact: '금융기관 대출 잔액·상환 내역 CSV 1개', columns: '필요한 열: 기준월, 금융기관, 잔액, 월원리금, 금리', accept: '.csv,.xlsx,.pdf', sampleUrl: '/samples/meoktu-debt-sample.csv', sampleLabel: 'CSV 샘플' },
-  { id: 'staff', icon: Users, title: '인력·급여 자료', exact: '최근 12개월 직원수·급여 총액 CSV 1개', columns: '필요한 열: 기준월, 직원수, 급여총액', accept: '.csv,.xlsx', sampleUrl: '/samples/meoktu-staff-sample.csv', sampleLabel: 'CSV 샘플' },
+  {
+    id: 'business',
+    icon: Building2,
+    title: '사업자등록 자료',
+    exact: '사업자등록증명 또는 사업자등록증 사본 1부',
+    columns: '확인 항목: 상호, 대표자, 개업일, 사업장 주소, 업태·종목',
+    accept: '.png,.jpg,.jpeg,.pdf',
+    sampleUrl: '/samples/01_business_registration_certificate_clean.png',
+    sampleLabel: '깨끗한 원본 PNG',
+    sampleAltUrl: '/samples/01_business_registration_certificate_photo.png',
+    sampleAltLabel: '촬영본 PNG',
+    samplePdfUrl: '/samples/meoktu-business-sample.pdf',
+  },
+  {
+    id: 'license',
+    icon: BadgeCheck,
+    title: '영업신고 자료',
+    exact: '일반·휴게음식점 영업신고증 사본 1부',
+    columns: '확인 항목: 신고번호, 영업소 명칭·주소, 영업 종류, 대표자',
+    accept: '.png,.jpg,.jpeg,.pdf',
+    sampleUrl: '/samples/02_food_business_license_clean.png',
+    sampleLabel: '깨끗한 원본 PNG',
+    sampleAltUrl: '/samples/02_food_business_license_photo.png',
+    sampleAltLabel: '촬영본 PNG',
+    samplePdfUrl: '/samples/meoktu-license-sample.pdf',
+  },
+  {
+    id: 'pos',
+    icon: FileSpreadsheet,
+    title: 'POS 매출 원자료',
+    exact: '최근 12개월 POS 월별 매출 집계표 또는 주문 내역',
+    columns: '확인 항목: 월별 매출액, 주문건수, 결제수단별 금액, 취소환불액',
+    accept: '.png,.jpg,.jpeg,.pdf,.csv,.xlsx',
+    sampleUrl: '/samples/04_pos_sales_summary.png',
+    sampleLabel: '집계표 PNG',
+    sampleAltUrl: '/samples/meoktu-pos-sample.csv',
+    sampleAltLabel: 'CSV 샘플',
+  },
+  {
+    id: 'account',
+    icon: Landmark,
+    title: '사업용 계좌 내역',
+    exact: '최근 12개월 사업용 계좌 거래내역서 또는 엑셀',
+    columns: '확인 항목: 거래일시, 입금액, 출금액, 잔액 (은행 화면 캡처 또는 내역서)',
+    accept: '.png,.jpg,.jpeg,.pdf,.csv,.xlsx',
+    sampleUrl: '/samples/06_business_bank_statement_clean.png',
+    sampleLabel: '내역서 PNG',
+    sampleAltUrl: '/samples/06_business_bank_statement_photo.png',
+    sampleAltLabel: '촬영본 PNG',
+  },
+  {
+    id: 'card',
+    icon: ReceiptText,
+    title: '카드 매출·정산',
+    exact: '최근 12개월 카드·VAN 정산 내역서',
+    columns: '확인 항목: 승인건수, 승인금액, 수수료, 실입금액',
+    accept: '.png,.jpg,.jpeg,.pdf,.csv,.xlsx',
+    sampleUrl: '/samples/05_card_van_settlement.png',
+    sampleLabel: '정산표 PNG',
+    sampleAltUrl: '/samples/meoktu-card-settlement-sample.csv',
+    sampleAltLabel: 'CSV 샘플',
+  },
+  {
+    id: 'delivery',
+    icon: Link2,
+    title: '배달 플랫폼 정산',
+    exact: '최근 12개월 배달앱 월별 정산 내역서',
+    columns: '확인 항목: 배달 주문금액, 중개수수료, 정산입금액, 주문건수',
+    accept: '.png,.jpg,.jpeg,.pdf,.csv,.xlsx',
+    sampleUrl: '/samples/07_delivery_platform_settlement.png',
+    sampleLabel: '정산표 PNG',
+    sampleAltUrl: '/samples/meoktu-delivery-sample.csv',
+    sampleAltLabel: 'CSV 샘플',
+  },
+  {
+    id: 'tax',
+    icon: Database,
+    title: '납세 자료',
+    exact: '최근 2개 과세기간 부가세 신고서 또는 과세표준증명원',
+    columns: '확인 항목: 과세기간, 과세표준(매출액), 납세 상태',
+    accept: '.png,.jpg,.jpeg,.pdf',
+    sampleUrl: '/samples/03_vat_tax_base_certificate_clean.png',
+    sampleLabel: '과세표준증명 PNG',
+    sampleAltUrl: '/samples/03_vat_tax_base_certificate_scan.png',
+    sampleAltLabel: '스캔본 PNG',
+    samplePdfUrl: '/samples/meoktu-tax-sample.pdf',
+  },
+  {
+    id: 'customer',
+    icon: Users,
+    title: '고객 방문 자료',
+    exact: '가명처리된 고객 방문 이력 CSV 1개',
+    columns: '필요한 열: 고객해시, 첫방문일, 방문횟수',
+    accept: '.csv,.xlsx',
+    sampleUrl: '/samples/meoktu-customer-sample.csv',
+    sampleLabel: 'CSV 샘플',
+  },
+  {
+    id: 'lease',
+    icon: Building2,
+    title: '임대차 자료',
+    exact: '상가 임대차계약서 사본 1부 또는 요약본',
+    columns: '확인 항목: 보증금, 월 임차료(월세), 계약기간, 소재지 주소',
+    accept: '.png,.jpg,.jpeg,.pdf,.csv',
+    sampleUrl: '/samples/09_commercial_lease_excerpt.png',
+    sampleLabel: '임대차계약서 PNG',
+    samplePdfUrl: '/samples/meoktu-lease-sample.pdf',
+  },
+  {
+    id: 'debt',
+    icon: Banknote,
+    title: '부채·상환 자료',
+    exact: '금융기관 대출 잔액·상환 내역서 (Debt Schedule)',
+    columns: '확인 항목: 대출기관, 대출잔액, 이자율, 월 원리금 상환액, 만기일',
+    accept: '.png,.jpg,.jpeg,.pdf,.csv,.xlsx',
+    sampleUrl: '/samples/08_debt_schedule.png',
+    sampleLabel: '부채현황 PNG',
+    sampleAltUrl: '/samples/meoktu-debt-sample.csv',
+    sampleAltLabel: 'CSV 샘플',
+  },
+  {
+    id: 'staff',
+    icon: Users,
+    title: '인력·급여 자료',
+    exact: '최근 12개월 급여대장 사본 1부',
+    columns: '확인 항목: 직원수, 기본급, 지급총액, 공제내역, 실지급액',
+    accept: '.png,.jpg,.jpeg,.pdf,.csv,.xlsx',
+    sampleUrl: '/samples/10_payroll_ledger.png',
+    sampleLabel: '급여대장 PNG',
+    sampleAltUrl: '/samples/meoktu-staff-sample.csv',
+    sampleAltLabel: 'CSV 샘플',
+  },
 ]
 
 const partnerOptions = [
@@ -84,28 +205,29 @@ const partnerOptions = [
 type DocumentMetadata = { name: string; size: number; type: string; rowCount: number; headers: string[] }
 
 /**
- * public/samples 의 12개월 가상 원자료와 값이 맞물리는 '샘플식당' 프로필.
+ * public/samples 의 가상 원자료(OCR 테스트용 합성 서류)와 값이 맞물리는 '먹투 테스트식당' 프로필.
  * 한 번에 업로드 버튼이 1·4단계 입력란까지 같은 값으로 채워야
  * 문서 판독값과 신고값이 일치해 교차검증 결과를 그대로 볼 수 있다.
  */
 const sampleProfile: Record<string, string> = {
-  restaurantName: '샘플식당',
+  restaurantName: '먹투 테스트식당',
   category: '한식',
   signature: '들기름 고등어 한상',
   avgPrice: '13000',
-  ownerName: '김소담',
-  businessNumber: '123-45-67891',
+  ownerName: '김테스트',
+  businessNumber: '123-45-67890',
   licenseNumber: '제 2022-마포-0451 호',
-  address: '서울특별시 마포구 망원동 12-3',
+  address: '서울특별시 마포구 테스트로 123, 1층',
+  targetAmount: '30000000',
   fundPurpose: '저온 저장고 교체 1,800만원 / 주방 동선 개선 1,200만원',
-  businessPlan: '망원동 골목 상권에서 12개월 연속 재방문 고객이 늘고 있습니다. 저장·조리 설비를 바꿔 품절과 대기시간을 줄이고 점심 회전율을 높이려 합니다.',
+  businessPlan: '마포구 테스트로 골목 상권에서 12개월 연속 재방문 고객이 늘고 있습니다. 저장·조리 설비를 바꿔 품절과 대기시간을 줄이고 점심 회전율을 높이려 합니다.',
   expectedEffect: '좌석 24석 → 38석, 점심 회전율 2.1회 → 2.8회, 재료 품절로 인한 판매 손실 월 180만원 감소',
 }
 
 /**
  * 샘플 두 갈래.
  *
- * clean 은 서로 완벽하게 맞는 12종이다. 승인까지 그대로 흐른다.
+ * clean 은 서로 완벽하게 맞는 11종이다. 승인까지 그대로 흐른다.
  * rough 는 같은 사업체의 같은 원장이지만 POS 는 8개월치만, 계좌에는 대출 입금이 섞이고,
  * 카드는 12개월 전체다. 실제로 사장님이 주는 자료가 이렇게 어긋나 있다.
  * 이 세트를 넣으면 매출↔계좌·매출↔카드 대조에서 불일치가 잡히고 수동 심사로 넘어간다.
@@ -113,7 +235,7 @@ const sampleProfile: Record<string, string> = {
  */
 type SampleSet = { id: 'clean' | 'rough'; label: string; description: string; overrides?: Record<string, string> }
 const sampleSets: SampleSet[] = [
-  { id: 'clean', label: '정리된 자료로 보기', description: '12개월치가 서로 딱 맞는 자료 11종입니다. 교차검증이 모두 통과하는 흐름을 봅니다.' },
+  { id: 'clean', label: '가상 서류(PNG) 한번에 올리기', description: '먹투 OCR 테스트용 합성 서류 PNG 10종 및 고객 데이터입니다. 교차검증과 AI 판독이 가능한 예시 자료입니다.' },
   {
     id: 'rough', label: '실제 사장님 자료처럼 보기', description: 'POS는 8개월치만, 계좌에는 대출 입금이 섞이고, 카드는 12개월 전체인 자료입니다. 열 이름도 제각각이라 불일치가 잡힙니다.',
     overrides: {
@@ -726,14 +848,14 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
       ])
       setDeclaredDebt({
         hasDebt: true, answered: true,
-        loans: [{ lender: '○○은행', balance: 40000000, rate: 5.4, monthlyPayment: 900000, maturity: '2028-06' }],
+        loans: [{ lender: '○○은행', balance: 70000000, rate: 5.4, monthlyPayment: 1985000, maturity: '2028-06' }],
       })
-      setOwnership([{ name: '김소담', share: 100, role: '대표자' }])
+      setOwnership([{ name: '김테스트', share: 100, role: '대표자' }])
       const rows = metadataList.reduce((sum, item) => sum + item.rowCount, 0)
       goToStep(1)
       notify(set.id === 'rough'
         ? `어긋난 샘플 ${files.length}종을 올렸어요. 표 자료 ${rows.toLocaleString('ko-KR')}행을 확인했습니다. 자동분석을 돌리면 매출↔계좌·매출↔카드 대조에서 불일치가 잡힙니다.`
-        : `샘플 자료 ${files.length}종을 올렸어요. 표 자료 ${rows.toLocaleString('ko-KR')}행을 확인했고 가게 정보와 자금 계획란도 채웠습니다.`)
+        : `가상 서류(PNG) ${files.length}종을 올렸어요. 가게 정보와 자금 계획란도 채웠습니다.`)
       // 문서함에도 남긴다. 화면을 막지 않도록 뒤에서 처리한다.
       void Promise.allSettled(options.map((option, index) => registerDocument({
         file: files[index], sourceId: option.id, metadata: metadataList[index],
@@ -1082,12 +1204,12 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
                 {/* 가상자료 한번에 업로드하기 버튼 */}
                 <button
                   type="button"
-                  className="virtual-data-upload-btn"
+                  className="virtual-data-upload-btn sample-set clean"
                   disabled={Boolean(fillingSample)}
                   onClick={() => void fillWithSamples(sampleSets[0])}
                 >
                   <UploadCloud />
-                  {fillingSample ? '가상 자료를 불러오는 중...' : '가상자료 한번에 업로드하기'}
+                  {fillingSample ? '가상 자료를 불러오는 중...' : '가상자료 한번에 업로드하기 (PNG 예시 서류)'}
                 </button>
               </div>
               {/* 부채는 자료보다 답이 먼저다. 대출이 없으면 클릭 한 번으로 끝나고,

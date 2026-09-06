@@ -2908,6 +2908,14 @@ const publicSampleFiles = new Set([
   'meoktu-delivery-sample.csv', 'meoktu-lease-sample.pdf', 'meoktu-lease-sample.png',
   'meoktu-license-sample.pdf', 'meoktu-license-sample.png', 'meoktu-monthly-summary-sample.csv',
   'meoktu-pos-sample.csv', 'meoktu-staff-sample.csv', 'meoktu-tax-sample.pdf', 'meoktu-tax-sample.png',
+  '01_business_registration_certificate_clean.png', '01_business_registration_certificate_photo.png',
+  '02_food_business_license_clean.png', '02_food_business_license_photo.png',
+  '03_vat_tax_base_certificate_clean.png', '03_vat_tax_base_certificate_scan.png',
+  '04_pos_sales_summary.png', '05_card_van_settlement.png',
+  '06_business_bank_statement_clean.png', '06_business_bank_statement_photo.png',
+  '07_delivery_platform_settlement.png', '08_debt_schedule.png',
+  '09_commercial_lease_excerpt.png', '10_payroll_ledger.png',
+  '11_fund_use_plan.png', '12_ownership_structure.png',
 ])
 const sampleUrlFor = (name: string) => (publicSampleFiles.has(name) ? `/samples/${name}` : undefined)
 
