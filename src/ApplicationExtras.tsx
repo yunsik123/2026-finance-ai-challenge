@@ -258,9 +258,8 @@ export function DebtDeclaration({ value, onChange }: { value: DeclaredDebt; onCh
  * 지분 20% 이상은 주요 소유자로 표시한다(Honeycomb 이 신용조회·배경조사 대상으로 삼는 기준).
  * 이 값도 점수에는 넣지 않고 운영자 확인용으로 저장한다.
  */
-export function OwnershipEditor({ rows, ownerName, onChange }: {
+export function OwnershipEditor({ rows, onChange }: {
   rows: OwnershipRow[]
-  ownerName: string
   onChange: (next: OwnershipRow[]) => void
 }) {
   const total = rows.reduce((sum, row) => sum + (Number(row.share) || 0), 0)
@@ -277,10 +276,6 @@ export function OwnershipEditor({ rows, ownerName, onChange }: {
         <span>지분 합계</span><b>{total}%</b>
       </div>
     </div>
-    {rows.length === 0 && <button
-      type="button" className="ownership-solo"
-      onClick={() => onChange([{ name: ownerName || '대표자', share: 100, role: '대표자' }])}
-    >혼자 100% 운영이에요</button>}
     {rows.map((row, index) => <div className="ownership-row" key={index}>
       <input value={row.name} onChange={(event) => update(index, { name: event.target.value })} placeholder="이름" aria-label="이름" />
       <div className="number-field"><input type="number" min={0} max={100} value={row.share || ''} onChange={(event) => update(index, { share: Number(event.target.value) || 0 })} placeholder="지분" aria-label="지분" /><span>%</span></div>

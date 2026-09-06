@@ -515,27 +515,6 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
     ? '영업신고번호를 신고증에 적힌 대로 넣어주세요. 연도와 일련번호(4자리 이상 숫자)가 들어가야 합니다. (예: 제 2024-0123 호)'
     : ''
 
-  /**
-   * 데모 정보로 1단계를 한 번에 채운다.
-   * public/samples 의 합성 서류와 같은 값이라, 그대로 두면 판독값과 신고값이 서로 맞는다.
-   */
-  const fillStoreProfile = () => {
-    setFields((current) => ({
-      ...current,
-      restaurantName: sampleProfile.restaurantName,
-      ownerName: sampleProfile.ownerName,
-      category: sampleProfile.category,
-      signature: sampleProfile.signature,
-      avgPrice: sampleProfile.avgPrice,
-      businessNumber: sampleProfile.businessNumber,
-      licenseNumber: sampleProfile.licenseNumber,
-      address: sampleProfile.address,
-    }))
-    setIdentityVerified(true)
-    setOwnership((current) => (current.length ? current : [{ name: sampleProfile.ownerName, share: 100, role: '대표자' }]))
-    notify('데모 사업체 정보로 채웠어요. 올리실 서류에 맞춰 값을 고쳐도 됩니다.')
-  }
-
   const resetApplication = () => {
     setOpenedDocument('')
     setUploadedFiles({})
@@ -1224,15 +1203,8 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
               </div>}
 
               <div className="form-section">
-                {/* '한 번에 채우기'는 여기가 자리다. 예전에는 소유구조 칸에만 있어서,
-                    정작 채워야 할 사업체·대표자 입력란과 떨어져 있었다. */}
-                <div className="form-section-title"><span>1</span><div><h3>사업체 기본정보와 대표자 확인</h3><p>상권 자료는 주소를 기준으로 먹투가 직접 수집합니다.</p></div>
-                  <div className="section-title-action">
-                    <button type="button" className="autofill-basic" onClick={fillStoreProfile}>
-                      <Sparkles /> 데모 정보로 한 번에 채우기
-                    </button>
-                  </div>
-                </div>
+                {/* 이 칸들은 '데모자료 한번에 업로드'가 서류와 함께 채운다. 별도 버튼을 두지 않는다. */}
+                <div className="form-section-title"><span>1</span><div><h3>사업체 기본정보와 대표자 확인</h3><p>상권 자료는 주소를 기준으로 먹투가 직접 수집합니다.</p></div></div>
                 <div className="field-grid">
                   <label className="field"><span>상호명</span><input name="restaurantName" placeholder="예: 소복소복" value={fields.restaurantName} onChange={setField('restaurantName')} /></label>
                   <label className="field"><span>대표자명</span><input name="ownerName" placeholder="사업자등록증과 동일하게" value={fields.ownerName} onChange={setField('ownerName')} /></label>
@@ -1244,7 +1216,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
                   <label className="field full-field"><span>사업장 주소</span><input name="address" placeholder="상권·경쟁·생활인구 분석에 사용됩니다." value={fields.address} onChange={setField('address')} /></label>
                 </div>
                 <button type="button" className={`identity-action ${identityVerified ? 'verified' : ''}`} onClick={() => setIdentityVerified(true)}><UserCheck />{identityVerified ? '대표자 본인인증 완료' : '휴대전화로 대표자 본인인증'}<span>{identityVerified ? '신청자와 대표자 일치 여부를 확인했습니다.' : 'MVP에서는 버튼을 누르면 시연용 인증이 완료됩니다.'}</span></button>
-                <OwnershipEditor rows={ownership} ownerName={fields.ownerName} onChange={setOwnership} />
+                <OwnershipEditor rows={ownership} onChange={setOwnership} />
               </div>
             </section>}
 
