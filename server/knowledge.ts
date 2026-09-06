@@ -342,6 +342,41 @@ export function answerOwnerStatusQuestion(situation: OwnerSituation) {
 }
 
 /** 지원제도를 그래프 노드로 변환한다. trust.ts의 GraphNode와 같은 형태. */
+/**
+ * 지원제도를 기관·분야 노드와 함께 낸다.
+ *
+ * 제도 노드만 올리면 그래프에서 완전히 떠 있게 된다(실측: Neo4j 고아 노드 20개).
+ * 그러면 "중진공에서 받을 수 있는 게 뭐예요?"나 "보증 쪽으로 뭐가 있어요?"처럼
+ * 제도 이름을 모르고 묻는 질문을 순회로 답할 수 없고, 문자열이 우연히 맞아야만 걸린다.
+ * 기관과 분야를 노드로 세우고 제도를 그 아래에 매달면 두 홉으로 닿는다.
+ */
+export function supportProgramGraph(programs: SupportProgram[] = supportPrograms) {
+  const nodes = supportProgramNodes(programs) as Array<{ id: string; type: string; label: string; source: string; properties: Record<string, string | number | boolean> }>
+  const edges: Array<{ from: string; relation: string; to: string }> = []
+  const seen = new Set<string>()
+  for (const program of programs) {
+    const agencyId = `agency:${program.agency}`
+    if (!seen.has(agencyId)) {
+      seen.add(agencyId)
+      nodes.push({
+        id: agencyId, type: 'SupportAgency', label: program.agency, source: 'PUBLIC_SUPPORT_PROGRAM',
+        properties: { 기관: program.agency, 기준일: knowledgeAsOf, keywords: '기관 어디서 신청 창구 담당' },
+      })
+    }
+    const topicId = `topic:${program.category}`
+    if (!seen.has(topicId)) {
+      seen.add(topicId)
+      nodes.push({
+        id: topicId, type: 'SupportTopic', label: `${program.category} 지원`, source: 'PUBLIC_SUPPORT_PROGRAM',
+        properties: { 분야: program.category, 기준일: knowledgeAsOf, keywords: `${program.category} 지원 제도 정부 공적` },
+      })
+    }
+    edges.push({ from: program.id, relation: 'OFFERED_BY', to: agencyId })
+    edges.push({ from: program.id, relation: 'BELONGS_TO', to: topicId })
+  }
+  return { nodes, edges }
+}
+
 export function supportProgramNodes(programs: SupportProgram[] = supportPrograms) {
   return programs.map((program) => ({
     id: program.id,

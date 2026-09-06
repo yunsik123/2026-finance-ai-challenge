@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, BadgeCheck, BarChart3, Check, Clock3, HandCoins, LockKeyhole, ShieldCheck, Star, Ticket, TrendingUp, WalletCards, X } from 'lucide-react'
+import { AlertTriangle, BadgeCheck, BarChart3, Check, Clock3, HandCoins, LockKeyhole, ShieldCheck, Star, Ticket, TrendingUp, WalletCards, X, Scale} from 'lucide-react'
 import { api } from './lib/api.ts'
 import { useAmountInput } from './lib/amount.ts'
 import CommercialAreaPanel from './CommercialAreaPanel.tsx'
@@ -177,6 +177,22 @@ export default function FundDetailModal({ restaurant: r, me, initialTab = 'inves
               <article><Clock3 /><span>회수 방식</span><b>{r.fund.status === 'funding' ? '모금 중 바로 회수' : '예약 순서대로 매칭'}</b><small>{r.fund.status === 'funding' ? '현재 모금 단계에서 요청할 수 있어요.' : orderBook.note}</small></article>
             </div>
             <div className="decision-risk"><AlertTriangle /><div><b>손실·유동성 위험</b><p>원금과 회수 시점은 보장되지 않으며, 모금 종료 후에는 다른 투자자의 예약이 있어야 회수될 수 있어요. 쿠폰은 금융수익이 아니라 해당 식당에서 사용하는 할인 혜택입니다.</p></div></div>
+            {/* 자료 일치도. 투자자가 "AI가 점수를 지어낸 게 아니다"를 확인할 수 있는 유일한 값이라 여기에 둔다.
+                개별 금액이나 파일명은 사장님의 자료라서 공개하지 않고, 몇 쌍을 맞춰봤는지만 보여준다. */}
+            {r.evidenceQuality && <div className={`decision-evidence tone-${r.evidenceQuality.score >= 90 ? 'good' : r.evidenceQuality.score >= 75 ? 'fair' : 'warn'}`}>
+              <Scale />
+              <div>
+                <b>제출자료 일치도 {r.evidenceQuality.score}점 <em>{r.evidenceQuality.grade}</em></b>
+                <p>
+                  이 식당이 낸 자료 {r.evidenceQuality.sourceCount}종에서 서로 같은 값을 재는 항목 {r.evidenceQuality.comparedPairs}쌍
+                  (전체 {r.evidenceQuality.possiblePairs}쌍 중)을 맞춰본 결과예요.
+                  {r.evidenceQuality.mismatchCount > 0
+                    ? ` 아직 맞지 않는 항목이 ${r.evidenceQuality.mismatchCount}건 있어 운영자가 확인하고 있어요.`
+                    : ' 서로 어긋나는 값은 발견되지 않았어요.'}
+                </p>
+                <small>매출을 POS·계좌·카드·신고자료로 각각 확인하는 방식이며, 승인 결과나 수익 보장이 아닙니다.</small>
+              </div>
+            </div>}
             <div className="decision-source"><BadgeCheck /><span><b>데이터 기준</b> 펀딩 시작 {new Date(r.fund.startedAt).toLocaleDateString('ko-KR')} · 종료 예정 {new Date(r.fund.endsAt).toLocaleDateString('ko-KR')}</span><em>MVP 시연 데이터</em></div>
           </section>
           <section className="restaurant-story"><span>이 식당은요</span><h3>{r.foodDescription || r.description}</h3><p>{r.story}</p><div className="strength-list">{r.strengths?.map((strength) => <span key={strength}><Check /> {strength}</span>)}</div></section>

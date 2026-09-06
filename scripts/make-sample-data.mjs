@@ -11,6 +11,7 @@
  * README 의 재생성 명령을 참고할 것.
  */
 import fs from 'node:fs/promises'
+import zlib from 'node:zlib'
 import { rebuildSamplePack } from './zip-samples.mjs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -293,6 +294,185 @@ await write('meoktu-customer-sample.csv', csv(['고객해시', '첫방문일', '
 await write('meoktu-debt-sample.csv', csv(['기준월', '금융기관', '대출종류', '금리', '최초대출금', '잔액', '월원리금', '만기일'], debtRows))
 await write('meoktu-staff-sample.csv', csv(['기준월', '직원수', '급여총액', '사회보험가입자수'], staffRows))
 await write('meoktu-monthly-summary-sample.csv', csv(['기준월', '총매출', '배달매출', '배달비중(%)', '월임차료', '월원리금'], summaryRows))
+
+/*
+ * ── 엑셀 샘플 ────────────────────────────────────────────────
+ *
+ * 은행·세무 프로그램에서 내려주는 자료는 CSV 가 아니라 .xlsx 인 경우가 많다.
+ * 브라우저가 그 파일을 표로 바꿔 읽는 경로(src/lib/file-intake.ts)를 실제로 검증하려면
+ * 진짜 .xlsx 파일이 하나 필요하다. 외부 라이브러리를 쓰지 않고 여기서 직접 만든다.
+ * (npm 의 xlsx 0.18.5 는 수정본 없는 프로토타입 오염 권고가 걸려 있어 의존성으로 넣지 않았다.)
+ *
+ * .xlsx 는 ZIP 안의 XML 묶음이다. 최소 구성만 담는다.
+ */
+const xmlEscape = (value) => String(value)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+
+const columnName = (index) => {
+  let name = ''
+  let value = index + 1
+  while (value > 0) {
+    const remainder = (value - 1) % 26
+    name = String.fromCharCode(65 + remainder) + name
+    value = Math.floor((value - 1) / 26)
+  }
+  return name
+}
+
+/** ZIP 하나를 만든다. deflate-raw 로 압축하고 중앙 디렉터리까지 직접 쓴다. */
+function makeZip(files) {
+  const chunks = []
+  const central = []
+  let offset = 0
+  for (const file of files) {
+    const nameBytes = Buffer.from(file.name, 'utf8')
+    const content = Buffer.from(file.content, 'utf8')
+    const compressed = zlib.deflateRawSync(content)
+    const crc = zlib.crc32 ? zlib.crc32(content) : crc32(content)
+
+    const local = Buffer.alloc(30)
+    local.writeUInt32LE(0x04034b50, 0)
+    local.writeUInt16LE(20, 4)          // version needed
+    local.writeUInt16LE(0, 6)           // flags
+    local.writeUInt16LE(8, 8)           // deflate
+    local.writeUInt16LE(0, 10)          // time
+    local.writeUInt16LE(0, 12)          // date
+    local.writeUInt32LE(crc, 14)
+    local.writeUInt32LE(compressed.length, 18)
+    local.writeUInt32LE(content.length, 22)
+    local.writeUInt16LE(nameBytes.length, 26)
+    local.writeUInt16LE(0, 28)
+    chunks.push(local, nameBytes, compressed)
+
+    const entry = Buffer.alloc(46)
+    entry.writeUInt32LE(0x02014b50, 0)
+    entry.writeUInt16LE(20, 4)
+    entry.writeUInt16LE(20, 6)
+    entry.writeUInt16LE(0, 8)
+    entry.writeUInt16LE(8, 10)
+    entry.writeUInt16LE(0, 12)
+    entry.writeUInt16LE(0, 14)
+    entry.writeUInt32LE(crc, 16)
+    entry.writeUInt32LE(compressed.length, 20)
+    entry.writeUInt32LE(content.length, 24)
+    entry.writeUInt16LE(nameBytes.length, 28)
+    entry.writeUInt32LE(0, 42)
+    entry.writeUInt32LE(offset, 42)
+    central.push(Buffer.concat([entry, nameBytes]))
+    offset += local.length + nameBytes.length + compressed.length
+  }
+  const directory = Buffer.concat(central)
+  const end = Buffer.alloc(22)
+  end.writeUInt32LE(0x06054b50, 0)
+  end.writeUInt16LE(files.length, 8)
+  end.writeUInt16LE(files.length, 10)
+  end.writeUInt32LE(directory.length, 12)
+  end.writeUInt32LE(offset, 16)
+  return Buffer.concat([...chunks, directory, end])
+}
+
+/** zlib.crc32 가 없는 런타임을 위한 대체. */
+function crc32(buffer) {
+  let crc = -1
+  for (const byte of buffer) {
+    crc ^= byte
+    for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ (0xEDB88320 & -(crc & 1))
+  }
+  return (crc ^ -1) >>> 0
+}
+
+/** 표 하나를 담은 .xlsx 를 만든다. 문자열은 공유 문자열 표에 넣어 실제 파일과 같은 구조로 둔다. */
+function makeXlsx(sheetName, headers, rows) {
+  const shared = []
+  const sharedIndex = new Map()
+  const stringId = (text) => {
+    if (!sharedIndex.has(text)) {
+      sharedIndex.set(text, shared.length)
+      shared.push(text)
+    }
+    return sharedIndex.get(text)
+  }
+  const allRows = [headers, ...rows]
+  const sheetRows = allRows.map((row, rowIndex) => {
+    const cells = row.map((value, columnIndex) => {
+      const reference = `${columnName(columnIndex)}${rowIndex + 1}`
+      if (typeof value === 'number' && Number.isFinite(value)) return `<c r="${reference}"><v>${value}</v></c>`
+      return `<c r="${reference}" t="s"><v>${stringId(String(value))}</v></c>`
+    }).join('')
+    return `<row r="${rowIndex + 1}">${cells}</row>`
+  }).join('')
+
+  return makeZip([
+    {
+      name: '[Content_Types].xml',
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/></Types>`,
+    },
+    {
+      name: '_rels/.rels',
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`,
+    },
+    {
+      name: 'xl/workbook.xml',
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${xmlEscape(sheetName)}" sheetId="1" r:id="rId1"/></sheets></workbook>`,
+    },
+    {
+      name: 'xl/_rels/workbook.xml.rels',
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/></Relationships>`,
+    },
+    {
+      name: 'xl/sharedStrings.xml',
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${shared.length}" uniqueCount="${shared.length}">${shared.map((text) => `<si><t>${xmlEscape(text)}</t></si>`).join('')}</sst>`,
+    },
+    {
+      name: 'xl/worksheets/sheet1.xml',
+      content: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${sheetRows}</sheetData></worksheet>`,
+    },
+  ])
+}
+
+// 은행에서 내려주는 형태에 가깝게 열 이름을 다르게 둔다('맡기신금액'/'찾으신금액').
+// 열 이름이 달라도 집계기가 흡수하는지까지 이 파일 하나로 확인된다.
+const xlsxRows = accountRows.map((row) => [row[0], row[1], row[2], row[3], row[4], row[5]])
+await fs.writeFile(
+  path.join(out, 'meoktu-account-sample.xlsx'),
+  makeXlsx('거래내역', ['거래일자', '맡기신금액', '찾으신금액', '거래후잔액', '거래상대방', '적요'], xlsxRows),
+)
+console.log(`엑셀 샘플: meoktu-account-sample.xlsx (${xlsxRows.length}행 · 은행식 열 이름)`)
+
+/*
+ * ── 두 번째 세트: "실제 사장님이 주는 자료" ─────────────────────
+ *
+ * 위 12종은 서로 완벽하게 맞아떨어지는 자료다. 그래서 교차검증이 늘 통과하고,
+ * 정작 자랑해야 할 기능(불일치 적발)이 데모에서 한 번도 화면에 나오지 않았다.
+ *
+ * 실제로 가장 흔한 어긋남은 "사장님이 POS에서 잘못된 리포트를 뽑아 오는 것"이다.
+ * 결제수단 필터가 걸린 채로 내보내면 카드 매출만 담긴 정산표가 나오고,
+ * 그러면 POS 매출이 실제보다 작아져서 카드 승인액이 매출보다 커지는 모순이 생긴다.
+ * 여기서 만드는 세트가 정확히 그 상황이다.
+ *   - POS: '카드' 결제만 담긴 12개월 자료 (실제 매출의 약 73%) · 열 이름도 제각각
+ *   - 계좌: 12개월 전체 입출금 (은행 화면 그대로의 열 이름)
+ *   - 카드: 12개월 전체 승인·정산
+ * 숫자를 조작한 게 아니라 같은 원장에서 일부만 잘라낸 것이다.
+ *
+ * 기대 결과: 매출↔계좌는 '확인 필요', 매출↔카드는 '불일치'로 잡히고 수동 심사로 넘어간다.
+ */
+const roughPosRows = posRows.filter((row) => row[3] === '카드')
+const roughAccountRows = accountRows.map((row) => [...row])
+const roughCardRows = cardRows.map((row) => [...row])
+
+const roughPosTotal = roughPosRows.reduce((sum, row) => sum + row[2], 0)
+const fullPosTotal = posRows.reduce((sum, row) => sum + row[2], 0)
+
+await write('meoktu-rough-pos-sample.csv',
+  csv(['거래일자', '결제시간', '판매금액', '결제방법', '메뉴명', '판매수량', '환불액'], roughPosRows))
+await write('meoktu-rough-account-sample.csv',
+  csv(['거래일자', '맡기신금액', '찾으신금액', '거래후잔액', '거래상대방', '적요'], roughAccountRows))
+await write('meoktu-rough-card-sample.csv',
+  csv(['승인일자', '승인금액', '취소금액', '가맹점수수료', '정산일', '실제입금액'], roughCardRows))
+
+console.log(`\n어긋난 세트도 만들었습니다 — POS 는 '카드' 결제만 ${roughPosRows.length}행(실제 매출의 ${(roughPosTotal / fullPosTotal * 100).toFixed(0)}%)`)
+console.log('계좌·카드는 12개월 전체라서 매출↔계좌는 확인 필요, 매출↔카드는 불일치로 잡힙니다.')
+console.log('열 이름도 은행·POS 화면 그대로라 열 별칭 흡수까지 함께 검증됩니다.')
 
 const total = summaryRows.reduce((sum, row) => sum + row[1], 0)
 console.log(`\n12개월 합계 매출 ${(total / 100000000).toFixed(2)}억원 · 월평균 ${(total / 12 / 10000).toFixed(0)}만원`)

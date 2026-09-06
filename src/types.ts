@@ -23,6 +23,8 @@ export interface Restaurant {
   tagline: string; description: string; signature: string; avgPrice: number; maxMenuPrice: number; openedYears: number
   monthlySales: number; salesGrowth: number; repeatRate: number; footTrafficGrowth: number; competition: string; closingRate: number
   rating: number; reviewCount: number; supporters: number; communityScore: number; stabilityScore: number; story: string; color: string; tags: string[]
+  /** 심사에 낸 자료들이 서로 얼마나 맞았는지. 개별 금액·파일명은 공개하지 않는다. */
+  evidenceQuality?: { score: number; grade: string; comparedPairs: number; possiblePairs: number; sourceCount: number; documentCount: number; mismatchCount: number }
   foodDescription?: string; strengths?: string[]; menuHighlights?: MenuHighlight[]; diningNotes?: string
   salesDisclosure?: boolean; salesHistory?: SalesPoint[]; reviews?: Review[]; opportunityScore: number; fund: Fund
 }
@@ -163,6 +165,7 @@ export interface MeState {
   walletTransactions: Array<{ id: string; type: 'demo_topup'; amount: number; createdAt: string }>
   favoriteRestaurantIds: string[]
   ocrAnalyses: OcrAnalysis[]
+  documents?: OwnerDocument[]
   dataConnections: DataConnection[]
   notifications: AppNotification[]
   unreadNotifications: number
@@ -273,7 +276,111 @@ export interface ApplicationResult {
     financialVerification?: FinancialOrchestration
     creditAssessment?: CreditAssessment
     combinedAssessment?: CombinedAssessment
+    evidenceLedger?: EvidenceLedger
+    metricEvidence?: Array<{ sourceId: string; file: string; rows: number; columns: string[]; produced: string[] }>
   }
+}
+
+/* ── 증거 원장 (server/evidence.ts) ─────────────────────────── */
+
+export type EvidenceSupport = {
+  kind: 'upload' | 'document' | 'partner' | 'public' | 'declared'
+  sourceId: string
+  sourceLabel: string
+  file?: string
+  rows?: number
+  value: number | string | null
+  confidence: number
+  note?: string
+}
+
+export type EvidenceLink = {
+  metric: string
+  label: string
+  unit: 'won' | 'percent' | 'years' | 'count' | 'text'
+  value: number | string | null
+  supports: EvidenceSupport[]
+}
+
+export type EvidenceCrossCheck = {
+  code: string
+  label: string
+  left: { label: string; value: number; sourceId: string }
+  right: { label: string; value: number; sourceId: string }
+  differenceRate: number
+  tolerance: number
+  status: VerificationStepStatus
+  score: number
+  weight: number
+  detail: string
+}
+
+export type EvidenceQuality = {
+  score: number | null
+  grade: '높음' | '보통' | '주의' | '미산정'
+  comparedPairs: number
+  possiblePairs: number
+  coverage: number
+  sourceCount: number
+  documentCount: number
+  averageDocumentConfidence: number
+  mismatches: string[]
+  notCompared: string[]
+}
+
+export interface EvidenceLedger {
+  version: string
+  links: EvidenceLink[]
+  crossChecks: EvidenceCrossCheck[]
+  quality: EvidenceQuality
+}
+
+/* ── 문서 원장 (server/documents.ts) ────────────────────────── */
+
+export type DocumentClassification = {
+  sourceId: string
+  confidence: number
+  basis: 'columns' | 'document-type' | 'filename' | 'unknown'
+  reason: string
+  alternatives: string[]
+  model?: string
+}
+
+export type DocumentField = {
+  key: string
+  label: string
+  aiValue: string | null
+  confirmedValue: string | null
+  state: 'ai' | 'confirmed' | 'corrected'
+}
+
+export interface OwnerDocument {
+  id: string
+  filename: string
+  fileHash: string
+  byteSize: number
+  mimeType: string
+  sourceId: string
+  classification: DocumentClassification
+  reclassified: boolean
+  fields: DocumentField[]
+  ocrAnalysisId?: string
+  rowCount?: number
+  headers?: string[]
+  status: 'pending' | 'confirmed'
+  createdAt: string
+  updatedAt: string
+  usedInApplicationIds: string[]
+}
+
+export type DocumentStats = {
+  documentCount: number
+  confirmedDocuments: number
+  fieldCount: number
+  reviewedFields: number
+  correctedFields: number
+  reclassifiedDocuments: number
+  accuracy: number | null
 }
 
 /** 35개 지표 · 6개 업종 신용평가 결과 (server/credit.ts). */

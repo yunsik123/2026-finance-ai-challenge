@@ -320,6 +320,46 @@ export async function ownerEligibility(ownerId: string, role: string) {
 }
 
 /**
+ * 그래프 상태 점검.
+ *
+ * "그래프를 쓴다"는 말이 참인지 확인할 방법이 지금까지 없었다. 연결 여부만 봤고,
+ * 그 안에 노드가 실제로 몇 개인지·관계가 끊겼는지·고아 노드가 쌓였는지는 아무도 몰랐다.
+ * 이 함수는 운영 점검과 테스트가 같은 값을 보게 만든다.
+ *
+ * 실패해도 예외를 올리지 않는다. 점검이 서비스를 멈춰서는 안 된다.
+ */
+export async function graphDbAudit() {
+  if (!enabled) return undefined
+  const [counts, relations, orphans, orphanList, oversized, roles] = await Promise.all([
+    run<any>('match (n:Knowledge) return n.type as type, count(n) as total order by total desc', {}),
+    run<any>('match ()-[r]->() return type(r) as relation, count(r) as total order by total desc', {}),
+    // 어느 쪽으로도 관계가 없는 지식 노드. 검색으로 뽑혀도 이웃 근거를 못 준다.
+    run<any>('match (n:Knowledge) where not (n)--() return count(n) as total', {}),
+    // 어떤 노드가 떠 있는지 이름까지 준다. 숫자만 알면 고칠 수가 없다.
+    run<any>('match (n:Knowledge) where not (n)--() return n.role as role, n.type as type, n.id as id order by n.type, n.id limit 40', {}),
+    // Neo4j 는 큰 문자열도 담지만, 프롬프트로 그대로 나가므로 상한을 본다.
+    run<any>('match (n:Knowledge) where size(n.propsJson) > 4000 return count(n) as total', {}),
+    run<any>('match (n:Knowledge) return n.role as role, count(n) as total order by total desc', {}),
+  ])
+  if (!counts) return undefined
+  const number = (value: unknown) => (typeof value === 'object' && value !== null && 'toNumber' in (value as any)
+    ? (value as any).toNumber() : Number(value) || 0)
+  const tally = (records: any[] | undefined, key: string) => Object.fromEntries(
+    (records || []).map((record) => [String(record.get(key) ?? 'unknown'), number(record.get('total'))]))
+  const nodeTypes = tally(counts, 'type')
+  return {
+    nodeCount: Object.values(nodeTypes).reduce((sum, value) => sum + value, 0),
+    nodeTypes,
+    relationships: tally(relations, 'relation'),
+    relationshipCount: Object.values(tally(relations, 'relation')).reduce((sum, value) => sum + value, 0),
+    orphanNodes: number(orphans?.[0]?.get('total')),
+    orphanSamples: (orphanList || []).map((record) => `${record.get('role')}|${record.get('id')} (${record.get('type')})`),
+    oversizedProperties: number(oversized?.[0]?.get('total')),
+    roles: tally(roles, 'role'),
+  }
+}
+
+/**
  * 사장님 상태에서 어떤 제도가 열려 있고 무엇이 막고 있는지 판정한다.
  *
  * 여기 규칙은 "안내" 기준이지 심사 기준이 아니다. 확정 조건은 각 기관 공고에 있고,

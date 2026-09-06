@@ -125,9 +125,59 @@ export function DocumentModal({ title, filename, meta, badge, children, onClose 
   </div>
 }
 
+/** AI가 값을 읽은 자리. 서버가 0~1000 기준으로 정규화해서 준다. */
+export type OcrBox = { field: string; label: string; value: string; bbox: [number, number, number, number]; confidence: number }
+
+/**
+ * 판독 위치 하이라이트.
+ *
+ * "월매출 3,610만원"이라는 결과만 보여주면 그게 어디서 나온 값인지 알 수 없다.
+ * 서버는 이미 판독 좌표를 정규화해 저장하고 있었는데(normalizeOcrBoxes) 화면에 쓰이지 않아
+ * 사장님도 운영자도 확인할 방법이 없었다. 여기서 원본 위에 그대로 겹쳐 그린다.
+ *
+ * 좌표는 이미지 크기와 무관한 0~1000 기준이라 퍼센트로 바꿔 얹으면 확대·축소에도 안 밀린다.
+ */
+export function HighlightedImage({ url, name, boxes }: { url: string; name: string; boxes: OcrBox[] }) {
+  const [active, setActive] = useState(-1)
+  const usable = boxes.filter((box) => Array.isArray(box.bbox) && box.bbox.length === 4)
+  return <figure className="doc-figure doc-figure-boxed">
+    <div className="doc-box-canvas">
+      <img src={url} alt={`${name} 원본 이미지`} />
+      {usable.map((box, index) => {
+        const [x, y, width, height] = box.bbox
+        return <button
+          type="button"
+          key={`${box.field}-${index}`}
+          className={`doc-box ${active === index ? 'active' : ''} ${box.confidence >= .7 ? 'sure' : 'unsure'}`}
+          style={{ left: `${x / 10}%`, top: `${y / 10}%`, width: `${width / 10}%`, height: `${height / 10}%` }}
+          onMouseEnter={() => setActive(index)}
+          onFocus={() => setActive(index)}
+          onMouseLeave={() => setActive(-1)}
+          onBlur={() => setActive(-1)}
+          aria-label={`${box.label}: ${box.value}`}
+        ><span>{box.label}</span></button>
+      })}
+    </div>
+    {usable.length ? <figcaption className="doc-box-legend">
+      {usable.map((box, index) => <button
+        type="button"
+        key={`legend-${box.field}-${index}`}
+        className={active === index ? 'active' : ''}
+        onMouseEnter={() => setActive(index)}
+        onMouseLeave={() => setActive(-1)}
+      ><small>{box.label}</small><b>{box.value || '값 없음'}</b><em>확신 {Math.round(box.confidence * 100)}%</em></button>)}
+      <p>표시된 자리에서 값을 읽었어요. 원본을 저장하지는 않습니다.</p>
+    </figcaption> : null}
+  </figure>
+}
+
 /** 이미지·PDF 원본을 창 안에서 바로 연다. 내려받지 않고 보기만 한다. */
-function EmbeddedOriginal({ url, name, type }: { url: string; name: string; type?: string }) {
-  if (isImageDocument(name, type)) return <figure className="doc-figure"><img src={url} alt={`${name} 원본 이미지`} /></figure>
+function EmbeddedOriginal({ url, name, type, boxes }: { url: string; name: string; type?: string; boxes?: OcrBox[] }) {
+  if (isImageDocument(name, type)) {
+    return boxes?.length
+      ? <HighlightedImage url={url} name={name} boxes={boxes} />
+      : <figure className="doc-figure"><img src={url} alt={`${name} 원본 이미지`} /></figure>
+  }
   if (isPdfDocument(name, type)) return <iframe className="doc-frame" src={url} title={`${name} 원본 문서`} />
   return null
 }
@@ -136,7 +186,7 @@ function EmbeddedOriginal({ url, name, type }: { url: string; name: string; type
  * 사장님 화면: 방금 고른 파일을 브라우저에서 그대로 연다.
  * 표는 표로, 이미지·PDF 는 원본 그대로, 나머지는 앞부분 텍스트로 보여준다.
  */
-export function LocalFileViewer({ file }: { file: File }) {
+export function LocalFileViewer({ file, boxes }: { file: File; boxes?: OcrBox[] }) {
   const [table, setTable] = useState<TablePreview | undefined>()
   const [text, setText] = useState('')
   const [state, setState] = useState<'loading' | 'ready' | 'unsupported'>('loading')
@@ -175,7 +225,7 @@ export function LocalFileViewer({ file }: { file: File }) {
 
   if (state === 'loading') return <p className="doc-note">자료를 읽는 중이에요...</p>
   if (isImageDocument(file.name, file.type) || isPdfDocument(file.name, file.type)) {
-    return <EmbeddedOriginal url={objectUrl} name={file.name} type={file.type} />
+    return <EmbeddedOriginal url={objectUrl} name={file.name} type={file.type} boxes={boxes} />
   }
   if (table) return <DocumentTable preview={table} />
   if (text) return <pre className="doc-text">{text}</pre>
@@ -201,9 +251,10 @@ export function SubmittedDocumentViewer({ document: item, ocr }: { document: Sub
     </section>)
   }
   if (item.sampleUrl) {
+    const boxes = (ocr?.result?.boundingBoxes || []) as OcrBox[]
     sections.push(<section key="original" className="doc-section">
-      <h3><ImageIcon /> 원본 문서</h3>
-      <EmbeddedOriginal url={item.sampleUrl} name={item.name} type={item.type} />
+      <h3><ImageIcon /> 원본 문서 {boxes.length ? <small>AI가 읽은 자리 {boxes.length}곳 표시</small> : null}</h3>
+      <EmbeddedOriginal url={item.sampleUrl} name={item.name} type={item.type} boxes={boxes} />
       {isTableDocument(item.name) && <p className="doc-note">공개 샘플 자료로 접수한 신청이라 원본 파일을 그대로 확인할 수 있어요.</p>}
     </section>)
   }

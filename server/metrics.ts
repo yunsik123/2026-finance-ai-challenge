@@ -100,7 +100,14 @@ export function parseCsv(text: string): { headers: string[]; rows: Record<string
   return { headers, rows }
 }
 
-/** 열 이름이 자료 제공처마다 조금씩 달라서 후보를 여러 개 받는다. */
+/**
+ * 열 이름이 자료 제공처마다 조금씩 달라서 후보를 여러 개 받는다.
+ *
+ * 후보를 넓게 두는 것이 이 프로젝트의 핵심 전제다. 사장님에게 "우리 양식에 맞춰
+ * 다시 만들어 오세요"라고 요구하지 않으려면, 표준화의 부담을 입력이 아니라
+ * 이 함수가 져야 한다. 은행별 거래내역('맡기신금액'/'입금액'), POS별 정산표
+ * ('판매금액'/'주문금액')처럼 같은 뜻의 다른 이름을 여기서 흡수한다.
+ */
 function pick(row: Record<string, string>, ...candidates: string[]): string | undefined {
   for (const name of candidates) if (row[name] !== undefined && row[name] !== '') return row[name]
   return undefined
@@ -144,9 +151,9 @@ function volatility(series: Array<{ month: string; total: number }>): number | n
 /** POS 주문 원자료 → 매출 규모·성장·변동성·객단가·환불비율. */
 function fromPos(rows: Record<string, string>[]) {
   const orders = rows.map((row) => ({
-    month: toMonth(pick(row, '영업일', '주문일', '결제일', 'date')),
-    amount: toNumber(pick(row, '주문금액', '결제금액', '금액', 'amount')) ?? 0,
-    refund: toNumber(pick(row, '취소환불액', '취소금액', '환불액')) ?? 0,
+    month: toMonth(pick(row, '영업일', '주문일', '결제일', '거래일자', '거래일', '판매일', '매출일', '영업일자', '일자', 'date')),
+    amount: toNumber(pick(row, '주문금액', '결제금액', '판매금액', '매출액', '승인금액', '합계금액', '총액', '금액', 'amount')) ?? 0,
+    refund: toNumber(pick(row, '취소환불액', '취소금액', '환불액', '반품액', '할인액')) ?? 0,
   })).filter((order) => order.month)
 
   if (!orders.length) return { metrics: {}, produced: [] as string[] }
@@ -174,10 +181,10 @@ function fromPos(rows: Record<string, string>[]) {
 /** 사업용 계좌 → 현금잔액·순현금흐름. 잔액은 계좌에서만 나올 수 있는 값이다. */
 function fromAccount(rows: Record<string, string>[]) {
   const entries = rows.map((row) => ({
-    month: toMonth(pick(row, '거래일시', '거래일', '일자', 'date')),
-    inflow: toNumber(pick(row, '입금액', '입금', 'deposit')) ?? 0,
-    outflow: toNumber(pick(row, '출금액', '출금', 'withdraw')) ?? 0,
-    balance: toNumber(pick(row, '잔액', 'balance')),
+    month: toMonth(pick(row, '거래일시', '거래일', '거래일자', '일자', '이용일', 'date')),
+    inflow: toNumber(pick(row, '입금액', '입금', '예입액', '입금금액', '맡기신금액', 'deposit')) ?? 0,
+    outflow: toNumber(pick(row, '출금액', '출금', '지급액', '찾으신금액', 'withdraw')) ?? 0,
+    balance: toNumber(pick(row, '잔액', '거래후잔액', '거래후잔고', '잔고', 'balance')),
   })).filter((entry) => entry.month)
 
   if (!entries.length) return { metrics: {}, produced: [] as string[] }
@@ -201,11 +208,11 @@ function fromAccount(rows: Record<string, string>[]) {
 /** 카드 정산 → 실제 입금액. POS 매출과 대조해 일치도를 낸다. */
 function fromCard(rows: Record<string, string>[]) {
   const entries = rows.map((row) => ({
-    month: toMonth(pick(row, '승인일', '거래일', '일자')),
-    approved: toNumber(pick(row, '승인금액')) ?? 0,
-    cancelled: toNumber(pick(row, '취소금액')) ?? 0,
-    settled: toNumber(pick(row, '실제입금액', '입금액', '정산금액')) ?? 0,
-    fee: toNumber(pick(row, '수수료')) ?? 0,
+    month: toMonth(pick(row, '승인일', '승인일자', '거래일', '매출일', '일자')),
+    approved: toNumber(pick(row, '승인금액', '승인액', '매출금액', '카드매출액')) ?? 0,
+    cancelled: toNumber(pick(row, '취소금액', '취소액', '환불액')) ?? 0,
+    settled: toNumber(pick(row, '실제입금액', '입금액', '정산금액', '지급액')) ?? 0,
+    fee: toNumber(pick(row, '수수료', '가맹점수수료', '수수료액')) ?? 0,
   })).filter((entry) => entry.month)
 
   if (!entries.length) return { metrics: {}, produced: [] as string[] }
@@ -226,12 +233,12 @@ function fromCard(rows: Record<string, string>[]) {
 /** 배달 플랫폼 → 배달 매출 비중과 재주문. */
 function fromDelivery(rows: Record<string, string>[]) {
   const entries = rows.map((row) => ({
-    month: toMonth(pick(row, '주문일', '일자', '기준월')),
-    amount: toNumber(pick(row, '주문금액')) ?? 0,
-    cancelled: toNumber(pick(row, '취소금액')) ?? 0,
-    orders: toNumber(pick(row, '주문건수')) ?? 0,
-    repeat: toNumber(pick(row, '재주문건수')) ?? 0,
-    rating: toNumber(pick(row, '평균평점')),
+    month: toMonth(pick(row, '주문일', '주문일자', '일자', '기준월', '정산월')),
+    amount: toNumber(pick(row, '주문금액', '매출액', '결제금액')) ?? 0,
+    cancelled: toNumber(pick(row, '취소금액', '취소액')) ?? 0,
+    orders: toNumber(pick(row, '주문건수', '건수')) ?? 0,
+    repeat: toNumber(pick(row, '재주문건수', '재주문')) ?? 0,
+    rating: toNumber(pick(row, '평균평점', '평점')),
   })).filter((entry) => entry.month)
 
   if (!entries.length) return { metrics: {}, produced: [] as string[] }
@@ -252,8 +259,8 @@ function fromDelivery(rows: Record<string, string>[]) {
 /** 가명 고객 자료 → 재방문율과 신규 고객 증가율. */
 function fromCustomer(rows: Record<string, string>[]) {
   const customers = rows.map((row) => ({
-    visits: toNumber(pick(row, '방문횟수', '재방문횟수')) ?? 0,
-    first: toMonth(pick(row, '첫방문일')),
+    visits: toNumber(pick(row, '방문횟수', '재방문횟수', '방문수', '이용횟수')) ?? 0,
+    first: toMonth(pick(row, '첫방문일', '최초방문일', '가입일')),
   })).filter((customer) => customer.visits > 0)
 
   if (!customers.length) return { metrics: {}, produced: [] as string[] }
@@ -276,11 +283,11 @@ function fromCustomer(rows: Record<string, string>[]) {
  */
 function fromDebt(rows: Record<string, string>[]) {
   const entries = rows.map((row) => ({
-    month: toMonth(pick(row, '기준월', '일자')),
-    lender: pick(row, '금융기관', '기관명') || '',
-    balance: toNumber(pick(row, '잔액', '대출잔액')) ?? 0,
-    payment: toNumber(pick(row, '월원리금', '월상환액')) ?? 0,
-    rate: toNumber(pick(row, '금리')),
+    month: toMonth(pick(row, '기준월', '기준일', '일자')),
+    lender: pick(row, '금융기관', '기관명', '대출기관', '은행') || '',
+    balance: toNumber(pick(row, '잔액', '대출잔액', '대출잔고', '여신잔액')) ?? 0,
+    payment: toNumber(pick(row, '월원리금', '월상환액', '월납입액', '월상환금')) ?? 0,
+    rate: toNumber(pick(row, '금리', '이자율', '적용금리')),
   })).filter((entry) => entry.month)
 
   if (!entries.length) return { metrics: {}, produced: [] as string[] }
@@ -301,9 +308,9 @@ function fromDebt(rows: Record<string, string>[]) {
 /** 직원·급여 → 인원 추이. */
 function fromStaff(rows: Record<string, string>[]) {
   const entries = rows.map((row) => ({
-    month: toMonth(pick(row, '기준월', '일자')),
-    headcount: toNumber(pick(row, '직원수', '인원')) ?? 0,
-    payroll: toNumber(pick(row, '급여총액', '급여')) ?? 0,
+    month: toMonth(pick(row, '기준월', '기준일', '급여월', '일자')),
+    headcount: toNumber(pick(row, '직원수', '인원', '인원수', '근무인원')) ?? 0,
+    payroll: toNumber(pick(row, '급여총액', '급여', '인건비', '지급총액')) ?? 0,
   })).filter((entry) => entry.month).sort((a, b) => a.month!.localeCompare(b.month!))
 
   if (entries.length < 2) return { metrics: {}, produced: [] as string[] }
@@ -320,8 +327,8 @@ function fromStaff(rows: Record<string, string>[]) {
 
 /** 임대차 조건이 표로 온 경우. 월임차료를 매출 대비 비율로 쓴다. */
 function fromLease(rows: Record<string, string>[]) {
-  const rent = rows.map((row) => toNumber(pick(row, '월임차료', '월세', '임차료'))).find(isNum)
-  const deposit = rows.map((row) => toNumber(pick(row, '보증금'))).find(isNum)
+  const rent = rows.map((row) => toNumber(pick(row, '월임차료', '월세', '임차료', '월차임', '차임'))).find(isNum)
+  const deposit = rows.map((row) => toNumber(pick(row, '보증금', '임대보증금', '전세금'))).find(isNum)
   const metrics: DerivedMetrics = {
     monthlyRent: isNum(rent) ? rent : null,
     leaseDeposit: isNum(deposit) ? deposit : null,

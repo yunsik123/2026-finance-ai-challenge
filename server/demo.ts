@@ -14,7 +14,7 @@
 
 import type {
   Application, Coupon, CouponListing, CouponOffer, CouponTrade, DataConnection,
-  LegalConsent, Notification, Position, Review, Role, VisitVerification, WalletTransaction,
+  LegalConsent, Notification, OwnerDocument, Position, Review, Role, VisitVerification, WalletTransaction,
 } from './types.ts'
 
 /** 4시간. 체험 토큰의 만료 시간과 맞춘다. */
@@ -38,6 +38,8 @@ export type DemoSandbox = {
   favorites: string[]
   connections: DataConnection[]
   applications: Application[]
+  /** 체험에서 올린 문서 원장. 세션이 끝나면 함께 사라진다. */
+  documents: OwnerDocument[]
   notifications: Notification[]
   walletTransactions: WalletTransaction[]
   /** 체험에서도 위험고지 동의를 똑같이 받고 남긴다. 세션이 끝나면 함께 사라진다. */
@@ -101,7 +103,7 @@ export function sandboxFor(id: string, role: Role): DemoSandbox {
     cash: role === 'investor' ? 300_000 : 0,
     positions: [], coupons: [], listings: [], offers: [], trades: [],
     reviews: [], visits: [], favorites: [], connections: [],
-    applications: [], notifications: [], walletTransactions: [], consents: [],
+    applications: [], documents: [], notifications: [], walletTransactions: [], consents: [],
     fundDeltas: {},
     adminOverrides: emptyAdminOverrides(),
   }

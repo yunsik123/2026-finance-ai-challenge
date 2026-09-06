@@ -12,6 +12,8 @@ import { articles as seedArticles, createSeed, funds as seedFunds, restaurants a
 import type { Application, Coupon, CouponListing, CouponOffer, CouponTrade, DataConnection, Database, Fund, FundStatus, LegalConsent, Notification, Order, Position, Restaurant, Review, Role, SupportRequest, User } from './types.ts'
 import { LEGAL_VERSION, checkConsent, legalDocument, legalSummaries, requiredDocumentIds, type LegalContext } from './legal.ts'
 import { answerGraphProcessQuestion, assessRestaurant, buildKnowledgeGraph, normalizeOcrBoxes, questionTerms, retrieveKnowledgeSubgraph } from './trust.ts'
+import { buildEvidenceLedger, sourceLabels as evidenceSourceLabels } from './evidence.ts'
+import { classifyDocument, correctionStats, fieldsFromOcr, type DocumentField, type OwnerDocument } from './documents.ts'
 import { answerNavigationQuestion, isNavigationQuestion, matchUiTasks, navigationBrief, pageForRoute } from './sitemap.ts'
 import { deriveMetricsFromUploads, parseCsv, type RawUpload } from './metrics.ts'
 import {
@@ -21,7 +23,7 @@ import {
 import { DEMO_NOTICE, demoId, demoNotification, sandboxFor, type DemoSandbox } from './demo.ts'
 import {
   answerOwnerStatusQuestion, answerSupportQuestion, defaultSupportPrograms, isOwnerStatusQuestion, isSupportQuestion,
-  knowledgeAsOf, matchSupportPrograms, ownerSituation, ownerSituationGraph, supportProgramNodes, supportPrograms,
+  knowledgeAsOf, matchSupportPrograms, ownerSituation, ownerSituationGraph, supportProgramGraph, supportProgramNodes, supportPrograms,
 } from './knowledge.ts'
 import { COMMERCIAL_NOTE, COMMERCIAL_SOURCE, commercialInsight, findCommercialArea } from './commercial.ts'
 import {
@@ -35,7 +37,7 @@ import { orchestrateFinancialVerification, verifyBusiness } from './verification
 import { checkSwap, couponUsable, daysLeft, EXCHANGE_RULES, normalizePreferences, sweepExpired } from './exchange.ts'
 import { FileStateStore, PostgresStateStore, SupabaseStateStore, TableStateStore, type StateStore } from './store.ts'
 import { aiChatModel, aiCredentialSource, aiEndpoint, aiJsonExtras, aiOcrModel, aiProviderLabel, aiReady, aiToken, aiTokenBudget, initAiProvider, setAiProvider } from './ai-provider.ts'
-import { eligibilityFromSituation, graphDbEnabled, graphDbStatus, initGraphDb, ownerEligibility, retrieveSubgraph, syncKnowledge, syncOwnerSituation } from './graph-db.ts'
+import { eligibilityFromSituation, graphDbAudit, graphDbEnabled, graphDbStatus, initGraphDb, ownerEligibility, retrieveSubgraph, syncKnowledge, syncOwnerSituation } from './graph-db.ts'
 
 const scrypt = promisify(crypto.scrypt)
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -253,6 +255,7 @@ function migrateDatabase(current: Database, template: Database) {
   current.favorites ??= []
   current.auditEvents ??= []
   current.ocrAnalyses ??= []
+  current.documents ??= []
   current.supportRequests ??= []
   current.legalConsents ??= []
 
@@ -294,6 +297,7 @@ function normalizeDatabase() {
   db.favorites ??= []
   db.auditEvents ??= []
   db.ocrAnalyses ??= []
+  db.documents ??= []
   db.supportRequests ??= []
   db.legalConsents ??= []
   const sharedDemoHash = db.users.find((user) => user.id === 'u-owner')?.passwordHash
@@ -942,12 +946,39 @@ function publishApprovedApplication(application: Application) {
   return { restaurant, fund }
 }
 
+/**
+ * 식당 하나의 자료 일치도 공개값.
+ *
+ * 심사에 쓰인 원본 금액·파일명은 투자자에게 보내지 않는다.
+ * "서로 다른 자료 몇 쌍을 맞춰봤고 몇 점이었나"만 공개한다.
+ */
+function evidenceQualityOf(restaurant: Restaurant) {
+  const application = [...db.applications]
+    .filter((item) => item.userId === restaurant.ownerId || item.id === restaurant.sourceApplicationId)
+    .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))[0]
+  const ledger = application?.data?.evidenceLedger as { quality?: Record<string, unknown> } | undefined
+  const quality = ledger?.quality
+  if (!quality || quality.score === null || quality.score === undefined) return undefined
+  return {
+    score: Number(quality.score),
+    grade: String(quality.grade),
+    comparedPairs: Number(quality.comparedPairs) || 0,
+    possiblePairs: Number(quality.possiblePairs) || 0,
+    sourceCount: Number(quality.sourceCount) || 0,
+    documentCount: Number(quality.documentCount) || 0,
+    mismatchCount: Array.isArray(quality.mismatches) ? quality.mismatches.length : 0,
+  }
+}
+
 function restaurantView() {
   return db.restaurants.filter((restaurant) => !restaurant.verificationStatus || restaurant.verificationStatus === 'verified').map((restaurant) => {
     const fund = db.funds.find((item) => item.restaurantId === restaurant.id)
     const opportunityScore = Math.round(restaurant.salesGrowth * 1.1 + restaurant.repeatRate * 0.32 + restaurant.communityScore * 0.22 + restaurant.stabilityScore * 0.2 - restaurant.closingRate * 0.35)
     const reviews = db.reviews.filter((review) => review.restaurantId === restaurant.id && review.status !== 'hidden').sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 8)
-    return { ...restaurant, salesHistory: restaurant.salesDisclosure ? restaurant.salesHistory : undefined, reviews, fund, opportunityScore: Math.min(99, opportunityScore) }
+    // 이 식당이 심사에 낸 자료들이 서로 얼마나 맞았는지. 투자자가 "AI가 점수를 지어낸 게 아니다"를
+    // 확인할 수 있는 유일한 값이라 공개한다. 개별 금액이나 파일 이름은 내보내지 않는다.
+    const evidenceQuality = evidenceQualityOf(restaurant)
+    return { ...restaurant, salesHistory: restaurant.salesDisclosure ? restaurant.salesHistory : undefined, reviews, fund, evidenceQuality, opportunityScore: Math.min(99, opportunityScore) }
   })
 }
 
@@ -990,7 +1021,10 @@ await loadDatabase()
 if (await initGraphDb()) {
   for (const graphRole of ['owner', 'investor'] as const) {
     const staticGraph = buildKnowledgeGraph(graphRole)
-    staticGraph.nodes.push(...supportProgramNodes())
+    // 제도는 기관·분야 노드와 함께 올린다. 제도만 올리면 그래프에서 떠 있어 순회로 닿지 못한다.
+    const programGraph = supportProgramGraph()
+    staticGraph.nodes.push(...programGraph.nodes)
+    staticGraph.edges.push(...programGraph.edges)
     await syncKnowledge(graphRole, staticGraph.graphVersion, staticGraph.nodes, staticGraph.edges)
   }
   console.log(`지식그래프: Neo4j 연결됨 (${graphDbStatus()})`)
@@ -1034,6 +1068,7 @@ app.use(express.json({ limit: `${Math.ceil(LIMITS.uploadMb * 1.4)}mb` }))
  * withWriteLock() 으로 아주 짧게 잠근다.
  */
 const UNLOCKED_AI_PATHS = new Set([
+  '/api/documents/classify',
   '/api/ai/chat',
   '/api/ai/ocr',
   '/api/ai/owner-report',
@@ -1496,7 +1531,9 @@ app.use('/api', async (req: AuthedRequest, res, next) => {
   const pathname = req.originalUrl.split('?')[0]
   // AI 상담·문서 판독·분석 리포트는 원래 경로를 그대로 쓴다. 셋 다 공유 원장에 쓰지 않는다.
   const readOnlyAiPaths = ['/api/ai/chat', '/api/ai/ocr', '/api/ai/owner-report', '/api/ai/anomaly-detection', '/api/ai/insight-summary']
-  if (readOnlyAiPaths.includes(pathname) || pathname.startsWith('/api/auth/')) return next()
+  // 문서 분류·문서함은 라우터 안에서 체험 원장을 직접 다룬다. 여기서 가로채면 403 이 된다.
+  const selfHandledDemoPaths = pathname === '/api/documents/classify' || pathname.startsWith('/api/owner/documents')
+  if (readOnlyAiPaths.includes(pathname) || selfHandledDemoPaths || pathname.startsWith('/api/auth/')) return next()
   req.user = viewer
   try {
     if (await handleDemoMutation(req, res, viewer) === false) return next()
@@ -1532,6 +1569,7 @@ function demoMeState(user: SessionUser) {
     walletTransactions: sandbox.walletTransactions,
     favoriteRestaurantIds: sandbox.favorites,
     ocrAnalyses: [],
+    documents: sandbox.documents,
     dataConnections: sandbox.connections.map(({ userId: _unused, ...item }) => item),
     notifications: sandbox.notifications,
     unreadNotifications: sandbox.notifications.filter((item) => !item.read).length,
@@ -1600,6 +1638,36 @@ function withDemoOverlay(state: ReturnType<typeof publicState>, user: SessionUse
 app.get('/api/version', async (_req, res) => {
   await refreshState().catch(() => undefined)
   res.json({ version: stateVersion, at: now() })
+})
+
+/**
+ * 그래프 상태 점검. 운영자 전용.
+ *
+ * "지식그래프를 쓴다"가 참인지 밖에서 확인할 방법이 연결 여부뿐이었다.
+ * 노드·관계 수, 고아 노드, 과대 속성까지 한 번에 본다. 인메모리 그래프도 같은 기준으로 센다.
+ */
+app.get('/api/admin/graph-audit', auth('admin'), async (_req: AuthedRequest, res) => {
+  const memoryGraphs = (['investor', 'owner'] as const).map((role) => {
+    const sample = db.restaurants[0]
+    const graph = buildKnowledgeGraph(role, sample, db.funds.find((item) => item.restaurantId === sample?.id))
+    const ids = new Set(graph.nodes.map((node) => node.id))
+    const connected = new Set(graph.edges.flatMap((edge) => [edge.from, edge.to]))
+    return {
+      role,
+      graphVersion: graph.graphVersion,
+      nodeCount: graph.nodes.length,
+      edgeCount: graph.edges.length,
+      nodeTypes: graph.nodes.reduce<Record<string, number>>((all, node) => ({ ...all, [node.type]: (all[node.type] || 0) + 1 }), {}),
+      danglingEdges: graph.edges.filter((edge) => !ids.has(edge.from) || !ids.has(edge.to)).length,
+      orphanNodes: graph.nodes.filter((node) => !connected.has(node.id)).length,
+    }
+  })
+  res.json({
+    store: graphDbEnabled() ? 'neo4j' : 'in-memory',
+    neo4j: graphDbStatus(),
+    graphDb: await graphDbAudit().catch(() => undefined),
+    memory: memoryGraphs,
+  })
 })
 
 app.get('/api/health', (_req, res) => res.json({
@@ -1803,7 +1871,10 @@ app.get('/api/me', auth(), async (req: AuthedRequest, res) => {
     .map(({ userId: _, ...item }) => item)
   const legalConsents = (db.legalConsents || []).filter((item) => item.userId === user.id)
     .sort((a, b) => b.agreedAt.localeCompare(a.agreedAt)).slice(0, 30)
-  res.json({ user: publicUser(user), positions, orders, coupons, applications, visitVerifications, walletTransactions, favoriteRestaurantIds, ocrAnalyses, dataConnections, notifications, unreadNotifications: notifications.filter((item) => !item.read).length, exchange, rules: EXCHANGE_RULES, legalConsents, legalVersion: LEGAL_VERSION })
+  const myDocuments = user.role === 'owner'
+    ? (db.documents ?? []).filter((item) => item.userId === user.id).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 60)
+    : []
+  res.json({ user: publicUser(user), positions, orders, coupons, applications, visitVerifications, walletTransactions, favoriteRestaurantIds, ocrAnalyses, documents: myDocuments, dataConnections, notifications, unreadNotifications: notifications.filter((item) => !item.read).length, exchange, rules: EXCHANGE_RULES, legalConsents, legalVersion: LEGAL_VERSION })
 })
 
 app.get('/api/admin/dashboard', auth('admin'), (req: AuthedRequest, res) => {
@@ -3029,6 +3100,32 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
   }
 
   /**
+   * 증거 원장.
+   *
+   * 지표 하나에 붙은 근거(어느 파일 몇 행)와, 서로 다른 자료끼리 맞춰본 결과를 만든다.
+   * 여기서 나오는 '자료 일치도'는 사장님 화면과 투자자 화면이 같은 값을 쓴다.
+   * 점수를 만들기 위한 값이 아니라, 이미 계산한 값이 서로 맞는지를 보여주기 위한 값이다.
+   */
+  const evidenceLedger = buildEvidenceLedger({
+    metrics: derivedMetrics,
+    evidence: aggregated.evidence,
+    analyses: myAnalyses,
+    uploadedSources,
+    partnerSources,
+    declared: { businessNumber: String(data.businessNumber || '') },
+    publicMetrics: { districtSalesGrowth },
+  })
+  if (evidenceLedger.quality.score !== null) {
+    strengths.push(`서로 다른 자료 ${evidenceLedger.quality.comparedPairs}쌍을 맞춰본 자료 일치도는 ${evidenceLedger.quality.score}점(${evidenceLedger.quality.grade})이에요.`)
+  } else {
+    improvements.push('자료를 두 종류 이상 올리면 값이 서로 맞는지 대조해 자료 일치도를 낼 수 있어요.')
+  }
+  for (const mismatch of evidenceLedger.quality.mismatches) improvements.push(mismatch)
+  checks.push(evidenceLedger.quality.score === null
+    ? '➖ 자료 일치도 — 대조할 자료 쌍이 없어 산정하지 않았습니다.'
+    : `${evidenceLedger.quality.score >= 90 ? '✅' : evidenceLedger.quality.score >= 75 ? '⚠️' : '❌'} 자료 일치도 ${evidenceLedger.quality.score}점 — ${evidenceLedger.quality.comparedPairs}/${evidenceLedger.quality.possiblePairs}쌍 대조 (${evidenceLedger.quality.grade})`)
+
+  /**
    * 화면에 내보낼 지표만 추린다.
    *
    * 결과 화면은 derivedMetrics 를 그대로 순회하며 카드를 그린다.
@@ -3124,16 +3221,22 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
       derivedMetrics: displayMetrics,
       // 신용평가가 다시 읽어야 하는 전체 집계값과, 어느 파일 몇 행에서 나왔는지의 근거.
       measuredMetrics: derivedMetrics, metricEvidence: aggregated.evidence,
+      evidenceLedger,
       businessVerification, financialVerification, creditAssessment, combinedAssessment: combined }, strengths, checks, improvements, explanation,
   }
   // 체험 세션은 같은 채점 로직을 쓰되 결과를 공유 원장이 아닌 체험 원장에 남긴다.
   if (req.user!.sessionMode === 'demo') {
     const sandbox = demoSandbox(req.user!.id, 'owner')
     sandbox.applications.unshift(application)
+    sandbox.documents = sandbox.documents.map((item) => (item.usedInApplicationIds.includes(application.id)
+      ? item : { ...item, usedInApplicationIds: [...item.usedInApplicationIds, application.id] }))
     demoNotification(sandbox, 'application', '체험 심사 완료', `${restaurantName} 먹투 성장성 예비평가 ${score}점 · 결과 ${creditAssessment.grade}`, '/owner')
     return res.status(201).json({ message: '체험 심사가 끝났어요. 결과는 저장되지 않습니다.', application, ephemeral: true, demoNotice: DEMO_NOTICE })
   }
   db.applications.push(application)
+  // 문서함에 있는 자료가 이번 신청에 쓰였다는 것을 남긴다. 다음 라운드에 무엇을 다시 썼는지 추적한다.
+  db.documents = (db.documents ?? []).map((item) => (item.userId === req.user!.id && !item.usedInApplicationIds.includes(application.id)
+    ? { ...item, usedInApplicationIds: [...item.usedInApplicationIds, application.id] } : item))
   recordConsent(req.user!.id, 'owner_application', applyConsent.documentIds, { resourceType: 'application', resourceId: application.id })
   // 감사 로그는 사장님 화면에 그대로 보인다. 내부 코드값 대신 사람이 읽는 말로 남긴다.
   const statusWord = { approved: '펀딩 가능', conditional: '조건부 승인', manual_review: '운영자 확인 필요', rejected: '보완 필요' }[status]
@@ -3167,6 +3270,8 @@ app.get('/api/owner', auth('owner'), (req: AuthedRequest, res) => {
       applications: sandbox.applications,
       auditEvents: [],
       ocrAnalyses: [],
+      documents: sandbox.documents,
+      documentStats: correctionStats(sandbox.documents),
       dataConnections: sandbox.connections.map(({ userId: _unused, ...item }) => item),
       demo: { notice: DEMO_NOTICE },
     })
@@ -3177,7 +3282,10 @@ app.get('/api/owner', auth('owner'), (req: AuthedRequest, res) => {
   const auditEvents = db.auditEvents.filter((event) => event.actorId === req.user!.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 30)
   const ocrAnalyses = db.ocrAnalyses.filter((item) => item.userId === req.user!.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 20)
   const dataConnections = db.dataConnections.filter((item) => item.userId === req.user!.id && item.status === 'active').map(({ userId: _, ...item }) => item)
-  res.json({ restaurants, funds: db.funds.filter((f) => fundIds.includes(f.id)), positions, coupons: db.coupons.filter((c) => fundIds.includes(c.fundId || '')), applications: db.applications.filter((a) => a.userId === req.user!.id), auditEvents, ocrAnalyses, dataConnections })
+  // 문서함. 재신청 화면의 "지난번 자료 그대로 쓰기" 재료이고, 교정 통계가 판독 정확도의 실측치다.
+  const documents = (db.documents ?? []).filter((item) => item.userId === req.user!.id)
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 60)
+  res.json({ restaurants, funds: db.funds.filter((f) => fundIds.includes(f.id)), positions, coupons: db.coupons.filter((c) => fundIds.includes(c.fundId || '')), applications: db.applications.filter((a) => a.userId === req.user!.id), auditEvents, ocrAnalyses, documents, documentStats: correctionStats(documents), dataConnections })
 })
 
 app.patch('/api/owner/restaurants/:restaurantId/sales-disclosure', auth('owner'), async (req: AuthedRequest, res) => {
@@ -3213,8 +3321,13 @@ app.post('/api/ai/ocr', auth('owner'), async (req: AuthedRequest, res) => {
     return res.status(400).json({ error: `이미지는 ${LIMITS.uploadMb}MB 이하여야 해요.` })
   }
   const filename = String(req.body.filename || 'document').slice(0, 255)
-  const sourceId = String(req.body.sourceId || 'other').slice(0, 40)
+  const requestedSource = String(req.body.sourceId || 'other').slice(0, 40)
   const plan = String(req.body.plan || '등록된 사용계획 없음').slice(0, 2000)
+  // 만능 업로드함에서 온 파일은 어느 칸에 속하는지 아직 모른다('auto').
+  // 판독 전에는 파일 이름만 단서라서 그걸로 임시 분류하고, 판독이 끝나면 문서 종류로 다시 정한다.
+  const autoClassify = requestedSource === 'auto' || requestedSource === 'other' || !requestedSource
+  let classification = classifyDocument({ filename, tabular: false })
+  const sourceId = autoClassify ? (classification.sourceId === 'other' ? 'other' : classification.sourceId) : requestedSource
   const typeNames: Record<string, string> = { business: '사업자등록 자료', license: '영업신고 자료', tax: '납세 자료', debt: '부채·상환 자료', lease: '임대차 자료' }
   let result: Record<string, unknown> = {
     documentType: typeNames[sourceId] || '기타 증빙', confidence: 0, planMatch: '검토 필요', boundingBoxes: [],
@@ -3272,11 +3385,19 @@ bbox는 0~1000 기준 [x,y,width,height]이며 이미지 전체를 가리키는 
       result = { ...result, warnings: ['AI OCR 연결에 실패해 자동 판독하지 못했습니다. 원본은 저장하지 않았으며 운영자 확인이 필요합니다.'] }
     }
   }
-  const analysis = { id: id('ocr'), userId: req.user!.id, filename, sourceId, plan, result, model, status, createdAt: now() }
+  // 판독 결과의 문서 종류가 파일 이름보다 정확하다. 만능 업로드함에서 왔다면 여기서 분류를 확정한다.
+  if (autoClassify) {
+    const refined = classifyDocument({ filename, documentType: String(result.documentType || ''), tabular: false })
+    if (refined.sourceId !== 'other' && refined.confidence >= classification.confidence) classification = refined
+  }
+  const resolvedSource = autoClassify && classification.sourceId !== 'other' ? classification.sourceId : sourceId
+  const analysis = { id: id('ocr'), userId: req.user!.id, filename, sourceId: resolvedSource, plan, result, model, status, createdAt: now() }
+  // 사장님에게 "이 값 맞나요?"로 물을 항목. 확인·수정 결과가 문서 원장의 정답 라벨이 된다.
+  const fields = fieldsFromOcr(result)
   if (req.user!.sessionMode === 'demo') {
     return res.json({
       message: status === 'ai_extracted' ? 'AI가 샘플 문서를 구조화했어요. 체험 결과는 원장에 저장하지 않습니다.' : '샘플 문서 형식을 확인했어요. 체험 결과는 원장에 저장하지 않습니다.',
-      analysis, ephemeral: true,
+      analysis, classification, fields, ephemeral: true,
     })
   }
   // 판독은 이미 끝났다. 원장에 남기는 순간만 짧게 잠근다.
@@ -3285,7 +3406,177 @@ bbox는 0~1000 기준 [x,y,width,height]이며 이미지 전체를 가리키는 
     audit(req.user!.id, 'ocr.analyzed', 'ocr_analysis', analysis.id, `${filename} · ${status}`)
   })
   changed()
-  res.json({ message: status === 'ai_extracted' ? 'AI가 문서의 보이는 항목을 구조화했어요. 최종 판단은 운영자 확인이 필요해요.' : '문서를 접수했어요. AI 연결 전이라 운영자 수동 검토 대상으로 표시했어요.', analysis })
+  res.json({ message: status === 'ai_extracted' ? 'AI가 문서의 보이는 항목을 구조화했어요. 최종 판단은 운영자 확인이 필요해요.' : '문서를 접수했어요. AI 연결 전이라 운영자 수동 검토 대상으로 표시했어요.', analysis, classification, fields })
+})
+
+/**
+ * 표 자료 분류. AI 없이 열 이름과 파일명만 본다.
+ *
+ * 만능 업로드함에 CSV·엑셀을 던지면 이미지 판독 경로를 타지 않으므로
+ * 여기서 어떤 자료인지 정한다. 열 이름은 지표 계산기가 실제로 읽는 신호와 같아서
+ * 이미지 판독보다 오히려 정확하다.
+ */
+app.post('/api/documents/classify', auth('owner'), (req: AuthedRequest, res) => {
+  const filename = String(req.body.filename || '').slice(0, 255)
+  const headers = Array.isArray(req.body.headers) ? req.body.headers.slice(0, 60).map((item: unknown) => String(item).slice(0, 80)) : []
+  const tabular = Boolean(req.body.tabular ?? headers.length > 0)
+  const classification = classifyDocument({ filename, headers, tabular })
+  res.json({ classification, sourceLabel: evidenceSourceLabels[classification.sourceId] || '기타 자료' })
+})
+
+/** 문서 원장 목록. 재신청 때 "지난번 자료 그대로 쓰기"의 재료가 된다. */
+function documentsOf(userId: string, sessionMode?: string) {
+  if (sessionMode === 'demo') return demoSandbox(userId, 'owner').documents
+  return (db.documents ??= []).filter((item) => item.userId === userId)
+}
+
+/**
+ * 문서 원장에 한 줄 남긴다.
+ *
+ * 원본 파일은 받지 않는다. 파일 해시·분류 결과·판독 항목만 남긴다.
+ * 같은 파일(같은 해시)을 다시 올리면 새 줄을 만들지 않고 갱신한다.
+ */
+app.post('/api/owner/documents', auth('owner'), async (req: AuthedRequest, res) => {
+  const filename = String(req.body.filename || '').slice(0, 255)
+  const fileHash = String(req.body.fileHash || '').replace(/[^a-f0-9]/gi, '').slice(0, 64)
+  if (!filename || fileHash.length < 16) return res.status(400).json({ error: '파일 이름과 파일 해시가 필요해요.' })
+  const byteSize = Math.max(0, Math.min(Number(req.body.byteSize) || 0, 50 * 1024 * 1024))
+  const mimeType = String(req.body.mimeType || 'application/octet-stream').slice(0, 120)
+  const headers = Array.isArray(req.body.headers) ? req.body.headers.slice(0, 60).map((item: unknown) => String(item).slice(0, 80)) : undefined
+  const rowCount = Number.isFinite(Number(req.body.rowCount)) ? Math.max(0, Number(req.body.rowCount)) : undefined
+  const ocrAnalysisId = req.body.ocrAnalysisId ? String(req.body.ocrAnalysisId).slice(0, 60) : undefined
+  const incomingFields: DocumentField[] = Array.isArray(req.body.fields)
+    ? req.body.fields.slice(0, 24).map((item: Record<string, unknown>) => ({
+      key: String(item.key || '').slice(0, 40),
+      label: String(item.label || '').slice(0, 60),
+      aiValue: item.aiValue === null || item.aiValue === undefined ? null : String(item.aiValue).slice(0, 200),
+      confirmedValue: item.confirmedValue === null || item.confirmedValue === undefined ? null : String(item.confirmedValue).slice(0, 200),
+      state: item.state === 'confirmed' || item.state === 'corrected' ? item.state : 'ai',
+    })).filter((item: DocumentField) => item.key)
+    : []
+  // 분류는 서버가 다시 계산한다. 클라이언트가 보낸 값을 그대로 믿지 않는다.
+  const computed = classifyDocument({
+    filename, headers,
+    documentType: String(req.body.documentType || ''),
+    tabular: Boolean(headers?.length),
+  })
+  const chosen = String(req.body.sourceId || '').slice(0, 40)
+  const reclassified = Boolean(chosen && chosen !== computed.sourceId)
+  const timestamp = now()
+  const existing = documentsOf(req.user!.id, req.user!.sessionMode).find((item) => item.fileHash === fileHash)
+  const document: OwnerDocument = existing ? {
+    ...existing,
+    filename, byteSize, mimeType, headers, rowCount, ocrAnalysisId: ocrAnalysisId || existing.ocrAnalysisId,
+    sourceId: chosen || computed.sourceId,
+    classification: { ...computed, model: 'meoktu-document-classifier-v1' },
+    reclassified,
+    fields: incomingFields.length ? mergeFields(existing.fields, incomingFields) : existing.fields,
+    updatedAt: timestamp,
+  } : {
+    id: req.user!.sessionMode === 'demo' ? demoId('document') : id('document'),
+    userId: req.user!.id,
+    filename, fileHash, byteSize, mimeType, headers, rowCount, ocrAnalysisId,
+    sourceId: chosen || computed.sourceId,
+    classification: { ...computed, model: 'meoktu-document-classifier-v1' },
+    reclassified,
+    fields: incomingFields,
+    status: 'pending',
+    createdAt: timestamp, updatedAt: timestamp,
+    usedInApplicationIds: [],
+  }
+
+  if (req.user!.sessionMode === 'demo') {
+    const sandbox = demoSandbox(req.user!.id, 'owner')
+    sandbox.documents = [document, ...sandbox.documents.filter((item) => item.fileHash !== fileHash)].slice(0, 60)
+    return res.json({ message: '체험 문서함에 기록했어요. 이 기록은 저장되지 않습니다.', document, ephemeral: true, demoNotice: DEMO_NOTICE })
+  }
+  db.documents ??= []
+  db.documents = [document, ...db.documents.filter((item) => !(item.userId === req.user!.id && item.fileHash === fileHash))]
+  audit(req.user!.id, existing ? 'document.updated' : 'document.registered', 'owner_document', document.id, `${filename} · ${document.sourceId}`)
+  await saveDatabase(); changed()
+  res.json({ message: existing ? '문서함의 같은 파일을 갱신했어요.' : '문서함에 기록했어요. 다음 신청에서 다시 쓸 수 있어요.', document })
+})
+
+/** 같은 항목은 사장님이 확인·수정한 값을 살린다. */
+function mergeFields(previous: DocumentField[], incoming: DocumentField[]): DocumentField[] {
+  return incoming.map((field) => {
+    const before = previous.find((item) => item.key === field.key)
+    if (!before || before.state === 'ai') return field
+    // 이미 확인·수정한 항목인데 AI가 읽은 값이 그대로면 사람의 판단을 유지한다.
+    if (before.aiValue === field.aiValue) return before
+    return field
+  })
+}
+
+/**
+ * 판독값 확인·수정.
+ *
+ * 여기가 이 서비스에서 정답 라벨이 만들어지는 유일한 지점이다.
+ * "AI가 읽은 3,610만원 맞나요?"에 사장님이 누른 결과가 그대로 쌓인다.
+ */
+app.patch('/api/owner/documents/:documentId', auth('owner'), async (req: AuthedRequest, res) => {
+  const list = documentsOf(req.user!.id, req.user!.sessionMode)
+  const document = list.find((item) => item.id === req.params.documentId)
+  if (!document) return res.status(404).json({ error: '문서함에서 자료를 찾을 수 없어요.' })
+
+  const updates = Array.isArray(req.body.fields) ? req.body.fields.slice(0, 24) : []
+  const nextFields = document.fields.map((field) => {
+    const update = updates.find((item: Record<string, unknown>) => String(item.key) === field.key)
+    if (!update) return field
+    if (update.confirmed === true) return { ...field, confirmedValue: field.aiValue, state: 'confirmed' as const }
+    if (update.value !== undefined && update.value !== null) {
+      const value = String(update.value).slice(0, 200)
+      return { ...field, confirmedValue: value, state: value === field.aiValue ? ('confirmed' as const) : ('corrected' as const) }
+    }
+    return field
+  })
+  const nextSource = req.body.sourceId ? String(req.body.sourceId).slice(0, 40) : document.sourceId
+  const everyFieldReviewed = nextFields.length > 0 && nextFields.every((field) => field.state !== 'ai')
+  const updated: OwnerDocument = {
+    ...document,
+    sourceId: nextSource,
+    reclassified: document.reclassified || nextSource !== document.classification.sourceId,
+    fields: nextFields,
+    status: everyFieldReviewed || req.body.confirmAll === true ? 'confirmed' : document.status,
+    updatedAt: now(),
+  }
+  if (req.body.confirmAll === true) {
+    updated.fields = updated.fields.map((field) => field.state === 'ai'
+      ? { ...field, confirmedValue: field.aiValue, state: 'confirmed' as const } : field)
+  }
+  const correctedCount = updated.fields.filter((field) => field.state === 'corrected').length
+
+  if (req.user!.sessionMode === 'demo') {
+    const sandbox = demoSandbox(req.user!.id, 'owner')
+    sandbox.documents = sandbox.documents.map((item) => (item.id === updated.id ? updated : item))
+    return res.json({ message: '체험 문서함에서 확인했어요. 저장되지는 않습니다.', document: updated, ephemeral: true, demoNotice: DEMO_NOTICE })
+  }
+  db.documents = (db.documents ?? []).map((item) => (item.id === updated.id ? updated : item))
+  audit(req.user!.id, 'document.reviewed', 'owner_document', updated.id,
+    `${updated.filename} · 확인 ${updated.fields.filter((field) => field.state !== 'ai').length}건 · 수정 ${correctedCount}건`)
+  await saveDatabase(); changed()
+  res.json({
+    message: correctedCount
+      ? `${correctedCount}개 항목을 수정한 값으로 확정했어요. 판독 정확도 개선에 쓰입니다.`
+      : '판독값을 그대로 확인했어요.',
+    document: updated,
+  })
+})
+
+/** 문서함에서 지운다. 재신청 목록에서 빼기 위한 용도다. */
+app.delete('/api/owner/documents/:documentId', auth('owner'), async (req: AuthedRequest, res) => {
+  const list = documentsOf(req.user!.id, req.user!.sessionMode)
+  const document = list.find((item) => item.id === req.params.documentId)
+  if (!document) return res.status(404).json({ error: '문서함에서 자료를 찾을 수 없어요.' })
+  if (req.user!.sessionMode === 'demo') {
+    const sandbox = demoSandbox(req.user!.id, 'owner')
+    sandbox.documents = sandbox.documents.filter((item) => item.id !== document.id)
+    return res.json({ message: '체험 문서함에서 지웠어요.', ephemeral: true, demoNotice: DEMO_NOTICE })
+  }
+  db.documents = (db.documents ?? []).filter((item) => item.id !== document.id)
+  audit(req.user!.id, 'document.deleted', 'owner_document', document.id, document.filename)
+  await saveDatabase(); changed()
+  res.json({ message: '문서함에서 지웠어요.' })
 })
 
 const INVESTMENT_ADVICE_REFUSAL = '개인의 투자 금액을 정하거나 특정 식당을 가장 유리하다고 판단해 권유할 수는 없어요. 대신 모든 이용자에게 동일하게 공개되는 매출 성장률·재방문율·운영 이력·상권 위험·쿠폰 조건을 나란히 요약해드릴 수 있어요. 투자 여부와 금액은 원금 및 회수 지연 가능성을 확인한 뒤 직접 결정해주세요.'
@@ -3297,6 +3588,15 @@ function isInvestmentAdviceRequest(question: string) {
   return asksAmountAdvice || asksBestRestaurant
 }
 
+/**
+ * 답변에서 투자 권유 표현을 잡아낸다.
+ *
+ * 중요한 건 "문장 단위로, 투자 맥락 안에서만" 본다는 점이다.
+ * 예전에는 답변 전체에 '가장 적합' 같은 표현이 한 번이라도 나오면 통째로 거절 문구로 바꿨다.
+ * 그래서 지원제도 상담에서 "사장님께 가장 적합한 제도는 노란우산공제입니다"라고 답하면
+ * 상담 전체가 "투자 권유는 할 수 없어요"로 뒤바뀌었다(실측: 제도 질문에서 재현).
+ * 투자와 무관한 문장까지 막으면 규칙을 지키는 게 아니라 답을 못 하게 되는 것이다.
+ */
 function enforceInvestmentAdvicePolicy(answer: string) {
   const prohibited = [
     /\d[\d,]*(?:만|천)?\s*원(?:을|를)?\s*(?:투자|넣)(?:하세요|하는\s*게\s*좋|하시는\s*게\s*좋|해보세요)/,
@@ -3304,7 +3604,13 @@ function enforceInvestmentAdvicePolicy(answer: string) {
     /(?:투자를?\s*)?(?:강력히\s*)?(?:권합니다|추천합니다)/,
     /(?:식당|가게).{0,20}(?:투자|선택|우선).{0,10}(?:하세요|권해요|추천해요)/,
   ]
-  return prohibited.some((pattern) => pattern.test(answer)) ? INVESTMENT_ADVICE_REFUSAL : answer
+  // 투자 판단으로 읽힐 수 있는 문장인지. 식당 이름이 직접 나오는 경우도 포함한다.
+  const investmentContext = (sentence: string) =>
+    /투자|펀딩|펀드|출자|모금|넣으|수익/.test(sentence)
+    || db.restaurants.some((restaurant) => sentence.includes(restaurant.name))
+  const sentences = answer.split(/(?<=[.!?…])\s+|\n+/)
+  const violating = sentences.some((sentence) => investmentContext(sentence) && prohibited.some((pattern) => pattern.test(sentence)))
+  return violating ? INVESTMENT_ADVICE_REFUSAL : answer
 }
 
 function localAiAnswer(question: string) {
@@ -4018,6 +4324,37 @@ app.post('/api/ai/chat', async (req: AuthedRequest, res) => {
     if (graphRestaurant) knowledgeGraph.edges.push({ from: `restaurant:${graphRestaurant.id}`, relation: 'GRADED_AS', to: 'credit:grade' })
   }
 
+  // 자료 일치도. "제출한 자료가 서로 맞나요?"에 문장이 아니라 실제 대조 결과로 답하기 위해 올린다.
+  const storedEvidence = application?.data?.evidenceLedger as { quality?: Record<string, any>; crossChecks?: Array<Record<string, any>> } | undefined
+  if (storedEvidence?.quality && storedEvidence.quality.score !== null) {
+    const quality = storedEvidence.quality
+    knowledgeGraph.nodes.push({
+      id: 'evidence:quality', type: 'EvidenceQuality',
+      label: `제출자료 일치도 ${quality.score}점 (${quality.grade})`,
+      source: 'MEOKTU_EVIDENCE_LEDGER',
+      properties: {
+        점수: Number(quality.score), 등급: String(quality.grade),
+        대조한자료쌍: `${quality.comparedPairs}/${quality.possiblePairs}`,
+        불일치건수: Array.isArray(quality.mismatches) ? quality.mismatches.length : 0,
+        아직대조못한항목: Array.isArray(quality.notCompared) ? quality.notCompared.join(', ') : '없음',
+        판독문서수: Number(quality.documentCount) || 0,
+      },
+    })
+    for (const check of (storedEvidence.crossChecks || []).slice(0, 6)) {
+      knowledgeGraph.nodes.push({
+        id: `evidence:${check.code}`, type: 'EvidenceCrossCheck',
+        label: `${check.label} 대조 결과`,
+        source: 'MEOKTU_EVIDENCE_LEDGER',
+        properties: {
+          결과: check.status === 'passed' ? '일치' : check.status === 'review' ? '확인 필요' : check.status === 'failed' ? '불일치' : '미대조',
+          차이율: `${check.differenceRate}%`, 허용범위: `${check.tolerance}%`, 설명: String(check.detail || '').slice(0, 200),
+        },
+      })
+      knowledgeGraph.edges.push({ from: 'evidence:quality', relation: 'SUPPORTED_BY', to: `evidence:${check.code}` })
+    }
+    if (graphRestaurant) knowledgeGraph.edges.push({ from: `restaurant:${graphRestaurant.id}`, relation: 'EVIDENCE_CHECKED', to: 'evidence:quality' })
+  }
+
   // 제도 이름을 모른 채 "정부 지원 뭐 있어?"라고 물으면 키워드 매칭이 비는데,
   // 그대로 두면 "제공할 수 없다"고 답해버린다. 지원제도 질문이면 대표 제도라도 근거로 붙인다.
   const matchedPrograms = matchSupportPrograms(effectiveQuestion, 3)
@@ -4052,7 +4389,7 @@ app.post('/api/ai/chat', async (req: AuthedRequest, res) => {
     }
     // "나 지금 뭐 받을 수 있어?"는 제도 이름이 질문에 없어 문자열 검색으로는 안 걸린다.
     // 그래서 자격 관계를 직접 읽어 근거로 넣는다.
-    if (ownerRole && asker) {
+    if (ownerRole && asker && (isSupportQuestion(effectiveQuestion) || matchedPrograms.length > 0)) {
       const eligibility = await ownerEligibility(asker.id, role).catch(() => undefined)
       if (eligibility?.length) {
         const open = eligibility.filter((item) => item.relation === 'MAY_QUALIFY_FOR')

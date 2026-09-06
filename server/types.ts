@@ -1,3 +1,7 @@
+import type { OwnerDocument } from './documents.ts'
+
+export type { OwnerDocument }
+
 export type Role = 'investor' | 'owner' | 'admin'
 export type FundStatus = 'funding' | 'trading' | 'closed'
 
@@ -346,6 +350,8 @@ export interface Database {
   favorites: Favorite[]
   auditEvents: AuditEvent[]
   ocrAnalyses: OcrAnalysis[]
+  /** 문서 원장. 판독 결과와 사장님 확인·수정 이력이 여기 쌓인다. */
+  documents?: OwnerDocument[]
   dataConnections: DataConnection[]
   articles: Article[]
   etfs: EtfFund[]

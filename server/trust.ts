@@ -203,11 +203,16 @@ function serviceRuleNodes(): GraphNode[] {
 export function buildKnowledgeGraph(role: Role, restaurant?: Restaurant, fund?: Fund, context: GraphContext = {}) {
   const steps = role === 'owner' ? ownerSteps : investorSteps
   const prefix = role === 'owner' ? 'owner' : 'investor'
+  // 절차 단계의 라벨은 심사 내부 용어다('제출자료 자동 확인'). 사장님은 "펀딩 신청 어떻게 해요"라고 묻는다.
+  // 그 말로도 절차 노드가 검색되도록 역할별 검색어를 함께 싣는다.
+  const stepKeywords = role === 'owner'
+    ? '펀딩 신청 접수 등록 개설 모집 심사 절차 순서 자료 서류 제출 준비 어떻게'
+    : '투자 참여 절차 순서 방법 회수 시작 어떻게 준비 확인'
   const nodes: GraphNode[] = steps.map(([label, instruction], index) => ({
     id: `${prefix}:step:${index + 1}`,
     type: 'GuideStep',
     label,
-    properties: { order: index + 1, instruction },
+    properties: { order: index + 1, instruction, keywords: stepKeywords },
     source: 'MEOKTU_SERVICE_POLICY',
   }))
   const edges: GraphEdge[] = nodes.slice(0, -1).map((node, index) => ({ from: node.id, relation: 'NEXT', to: nodes[index + 1].id }))
@@ -219,6 +224,26 @@ export function buildKnowledgeGraph(role: Role, restaurant?: Restaurant, fund?: 
   edges.push(...siteGraphEdges())
   // 서비스 규칙(교환 조건·적립 공식·회수 규칙)도 같은 그래프에 올린다.
   nodes.push(...serviceRuleNodes())
+  // 규칙은 반드시 "어느 화면에서 적용되는가"로 이어 둔다.
+  // 이 엣지가 없으면 규칙 노드가 그래프에서 완전히 떠 있어서(실측: Neo4j 고아 노드 8개)
+  // "쿠폰 교환하려는데 뭐가 막혀요?"처럼 화면에서 규칙으로 건너뛰는 질문을 순회로 답할 수 없다.
+  const ruleAnchors: Array<[string, string]> = [
+    ['rule:exchange', 'page:market'],
+    ['rule:redeem', 'page:my'],
+    ['rule:coupon-accrual', 'page:my'],
+    ['rule:invest-withdraw', 'page:discover'],
+  ]
+  const nodeIds = new Set(nodes.map((node) => node.id))
+  for (const [ruleId, pageId] of ruleAnchors) {
+    if (nodeIds.has(ruleId) && nodeIds.has(pageId)) edges.push({ from: ruleId, relation: 'APPLIES_ON', to: pageId })
+  }
+  // 규칙이 어느 절차 단계를 지배하는지도 잇는다. 투자·회수 규칙은 참여·회수 단계에 걸린다.
+  const stepRules: Array<[number, string]> = role === 'owner'
+    ? [[5, 'rule:coupon-accrual'], [6, 'rule:invest-withdraw']]
+    : [[2, 'rule:coupon-accrual'], [5, 'rule:invest-withdraw'], [7, 'rule:invest-withdraw'], [6, 'rule:redeem']]
+  for (const [order, ruleId] of stepRules) {
+    if (nodeIds.has(ruleId)) edges.push({ from: `${prefix}:step:${Math.min(order, steps.length)}`, relation: 'GOVERNED_BY', to: ruleId })
+  }
   const stepScreens = role === 'owner'
     ? ['page:owner', 'page:owner', 'page:owner', 'page:owner', 'page:owner', 'page:owner', 'page:owner']
     : ['page:discover', 'page:home', 'page:insight', 'page:home', 'page:discover', 'page:my', 'page:my']
@@ -236,6 +261,8 @@ export function buildKnowledgeGraph(role: Role, restaurant?: Restaurant, fund?: 
       category: restaurant.category, region: restaurant.region, neighborhood: restaurant.neighborhood,
       salesGrowth: restaurant.salesGrowth, repeatRate: restaurant.repeatRate, openedYears: restaurant.openedYears,
       salesDisclosure: Boolean(restaurant.salesDisclosure), rating: restaurant.rating,
+      // 사용자는 salesGrowth 가 아니라 "매출 성장률"이라고 묻는다. 검색이 걸릴 한국어 이름을 함께 싣는다.
+      keywords: '식당 가게 업종 지역 동네 매출 성장률 재방문율 업력 운영이력 평점 후기',
     }),
   })
   edges.push({ from: stepId(3), relation: 'EXAMINES', to: businessId })
@@ -246,7 +273,10 @@ export function buildKnowledgeGraph(role: Role, restaurant?: Restaurant, fund?: 
     const areaId = `area:${located.area.areaCode}`
     nodes.push({
       id: areaId, type: 'CommercialArea', label: located.area.areaName, source: 'COMMERCIAL_AREA_DATA',
-      properties: props({ ...commercialGraphProperties(located.area), matchLevel: located.matchLevel, summary: located.area.summary }),
+      properties: props({
+        ...commercialGraphProperties(located.area), matchLevel: located.matchLevel, summary: located.area.summary,
+        keywords: '상권 동네 지역 유동인구 생활인구 경쟁 경쟁밀도 폐업률 임대료 임차료 젠트리피케이션 손님',
+      }),
     })
     edges.push({ from: businessId, relation: 'LOCATED_IN', to: areaId })
     edges.push({ from: areaId, relation: 'INFORMS', to: stepId(3) })
@@ -260,6 +290,7 @@ export function buildKnowledgeGraph(role: Role, restaurant?: Restaurant, fund?: 
         goal: fund.goal, raised: fund.raised, status: fund.status, riskLevel: fund.riskLevel,
         maxDiscount: fund.maxDiscount, purpose: fund.purpose, investorCount: fund.investorCount,
         openBuyAmount: fund.openBuyAmount, openSellAmount: fund.openSellAmount,
+        keywords: '펀딩 펀드 모금 모집 목표 목표액 목표금액 금액 얼마 진행률 달성률 위험도 최대 할인율 자금 사용처 투자자수 대기 예약',
       }),
     })
     edges.push({ from: businessId, relation: 'RAISES', to: fundId })
@@ -269,7 +300,10 @@ export function buildKnowledgeGraph(role: Role, restaurant?: Restaurant, fund?: 
       const holdingId = `holding:${fund.id}`
       nodes.push({
         id: holdingId, type: 'InvestorHolding', label: '내 투자잔액', source: 'INVESTOR_PORTFOLIO',
-        properties: props({ amount: context.holding.amount, accruedDiscount: Number(context.holding.couponProgress.toFixed(1)), earlyInvestor: context.holding.early }),
+        properties: props({
+        amount: context.holding.amount, accruedDiscount: Number(context.holding.couponProgress.toFixed(1)), earlyInvestor: context.holding.early,
+        keywords: '내 투자 투자금 투자잔액 보유 잔액 적립 쌓인 할인율 쿠폰 조기투자 얼마',
+      }),
       })
       edges.push({ from: holdingId, relation: 'INVESTED_IN', to: fundId })
       edges.push({ from: stepId(7), relation: 'SETTLES', to: holdingId })
@@ -283,6 +317,7 @@ export function buildKnowledgeGraph(role: Role, restaurant?: Restaurant, fund?: 
       properties: props({
         score: context.assessment.score, grade: context.assessment.grade, riskLevel: context.assessment.riskLevel,
         confidence: context.assessment.confidence, calibratedProbability: false, ...context.assessment.components,
+        keywords: '등급 점수 예비평가 성장성 평가 신용 위험도 왜 이유 근거',
       }),
     })
     edges.push({ from: businessId, relation: 'ASSESSED_BY', to: assessmentId })
@@ -293,7 +328,10 @@ export function buildKnowledgeGraph(role: Role, restaurant?: Restaurant, fund?: 
     const claimId = `claim:${restaurant.id}`
     nodes.push({
       id: claimId, type: 'FinancialClaim', label: '사장님이 제출한 재무·운영 수치', source: 'OWNER_CLAIM',
-      properties: props({ verificationStatus: context.claim.verificationStatus, requestedLimit: context.claim.requestedLimit, dataConfidence: context.claim.dataConfidence }),
+      properties: props({
+        verificationStatus: context.claim.verificationStatus, requestedLimit: context.claim.requestedLimit, dataConfidence: context.claim.dataConfidence,
+        keywords: '제출 자료 서류 신고 수치 신뢰도 데이터 신뢰도 희망 한도 심사 상태',
+      }),
     })
     edges.push({ from: businessId, relation: 'CLAIMS', to: claimId })
     edges.push({ from: claimId, relation: 'REQUIRES', to: stepId(4) })
@@ -306,6 +344,7 @@ export function buildKnowledgeGraph(role: Role, restaurant?: Restaurant, fund?: 
       properties: props({
         status: context.verification.status, readyForAdminReview: context.verification.readyForAdminReview,
         mismatches: context.verification.mismatchCount, missingDocuments: context.verification.missingCount,
+        keywords: '교차검증 대조 검증 불일치 안 맞 맞지 자료 확인 부족 누락',
       }),
     })
     edges.push({ from: stepId(5), relation: 'PRODUCES', to: runId })
@@ -341,31 +380,83 @@ const queryAliases: Record<string, string[]> = {
  * 질문에서 검색어와 의도를 뽑는다.
  * 인메모리 검색과 Neo4j 검색이 같은 규칙을 써야 답이 갑자기 달라지지 않는다.
  */
+/**
+ * 검색어 뒤에 붙는 조사·어미.
+ *
+ * 한국어는 단어에 조사가 붙어서 온다. "교차검증에서 뭐가 안 맞았어요?"의 검색어는
+ * '교차검증에서'가 되고, 노드 본문에 있는 '교차검증'과는 한 글자도 일치하지 않는다.
+ * (실측: 이 질문에 교차검증 노드가 한 번도 근거로 뽑히지 않았다.)
+ * 그래서 검색어의 조사를 떼어낸 형태를 함께 넣는다. 원형도 같이 남기므로 잃는 것은 없다.
+ */
+const PARTICLES = [
+  '으로는', '에서는', '에게는', '이라고', '인가요', '까지', '부터', '보다', '처럼', '에서', '에게',
+  '으로', '이나', '한테', '께서', '에는', '에도', '이라', '인가', '라고', '이야',
+  '은', '는', '이', '가', '을', '를', '의', '도', '만', '과', '와', '에', '로', '야', '요',
+]
+function withoutParticle(term: string) {
+  for (const particle of PARTICLES) {
+    // 조사를 뗀 뒤에도 두 글자 이상 남아야 뜻이 있는 검색어다.
+    if (term.length >= particle.length + 2 && term.endsWith(particle)) return term.slice(0, -particle.length)
+  }
+  return term
+}
+
 export function questionTerms(question: string) {
   const normalized = question.toLocaleLowerCase('ko').replace(/\s+/g, ' ').trim()
-  const baseTerms = normalized.split(/[^\p{L}\p{N}]+/u).filter((term) => term.length > 1)
+  const rawTerms = normalized.split(/[^\p{L}\p{N}]+/u).filter((term) => term.length > 1)
+  const baseTerms = [...new Set(rawTerms.flatMap((term) => {
+    const stem = withoutParticle(term)
+    return stem === term ? [term] : [term, stem]
+  }))]
   const matchedAliases = Object.entries(queryAliases)
     .filter(([keyword]) => normalized.includes(keyword))
     .flatMap(([keyword, aliases]) => [keyword, ...aliases])
   const terms = [...new Set([...baseTerms, ...matchedAliases])]
   // "제한이 몇 %야", "쓸 수 있어?", "얼마나 쌓여" 처럼 규칙을 묻는 문장은
   // 절차 단계보다 서비스 규칙 노드를 먼저 봐야 한다. 안 그러면 생성형이 규칙을 지어낸다.
-  const asksRule = /(제한|조건|규칙|몇\s*%|몇\s*퍼센트|얼마나|되나요|되나|수\s*있|가능한가|가능해|공식|기준)/.test(normalized)
+  const asksRule = /(제한|조건|규칙|몇\s*%|몇\s*퍼센트|며칠|몇\s*일|잠기|얼마나|되나요|되나|수\s*있|가능한가|가능해|공식|기준)/.test(normalized)
   return { normalized, terms, asksRule }
 }
 
+/**
+ * 화면 지도 노드.
+ *
+ * 수가 많고(페이지 + 작업) 문장이 길어서 아무 질문에나 단어 하나씩은 걸린다.
+ * 그대로 두면 상한 6개를 이것들이 차지하고, 정작 물어본 대상(내 펀드·이 상권·내 등급)이
+ * 근거에서 밀려난다. 실측: "목표 금액이 얼마인가요?"에 펀드 노드가 한 번도 뽑히지 않았다.
+ * 그래서 화면 위치를 묻는 질문이 아니면 두 개까지만 남긴다.
+ */
+const NAVIGATION_TYPES = new Set(['SitePage', 'UiTask'])
+/** 지금 이 사용자의 상태를 담은 노드. 질문 단어와 겹치면 정책 문서보다 먼저 본다. */
+const STATE_TYPES = new Set([
+  'Restaurant', 'FundingCampaign', 'CommercialArea', 'CreditAssessment', 'VerificationRun',
+  'FinancialClaim', 'InvestorHolding', 'AccountSummary', 'EvidenceQuality', 'EvidenceCrossCheck',
+  'OwnerSituation', 'NextAction', 'ProgramEligibility',
+])
+
 export function retrieveKnowledgeSubgraph(graph: KnowledgeGraph, question: string, limit = 6) {
   const { normalized, terms, asksRule } = questionTerms(question)
+  const asksNavigation = /어디|화면|메뉴|버튼|누르|클릭|이동|위치|가야|찾/.test(normalized)
+  const asksProcess = /절차|순서|어떻게|하나요|하려면|해야|신청|준비|제출/.test(normalized)
   const scored = graph.nodes.map((node, index) => {
     const haystack = `${node.label} ${JSON.stringify(node.properties)}`.toLocaleLowerCase('ko')
     const exactLabel = normalized.includes(node.label.toLocaleLowerCase('ko')) ? 5 : 0
     const termScore = terms.reduce((sum, term) => sum + (haystack.includes(term.toLocaleLowerCase('ko')) ? 1 : 0), 0)
     // 규칙 노드는 실제로 질문 단어와 겹칠 때만 끌어올린다. 무조건 올리면 절차 노드를 밀어낸다.
     const ruleBoost = asksRule && node.type === 'ServiceRule' && termScore > 0 ? 3 : 0
-    const score = exactLabel + ruleBoost + termScore
+    const stateBoost = termScore > 0 && STATE_TYPES.has(node.type) ? 2 : 0
+    const processBoost = asksProcess && node.type === 'GuideStep' && termScore > 0 ? 2 : 0
+    const score = exactLabel + ruleBoost + stateBoost + processBoost + termScore
     return { node, index, score }
   }).sort((a, b) => b.score - a.score || a.index - b.index)
-  const direct = scored.filter((item) => item.score > 0).slice(0, limit)
+  const navigationLimit = asksNavigation ? limit : 2
+  let navigationTaken = 0
+  const direct = scored.filter((item) => item.score > 0).filter((item) => {
+    if (!NAVIGATION_TYPES.has(item.node.type)) return true
+    if (navigationTaken >= navigationLimit) return false
+    navigationTaken += 1
+    return true
+  }).slice(0, limit)
   const selected = direct.length ? direct : scored.slice(0, Math.min(3, limit))
   const selectedIds = new Set(selected.map((item) => item.node.id))
   const relatedEdges = graph.edges.filter((edge) => selectedIds.has(edge.from) || selectedIds.has(edge.to)).slice(0, 12)

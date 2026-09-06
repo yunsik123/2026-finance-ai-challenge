@@ -56,3 +56,33 @@
   .doc-section{padding:13px}
   .doc-frame{height:70vh}
 }
+
+/* ── AI 판독 위치 하이라이트 ───────────────────────────────────
+   서버가 0~1000 기준으로 정규화한 좌표를 퍼센트로 얹는다. */
+.doc-figure-boxed { display: grid; gap: 12px; }
+.doc-box-canvas { position: relative; display: inline-block; max-width: 100%; line-height: 0; }
+.doc-box-canvas img { max-width: 100%; height: auto; border-radius: 10px; }
+.doc-box {
+  position: absolute; border: 2px solid rgba(255, 122, 59, .95); background: rgba(255, 122, 59, .14);
+  border-radius: 4px; padding: 0; cursor: pointer; transition: background .12s ease, box-shadow .12s ease;
+}
+.doc-box.unsure { border-color: rgba(214, 158, 30, .95); background: rgba(214, 158, 30, .14); border-style: dashed; }
+.doc-box:hover, .doc-box.active, .doc-box:focus-visible {
+  background: rgba(255, 122, 59, .3); box-shadow: 0 0 0 3px rgba(255, 122, 59, .28); outline: none;
+}
+.doc-box span {
+  position: absolute; left: 0; bottom: 100%; margin-bottom: 3px; white-space: nowrap;
+  font-size: 10px; font-weight: 700; line-height: 1.5; padding: 1px 6px; border-radius: 5px;
+  background: #1f2430; color: #fff; opacity: 0; transition: opacity .12s ease; pointer-events: none;
+}
+.doc-box:hover span, .doc-box.active span, .doc-box:focus-visible span { opacity: 1; }
+.doc-box-legend { display: grid; gap: 6px; }
+.doc-box-legend button {
+  display: grid; grid-template-columns: 92px 1fr auto; gap: 10px; align-items: baseline; text-align: left;
+  padding: 7px 10px; border: 1px solid #e6e8ee; border-radius: 8px; background: #fff; cursor: pointer;
+}
+.doc-box-legend button.active { border-color: rgba(255, 122, 59, .8); background: #fff8f3; }
+.doc-box-legend small { color: #6b7280; font-size: 11px; }
+.doc-box-legend b { font-size: 13px; word-break: break-all; }
+.doc-box-legend em { font-size: 11px; color: #6b7280; font-style: normal; }
+.doc-box-legend p { margin: 2px 0 0; font-size: 11px; color: #6b7280; }

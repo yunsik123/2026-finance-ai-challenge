@@ -22,7 +22,9 @@
     "db:migrate": "node scripts/apply-db.mjs --import",
     "db:cloud:check": "node scripts/apply-cloudsql.mjs --test",
     "db:cloud:apply": "node scripts/apply-cloudsql.mjs",
-    "db:cloud:seed": "node scripts/apply-cloudsql.mjs --seed"
+    "db:cloud:seed": "node scripts/apply-cloudsql.mjs --seed",
+    "test:graph": "tsx tests/graph-quality.ts",
+    "test:live": "tsx tests/ai-live.ts"
   },
   "dependencies": {
     "@types/pg": "^8.23.1",
@@ -32,6 +34,7 @@
     "express": "latest",
     "lucide-react": "latest",
     "neo4j-driver": "^6.2.0",
+    "pdfjs-dist": "^6.3.289",
     "pg": "^8.23.0",
     "react": "latest",
     "react-dom": "latest",
