@@ -1,0 +1,652 @@
+[
+  {
+    "id": "OCR-01",
+    "source": "business",
+    "variant": "clean",
+    "image": "01-business-clean.png",
+    "filename": "사업자등록증.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "1234567891",
+      "total": null,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-02",
+    "source": "business",
+    "variant": "rotate",
+    "image": "02-business-rotate.png",
+    "filename": "사업자등록증.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "1234567891",
+      "total": null,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-03",
+    "source": "business",
+    "variant": "lowres",
+    "image": "03-business-lowres.png",
+    "filename": "사업자등록증.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "1234567891",
+      "total": null,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-04",
+    "source": "business",
+    "variant": "wrong_filename",
+    "image": "04-business-wrong_filename.png",
+    "filename": "배달정산서.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "1234567891",
+      "total": null,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-05",
+    "source": "business",
+    "variant": "missing_field",
+    "image": "05-business-missing_field.png",
+    "filename": "사업자등록증.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "",
+      "total": null,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-06",
+    "source": "license",
+    "variant": "clean",
+    "image": "06-license-clean.png",
+    "filename": "영업신고증.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "1234567891",
+      "total": null,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-07",
+    "source": "license",
+    "variant": "rotate",
+    "image": "07-license-rotate.png",
+    "filename": "영업신고증.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "1234567891",
+      "total": null,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-08",
+    "source": "license",
+    "variant": "lowres",
+    "image": "08-license-lowres.png",
+    "filename": "영업신고증.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "1234567891",
+      "total": null,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-09",
+    "source": "license",
+    "variant": "wrong_filename",
+    "image": "09-license-wrong_filename.png",
+    "filename": "사업자등록증.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "1234567891",
+      "total": null,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-10",
+    "source": "license",
+    "variant": "missing_field",
+    "image": "10-license-missing_field.png",
+    "filename": "영업신고증.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "",
+      "total": null,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-11",
+    "source": "tax",
+    "variant": "clean",
+    "image": "11-tax-clean.png",
+    "filename": "부가가치세 과세표준증명.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "1234567891",
+      "total": 36100000,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-12",
+    "source": "tax",
+    "variant": "rotate",
+    "image": "12-tax-rotate.png",
+    "filename": "부가가치세 과세표준증명.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "1234567891",
+      "total": 36100000,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-13",
+    "source": "tax",
+    "variant": "lowres",
+    "image": "13-tax-lowres.png",
+    "filename": "부가가치세 과세표준증명.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "1234567891",
+      "total": 36100000,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-14",
+    "source": "tax",
+    "variant": "wrong_filename",
+    "image": "14-tax-wrong_filename.png",
+    "filename": "사업자등록증.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "1234567891",
+      "total": 36100000,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-15",
+    "source": "tax",
+    "variant": "missing_field",
+    "image": "15-tax-missing_field.png",
+    "filename": "부가가치세 과세표준증명.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "",
+      "total": 36100000,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-16",
+    "source": "pos",
+    "variant": "clean",
+    "image": "16-pos-clean.png",
+    "filename": "POS 월간 매출 집계표.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "1234567891",
+      "total": 36100000,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-17",
+    "source": "pos",
+    "variant": "rotate",
+    "image": "17-pos-rotate.png",
+    "filename": "POS 월간 매출 집계표.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "1234567891",
+      "total": 36100000,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-18",
+    "source": "pos",
+    "variant": "lowres",
+    "image": "18-pos-lowres.png",
+    "filename": "POS 월간 매출 집계표.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "1234567891",
+      "total": 36100000,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-19",
+    "source": "pos",
+    "variant": "wrong_filename",
+    "image": "19-pos-wrong_filename.png",
+    "filename": "사업자등록증.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "1234567891",
+      "total": 36100000,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-20",
+    "source": "pos",
+    "variant": "missing_field",
+    "image": "20-pos-missing_field.png",
+    "filename": "POS 월간 매출 집계표.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "",
+      "total": 36100000,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-21",
+    "source": "card",
+    "variant": "clean",
+    "image": "21-card-clean.png",
+    "filename": "카드매출 승인 및 정산내역.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "1234567891",
+      "total": 24800000,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-22",
+    "source": "card",
+    "variant": "rotate",
+    "image": "22-card-rotate.png",
+    "filename": "카드매출 승인 및 정산내역.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "1234567891",
+      "total": 24800000,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-23",
+    "source": "card",
+    "variant": "lowres",
+    "image": "23-card-lowres.png",
+    "filename": "카드매출 승인 및 정산내역.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "1234567891",
+      "total": 24800000,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-24",
+    "source": "card",
+    "variant": "wrong_filename",
+    "image": "24-card-wrong_filename.png",
+    "filename": "사업자등록증.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "1234567891",
+      "total": 24800000,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-25",
+    "source": "card",
+    "variant": "missing_field",
+    "image": "25-card-missing_field.png",
+    "filename": "카드매출 승인 및 정산내역.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "",
+      "total": 24800000,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-26",
+    "source": "account",
+    "variant": "clean",
+    "image": "26-account-clean.png",
+    "filename": "사업용 계좌 거래내역서.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "1234567891",
+      "total": 29700000,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-27",
+    "source": "account",
+    "variant": "rotate",
+    "image": "27-account-rotate.png",
+    "filename": "사업용 계좌 거래내역서.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "1234567891",
+      "total": 29700000,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-28",
+    "source": "account",
+    "variant": "lowres",
+    "image": "28-account-lowres.png",
+    "filename": "사업용 계좌 거래내역서.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "1234567891",
+      "total": 29700000,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-29",
+    "source": "account",
+    "variant": "wrong_filename",
+    "image": "29-account-wrong_filename.png",
+    "filename": "사업자등록증.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "1234567891",
+      "total": 29700000,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-30",
+    "source": "account",
+    "variant": "missing_field",
+    "image": "30-account-missing_field.png",
+    "filename": "사업용 계좌 거래내역서.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "",
+      "total": 29700000,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-31",
+    "source": "delivery",
+    "variant": "clean",
+    "image": "31-delivery-clean.png",
+    "filename": "배달플랫폼 월간 정산서.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "1234567891",
+      "total": 11300000,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-32",
+    "source": "delivery",
+    "variant": "rotate",
+    "image": "32-delivery-rotate.png",
+    "filename": "배달플랫폼 월간 정산서.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "1234567891",
+      "total": 11300000,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-33",
+    "source": "delivery",
+    "variant": "lowres",
+    "image": "33-delivery-lowres.png",
+    "filename": "배달플랫폼 월간 정산서.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "1234567891",
+      "total": 11300000,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-34",
+    "source": "delivery",
+    "variant": "wrong_filename",
+    "image": "34-delivery-wrong_filename.png",
+    "filename": "사업자등록증.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "1234567891",
+      "total": 11300000,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-35",
+    "source": "delivery",
+    "variant": "missing_field",
+    "image": "35-delivery-missing_field.png",
+    "filename": "배달플랫폼 월간 정산서.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "",
+      "total": 11300000,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-36",
+    "source": "debt",
+    "variant": "clean",
+    "image": "36-debt-clean.png",
+    "filename": "대출 잔액 증명서.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "1234567891",
+      "total": 25000000,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-37",
+    "source": "debt",
+    "variant": "rotate",
+    "image": "37-debt-rotate.png",
+    "filename": "대출 잔액 증명서.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "1234567891",
+      "total": 25000000,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-38",
+    "source": "debt",
+    "variant": "lowres",
+    "image": "38-debt-lowres.png",
+    "filename": "대출 잔액 증명서.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "1234567891",
+      "total": 25000000,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-39",
+    "source": "debt",
+    "variant": "wrong_filename",
+    "image": "39-debt-wrong_filename.png",
+    "filename": "사업자등록증.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "1234567891",
+      "total": 25000000,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-40",
+    "source": "debt",
+    "variant": "missing_field",
+    "image": "40-debt-missing_field.png",
+    "filename": "대출 잔액 증명서.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "",
+      "total": 25000000,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-41",
+    "source": "lease",
+    "variant": "clean",
+    "image": "41-lease-clean.png",
+    "filename": "상가 임대차 계약서.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "1234567891",
+      "total": 1500000,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-42",
+    "source": "lease",
+    "variant": "rotate",
+    "image": "42-lease-rotate.png",
+    "filename": "상가 임대차 계약서.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "1234567891",
+      "total": 1500000,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-43",
+    "source": "lease",
+    "variant": "lowres",
+    "image": "43-lease-lowres.png",
+    "filename": "상가 임대차 계약서.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "1234567891",
+      "total": 1500000,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-44",
+    "source": "lease",
+    "variant": "wrong_filename",
+    "image": "44-lease-wrong_filename.png",
+    "filename": "사업자등록증.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "1234567891",
+      "total": 1500000,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-45",
+    "source": "lease",
+    "variant": "missing_field",
+    "image": "45-lease-missing_field.png",
+    "filename": "상가 임대차 계약서.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "",
+      "total": 1500000,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-46",
+    "source": "staff",
+    "variant": "clean",
+    "image": "46-staff-clean.png",
+    "filename": "월별 급여 지급 명세서.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "1234567891",
+      "total": 5600000,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-47",
+    "source": "staff",
+    "variant": "rotate",
+    "image": "47-staff-rotate.png",
+    "filename": "월별 급여 지급 명세서.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "1234567891",
+      "total": 5600000,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-48",
+    "source": "staff",
+    "variant": "lowres",
+    "image": "48-staff-lowres.png",
+    "filename": "월별 급여 지급 명세서.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "1234567891",
+      "total": 5600000,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-49",
+    "source": "staff",
+    "variant": "wrong_filename",
+    "image": "49-staff-wrong_filename.png",
+    "filename": "사업자등록증.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "1234567891",
+      "total": 5600000,
+      "date": "2026-08-31"
+    }
+  },
+  {
+    "id": "OCR-50",
+    "source": "staff",
+    "variant": "missing_field",
+    "image": "50-staff-missing_field.png",
+    "filename": "월별 급여 지급 명세서.png",
+    "expected": {
+      "merchant": "바른한상",
+      "businessNumber": "",
+      "total": 5600000,
+      "date": "2026-08-31"
+    }
+  }
+]

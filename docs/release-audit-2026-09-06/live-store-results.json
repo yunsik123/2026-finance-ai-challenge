@@ -1,0 +1,113 @@
+{
+  "at": "2026-09-06T11:27:45.225Z",
+  "mode": "READ ONLY; aggregate counts and schema checks only",
+  "postgres": {
+    "connected": true,
+    "version": 68,
+    "tables": [
+      "applications",
+      "articles",
+      "audit_events",
+      "coupon_listings",
+      "coupon_offers",
+      "coupon_trades",
+      "coupons",
+      "data_connections",
+      "etf_funds",
+      "etf_members",
+      "favorites",
+      "funds",
+      "ledger_meta",
+      "notifications",
+      "ocr_analyses",
+      "orders",
+      "positions",
+      "profiles",
+      "restaurant_sales",
+      "restaurants",
+      "reviews",
+      "support_requests",
+      "visit_verifications",
+      "wallet_transactions"
+    ],
+    "counts": {
+      "etfs": 3,
+      "funds": 12,
+      "users": 18,
+      "orders": 10,
+      "coupons": 83,
+      "reviews": 36,
+      "articles": 3,
+      "favorites": 0,
+      "positions": 19,
+      "auditEvents": 62,
+      "ocrAnalyses": 4,
+      "restaurants": 12,
+      "applications": 0,
+      "couponOffers": 4,
+      "couponTrades": 0,
+      "notifications": 0,
+      "couponListings": 12,
+      "dataConnections": 0,
+      "supportRequests": 0,
+      "visitVerifications": 0,
+      "walletTransactions": 0
+    },
+    "documentsKeyPresent": false,
+    "legalConsentsKeyPresent": false,
+    "functions": [
+      {
+        "name": "import_ledger",
+        "handlesDocuments": false
+      },
+      {
+        "name": "save_ledger",
+        "handlesDocuments": false
+      },
+      {
+        "name": "read_ledger",
+        "handlesDocuments": false
+      }
+    ],
+    "applicationsWithBusinessNumber": 0,
+    "applicationsWithOcrLinks": 0,
+    "applicationsWithSixSteps": 0
+  },
+  "neo4j": {
+    "connected": true,
+    "nodes": [
+      {
+        "labels": [
+          "Knowledge"
+        ],
+        "count": 199
+      },
+      {
+        "labels": [
+          "Owner"
+        ],
+        "count": 15
+      }
+    ],
+    "ownerSituations": 15,
+    "roleOnlySearchPrivateCandidates": 15,
+    "edges": [
+      {
+        "type": "REL",
+        "count": 162
+      },
+      {
+        "type": "HAS_SITUATION",
+        "count": 15
+      },
+      {
+        "type": "MAY_QUALIFY_FOR",
+        "count": 120
+      },
+      {
+        "type": "BLOCKED_BY_MISSING_DATA",
+        "count": 30
+      }
+    ]
+  }
+}
