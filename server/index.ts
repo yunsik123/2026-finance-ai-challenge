@@ -13,7 +13,7 @@ import type { Application, AuditEvent, Coupon, CouponListing, CouponOffer, Coupo
 import { LEGAL_VERSION, checkConsent, legalDocument, legalSummaries, requiredDocumentIds, type LegalContext } from './legal.ts'
 import { answerGraphProcessQuestion, assessRestaurant, buildKnowledgeGraph, normalizeOcrBoxes, questionTerms, retrieveKnowledgeSubgraph } from './trust.ts'
 import { buildEvidenceLedger, sourceLabels as evidenceSourceLabels } from './evidence.ts'
-import { classifyDocument, correctionStats, fieldsFromOcr, type DocumentField, type OwnerDocument } from './documents.ts'
+import { classifyDocument, correctionStats, effectiveValue, fieldsFromOcr, type DocumentCorrection, type DocumentField, type OwnerDocument } from './documents.ts'
 import { ALWAYS_REQUIRED_SOURCES, DOCUMENT_GUIDE_VERSION, documentGuideGraph, documentGuides, SALES_EVIDENCE_SOURCES } from './issuance.ts'
 import { answerNavigationQuestion, isNavigationQuestion, matchUiTasks, navigationBrief, pageForRoute } from './sitemap.ts'
 import { deriveMetricsFromUploads, parseCsv, type RawUpload } from './metrics.ts'
@@ -2061,8 +2061,15 @@ app.get('/api/admin/applications/:id', auth('admin'), (req: AuthedRequest, res) 
       ? analysisIds.includes(item.id)
       : Math.abs(submittedAt - new Date(item.createdAt).getTime()) <= 24 * 3600_000)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  const documentIds = data.documentIds && typeof data.documentIds === 'object' && !Array.isArray(data.documentIds)
+    ? Object.values(data.documentIds as Record<string, unknown>).map(String)
+    : []
+  // 새 신청은 제출 시점 스냅샷을 사용하고, 이전 신청만 현재 문서함에서 안전하게 대체 조회한다.
+  const documents = Array.isArray(data.documentReviewSnapshot)
+    ? data.documentReviewSnapshot
+    : (db.documents ?? []).filter((item) => item.userId === application.userId && documentIds.includes(item.id))
   const consent = (db.legalConsents || []).find((item) => item.resourceType === 'application' && item.resourceId === application.id)
-  res.json({ application: safeApplication(application), owner: owner ? publicUser(owner) : undefined, restaurant, fund, ocrAnalyses, consent })
+  res.json({ application: safeApplication(application), owner: owner ? publicUser(owner) : undefined, restaurant, fund, ocrAnalyses, documents, consent })
 })
 
 app.patch('/api/admin/applications/:id', auth('admin'), async (req: AuthedRequest, res) => {
@@ -3063,6 +3070,54 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
     partnerConnections: db.dataConnections.filter((item) => item.userId === req.user!.id && item.status === 'active')
       .map((item) => ({ sourceId: item.sourceId, provider: item.provider, consentScope: item.consentScope, lastSyncedAt: item.lastSyncedAt, recordCount: item.recordCount })),
   }
+  /*
+   * 이번 신청에 실제로 선택한 문서만 OCR 결과와 연결한다.
+   * 사용자의 '최근 12개'를 쓰면 이전 가게·이전 신청 결과가 새 신청에 섞인다.
+   * 클라이언트가 documentIds를 보내면 소유권·출처·파일명을 다시 확인하고,
+   * 예전 클라이언트는 같은 출처와 파일명의 문서로만 안전하게 대체 매칭한다.
+   */
+  const requestedDocumentIds = data.documentIds && typeof data.documentIds === 'object' && !Array.isArray(data.documentIds)
+    ? data.documentIds as Record<string, unknown> : {}
+  const availableDocuments = documentsOf(req.user!.id, req.user!.sessionMode)
+  const applicationDocuments = uploadedSources.flatMap((source) => {
+    const filename = String(uploadedDocuments[source] || '')
+    const requestedId = String(requestedDocumentIds[source] || '')
+    const byId = requestedId
+      ? availableDocuments.find((item) => item.id === requestedId && item.sourceId === source && item.filename === filename)
+      : undefined
+    const matched = byId || availableDocuments.find((item) => item.sourceId === source && item.filename === filename)
+    return matched ? [matched] : []
+  })
+  const applicationAnalysisIds = new Set(applicationDocuments.map((item) => item.ocrAnalysisId).filter(Boolean))
+  const myAnalyses = db.ocrAnalyses
+    .filter((item) => item.userId === req.user!.id && applicationAnalysisIds.has(item.id))
+    .map((analysis) => {
+      const document = applicationDocuments.find((item) => item.ocrAnalysisId === analysis.id)
+      if (!document) return analysis
+      const result = { ...analysis.result }
+      for (const field of document.fields) {
+        if (field.state === 'ai') continue
+        const confirmed = effectiveValue(field)
+        // 금액은 뒤 계산기가 숫자로 읽는다. 나머지는 문서에 보인 문자열을 그대로 유지한다.
+        result[field.key] = field.key === 'total' && confirmed !== null
+          ? Number(String(confirmed).replace(/[^\d.-]/g, ''))
+          : confirmed
+      }
+      return { ...analysis, result }
+    })
+  // 신청 시점의 확인·정정 상태를 동결한다. 이후 문서함을 다시 고쳐도 과거 심사 근거가 바뀌면 안 된다.
+  const documentReviewSnapshot = applicationDocuments.map((item) => ({
+    id: item.id,
+    filename: item.filename,
+    sourceId: item.sourceId,
+    classification: item.classification,
+    reclassified: item.reclassified,
+    fields: item.fields,
+    correctionHistory: item.correctionHistory ?? [],
+    status: item.status,
+    ocrAnalysisId: item.ocrAnalysisId,
+    updatedAt: item.updatedAt,
+  }))
   const has = (source: string) => connectedSources.includes(source)
   const requestedLimit = Math.max(0, round1000(data.requestedLimit))
 
@@ -3228,8 +3283,8 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
    * 과세기간을 읽었을 때만 월 기준으로 환산한다. 기간을 모르면 만들지 않는다.
    */
   if (!Number.isFinite(Number(aggregated.metrics.recent12MonthAverageSales))) {
-    const taxReading = db.ocrAnalyses
-      .filter((item) => item.userId === req.user!.id && item.sourceId === 'tax' && item.status === 'ai_extracted')
+    const taxReading = myAnalyses
+      .filter((item) => item.sourceId === 'tax' && item.status === 'ai_extracted')
       .at(-1)
     const taxResult = (taxReading?.result || {}) as Record<string, unknown>
     const taxTotal = Number(taxResult.total)
@@ -3290,8 +3345,7 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
   })
 
   // AI OCR 판독 결과를 실제 심사에 연결한다.
-  // 지금까지 OCR 결과는 저장만 되고 판단에 쓰이지 않았다.
-  const myAnalyses = db.ocrAnalyses.filter((item) => item.userId === req.user!.id).slice(-12)
+  // 위에서 이번 신청의 문서 ID와 맞는 결과만 골랐다.
   // 판독한 부채 증빙의 금액을 신용지표(total_loan_balance)로 그대로 흘려보낸다.
   // 여기가 "AI가 서류를 읽어 등급을 낸다"가 실제로 성립하는 유일한 연결점이다.
   const debtDocumentTotal = myAnalyses
@@ -3440,17 +3494,16 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
   // 자료가 없는 지표는 감점 대신 미산정으로 남고 coverage로 드러난다.
   const industry = toIndustry(String(data.industry || data.category || ''))
   const matchedRestaurant = db.restaurants.find((item) => item.name === restaurantName)
-  const located = matchedRestaurant ? findCommercialArea(matchedRestaurant) : undefined
   const creditAssessment = assessCredit(deriveCreditInput({
     industry,
     connectedSources,
     derivedMetrics,
     restaurant: matchedRestaurant,
-    commercialArea: located && {
-      competitorDensity: located.area.marketDynamics.competitorDensity,
-      closureRate: located.area.marketDynamics.closureRate,
-      areaSalesGrowth: located.area.spending.localSalesGrowth,
-      footTrafficGrowth: located.area.footTraffic.growthRate,
+    commercialArea: areaMatch && {
+      competitorDensity: areaMatch.area.marketDynamics.competitorDensity,
+      closureRate: areaMatch.area.marketDynamics.closureRate,
+      areaSalesGrowth: areaMatch.area.spending.localSalesGrowth,
+      footTrafficGrowth: areaMatch.area.footTraffic.growthRate,
     },
     reviews: matchedRestaurant ? db.reviews.filter((review) => review.restaurantId === matchedRestaurant.id) : [],
   }))
@@ -3464,40 +3517,47 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
 
   // 결측이나 검증 실패를 점수로 메우지 않는다. 핵심 원자료 또는 산정률이
   // 부족하면 자동 권고를 중지하고 운영자에게 원자료 확인을 요청한다.
+  // 500만원보다 적은 자금만 감당할 수 있는 가게에 500만원을 억지로 제안하지 않는다.
+  const capacity = monthlySales !== null && operatingCashflow !== null
+    ? Math.round((monthlySales * .42 + Math.max(0, operatingCashflow) * 2.2) / 1000000) * 1000000
+    : 0
+  const capacityBelowMinimum = capacity > 0 && capacity < 5000000
+
   const needsHumanReview = !basicVerified
     || !coreOperations
     || !businessVerification.verified
     || financialVerification.mismatches.length > 0
     || monthlySales === null
     || operatingCashflow === null
+    || capacityBelowMinimum
     || creditAssessment.provisional
 
-  const status: Application['status'] = needsHumanReview
+  const recommendedStatus: NonNullable<Application['recommendedStatus']> = needsHumanReview
     ? 'manual_review'
     : score >= 75 ? 'approved'
       : score >= 55 ? 'conditional'
         : score >= 45 ? 'manual_review' : 'rejected'
 
-  // 검증 매출과 영업현금흐름이 모두 있을 때만 자동 한도를 제시한다.
-  const capacity = monthlySales !== null && operatingCashflow !== null
-    ? Math.round((monthlySales * .42 + Math.max(0, operatingCashflow) * 2.2) / 1000000) * 1000000
-    : 0
-  const approvedLimit = (status === 'approved' || status === 'conditional') && capacity > 0
-    ? Math.max(5000000, Math.min(requestedLimit || capacity, capacity, 100000000))
+  // 자동 결과는 '권고'로만 저장한다. 최종 심사 상태는 항상 운영자 확인 대기로 시작한다.
+  const status: Application['status'] = 'manual_review'
+  const approvedLimit = (recommendedStatus === 'approved' || recommendedStatus === 'conditional') && capacity >= 5000000
+    ? Math.min(requestedLimit || capacity, capacity, 100000000)
     : 0
 
-  strengths.push(`${industry} 업종 35개 지표 중 ${creditAssessment.measuredCount}개를 산정해 먹투 성장성 예비평가 ${creditAssessment.grade}(${creditAssessment.score}점)이 나왔어요.`)
+  strengths.push(`${industry} 업종 35개 후보 지표 중 ${creditAssessment.measuredCount}개를 산정해 먹투 성장성 예비평가 ${creditAssessment.grade}(${creditAssessment.score}점)이 나왔어요.`)
   if (creditAssessment.topDrivers.length) strengths.push(`가장 크게 기여한 지표는 ${creditAssessment.topDrivers.slice(0, 2).map((item) => item.label).join(', ')}예요.`)
   for (const drag of creditAssessment.topDrags.slice(0, 2)) {
     improvements.push(`${drag.label}이(가) ${industry} 업종 기준으로 하위권(${drag.score}점)이라 예비평가 점수를 낮추고 있어요.`)
   }
   if (creditAssessment.missing.length >= 8) improvements.push(`아직 산정하지 못한 평가 지표가 ${creditAssessment.missing.length}개예요. 대출·계좌·재방문 자료를 연결하면 예비평가 근거가 촘촘해져요.`)
 
-  const explanation = status === 'approved'
+  if (capacityBelowMinimum) improvements.push(`계산된 상환 가능액이 ${won(capacity)}으로 최소 모집액 500만원보다 적어 자동 한도를 0원으로 두고 운영자 검토로 넘겼어요.`)
+
+  const explanation = recommendedStatus === 'approved'
     ? '핵심 원천데이터가 연결됐고 3중 검증의 일치도가 높아 펀딩 개설을 운영자에게 제안할 수 있어요. 이 결과는 금융기관의 공식 신용평가나 정부 SCB 결과가 아닌 먹투 성장성 예비평가입니다.'
-    : status === 'conditional'
+    : recommendedStatus === 'conditional'
       ? '성장성은 확인됐지만 일부 자료의 최신성이나 상환부담 확인이 필요해 낮춘 한도로 먼저 시작하는 조건부 승인을 권해요.'
-      : status === 'manual_review'
+      : recommendedStatus === 'manual_review'
         ? '자료가 부족하다는 이유만으로 탈락시키지 않고 추가 연결·서류와 사업주의 설명을 함께 보는 수동 심사로 넘겼어요.'
         : '교차검증에서 위험 신호가 커 바로 모금을 열기 어렵지만, 자료 보강과 개선 후 다시 신청할 수 있어요.'
 
@@ -3510,9 +3570,11 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
     id: id('application'), userId: req.user!.id,
     // 기존 가게의 다음 회차면 상호명을 그 가게 이름으로 고정한다. 오타 하나로 다른 가게가 되면 안 된다.
     restaurantName: targetRestaurant?.name || restaurantName,
-    submittedAt: now(), status,
+    submittedAt: now(), status, recommendedStatus,
     requestedLimit, approvedLimit, score,
     data: { ...submittedFields, uploadedDocuments, documentMetadata, connectedSources, sourceProvenance, dataConfidence,
+      documentIds: Object.fromEntries(applicationDocuments.map((item) => [item.sourceId, item.id])),
+      documentReviewSnapshot,
       ocrAnalysisIds: myAnalyses.map((item) => item.id),
       // 화면은 이름을 아는 지표만 그린다. 집계 중간값이 라벨 없이 새어 나가지 않게 한다.
       derivedMetrics: displayMetrics,
@@ -3533,7 +3595,8 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
   if (req.user!.sessionMode === 'demo') {
     const sandbox = demoSandbox(req.user!.id, 'owner')
     sandbox.applications.unshift(application)
-    sandbox.documents = sandbox.documents.map((item) => (item.usedInApplicationIds.includes(application.id)
+    const usedDocumentIds = new Set(applicationDocuments.map((item) => item.id))
+    sandbox.documents = sandbox.documents.map((item) => (!usedDocumentIds.has(item.id) || item.usedInApplicationIds.includes(application.id)
       ? item : { ...item, usedInApplicationIds: [...item.usedInApplicationIds, application.id] }))
     demoNotification(sandbox, 'application', '체험 심사 완료', `${restaurantName} 먹투 성장성 예비평가 ${score}점 · 결과 ${creditAssessment.grade}`, '/owner')
     return res.status(201).json({ message: '체험 심사가 끝났어요. 결과는 저장되지 않습니다.', application, ephemeral: true, demoNotice: DEMO_NOTICE })
@@ -3554,12 +3617,13 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
   }
   db.applications.push(application)
   // 문서함에 있는 자료가 이번 신청에 쓰였다는 것을 남긴다. 다음 라운드에 무엇을 다시 썼는지 추적한다.
-  db.documents = (db.documents ?? []).map((item) => (item.userId === req.user!.id && !item.usedInApplicationIds.includes(application.id)
+  const usedDocumentIds = new Set(applicationDocuments.map((item) => item.id))
+  db.documents = (db.documents ?? []).map((item) => (item.userId === req.user!.id && usedDocumentIds.has(item.id) && !item.usedInApplicationIds.includes(application.id)
     ? { ...item, usedInApplicationIds: [...item.usedInApplicationIds, application.id] } : item))
   recordConsent(req.user!.id, 'owner_application', applyConsent.documentIds, { resourceType: 'application', resourceId: application.id })
   // 감사 로그는 사장님 화면에 그대로 보인다. 내부 코드값 대신 사람이 읽는 말로 남긴다.
-  const statusWord = { approved: '펀딩 가능', conditional: '조건부 승인', manual_review: '운영자 확인 필요', rejected: '보완 필요' }[status]
-  audit(req.user!.id, 'application.analyzed', 'application', application.id, `${restaurantName} 예비심사 ${statusWord} · ${score}점`)
+  const statusWord = { approved: '승인 권고', conditional: '조건부 승인 권고', manual_review: '운영자 확인 필요', rejected: '보완 권고' }[recommendedStatus]
+  audit(req.user!.id, 'application.analyzed', 'application', application.id, `${restaurantName} 예비분석 ${statusWord} · ${score}점`)
   audit(req.user!.id, 'application.credit_graded', 'application', application.id,
     `먹투 성장성 예비평가 ${creditAssessment.grade} (${creditAssessment.score}점) · ${creditAssessment.industry} 업종 · 지표 ${creditAssessment.measuredCount}/${creditAssessment.totalCount} 산정`)
   audit(req.user!.id, 'application.business_verified', 'application', application.id, `사업자 진위확인 ${businessVerification.verified ? '통과' : '보완 필요'}`)
@@ -3792,6 +3856,7 @@ app.post('/api/owner/documents', auth('owner'), async (req: AuthedRequest, res) 
     classification: { ...computed, model: 'meoktu-document-classifier-v1' },
     reclassified,
     fields: incomingFields.length ? mergeFields(existing.fields, incomingFields) : existing.fields,
+    correctionHistory: existing.correctionHistory ?? [],
     updatedAt: timestamp,
   } : {
     id: req.user!.sessionMode === 'demo' ? demoId('document') : id('document'),
@@ -3801,6 +3866,7 @@ app.post('/api/owner/documents', auth('owner'), async (req: AuthedRequest, res) 
     classification: { ...computed, model: 'meoktu-document-classifier-v1' },
     reclassified,
     fields: incomingFields,
+    correctionHistory: [],
     status: 'pending',
     createdAt: timestamp, updatedAt: timestamp,
     usedInApplicationIds: [],
@@ -3841,29 +3907,55 @@ app.patch('/api/owner/documents/:documentId', auth('owner'), async (req: AuthedR
   if (!document) return res.status(404).json({ error: '문서함에서 자료를 찾을 수 없어요.' })
 
   const updates = Array.isArray(req.body.fields) ? req.body.fields.slice(0, 24) : []
+  const timestamp = now()
+  const history: DocumentCorrection[] = [...(document.correctionHistory ?? [])]
   const nextFields = document.fields.map((field) => {
     const update = updates.find((item: Record<string, unknown>) => String(item.key) === field.key)
     if (!update) return field
-    if (update.confirmed === true) return { ...field, confirmedValue: field.aiValue, state: 'confirmed' as const }
+    const previousValue = effectiveValue(field)
+    if (update.confirmed === true) {
+      if (field.state === 'ai') history.push({
+        id: id('document-correction'), action: 'confirmed', fieldKey: field.key, label: field.label,
+        aiValue: field.aiValue, previousValue, confirmedValue: field.aiValue, createdAt: timestamp,
+      })
+      return { ...field, confirmedValue: field.aiValue, state: 'confirmed' as const }
+    }
     if (update.value !== undefined && update.value !== null) {
       const value = String(update.value).slice(0, 200)
-      return { ...field, confirmedValue: value, state: value === field.aiValue ? ('confirmed' as const) : ('corrected' as const) }
+      const action = value === field.aiValue ? ('confirmed' as const) : ('corrected' as const)
+      if (field.state === 'ai' || previousValue !== value || field.state !== action) history.push({
+        id: id('document-correction'), action, fieldKey: field.key, label: field.label,
+        aiValue: field.aiValue, previousValue, confirmedValue: value, createdAt: timestamp,
+      })
+      return { ...field, confirmedValue: value, state: action }
     }
     return field
   })
   const nextSource = req.body.sourceId ? String(req.body.sourceId).slice(0, 40) : document.sourceId
+  if (nextSource !== document.sourceId) history.push({
+    id: id('document-correction'), action: 'reclassified', label: '자료 종류',
+    fromSourceId: document.sourceId, toSourceId: nextSource, createdAt: timestamp,
+  })
   const everyFieldReviewed = nextFields.length > 0 && nextFields.every((field) => field.state !== 'ai')
   const updated: OwnerDocument = {
     ...document,
     sourceId: nextSource,
     reclassified: document.reclassified || nextSource !== document.classification.sourceId,
     fields: nextFields,
+    correctionHistory: history.slice(-100),
     status: everyFieldReviewed || req.body.confirmAll === true ? 'confirmed' : document.status,
-    updatedAt: now(),
+    updatedAt: timestamp,
   }
   if (req.body.confirmAll === true) {
-    updated.fields = updated.fields.map((field) => field.state === 'ai'
-      ? { ...field, confirmedValue: field.aiValue, state: 'confirmed' as const } : field)
+    updated.fields = updated.fields.map((field) => {
+      if (field.state !== 'ai') return field
+      updated.correctionHistory!.push({
+        id: id('document-correction'), action: 'confirmed', fieldKey: field.key, label: field.label,
+        aiValue: field.aiValue, previousValue: field.aiValue, confirmedValue: field.aiValue, createdAt: timestamp,
+      })
+      return { ...field, confirmedValue: field.aiValue, state: 'confirmed' as const }
+    })
+    updated.correctionHistory = updated.correctionHistory!.slice(-100)
   }
   const correctedCount = updated.fields.filter((field) => field.state === 'corrected').length
 

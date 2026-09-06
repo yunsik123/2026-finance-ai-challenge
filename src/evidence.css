@@ -234,6 +234,58 @@
 .locker-row small { color: var(--muted); font-size: 11px; }
 .locker-row .locker-remove { border: 0; background: none; color: var(--muted); padding: 4px; }
 .locker-row .locker-remove svg { width: 15px; height: 15px; }
+.locker-actions { display: flex; align-items: center; gap: 6px; }
+.locker-row .locker-review {
+  border: 1px solid var(--line); background: var(--paper); color: var(--green); border-radius: 9px;
+  padding: 7px 10px; font-size: 11.5px; font-weight: 800; display: inline-flex; align-items: center; gap: 5px;
+}
+.locker-row .locker-review svg { width: 14px; height: 14px; }
+
+.document-review-backdrop {
+  position: fixed; inset: 0; z-index: 1200; background: rgba(13, 30, 38, .62); padding: 24px;
+  display: grid; place-items: center; overflow-y: auto;
+}
+.document-review-card {
+  width: min(820px, 100%); max-height: calc(100vh - 48px); overflow-y: auto; border-radius: 22px;
+  background: var(--paper); padding: 22px; box-shadow: 0 24px 70px rgba(8, 26, 34, .28); display: grid; gap: 18px;
+}
+.document-review-card > header { display: flex; justify-content: space-between; gap: 16px; }
+.document-review-card > header span { color: var(--green); font-size: 12px; font-weight: 900; }
+.document-review-card > header h3 { margin: 3px 0; font-size: 21px; word-break: break-all; }
+.document-review-card > header p { margin: 0; color: var(--ink-soft); font-size: 12.5px; line-height: 1.55; }
+.document-review-card > header button { border: 0; background: none; color: var(--muted); align-self: flex-start; }
+.document-review-card > header button svg { width: 20px; height: 20px; }
+.document-review-basis { display: grid; grid-template-columns: minmax(190px, .7fr) minmax(0, 1.3fr); gap: 10px; }
+.document-review-basis > * { border: 1px solid var(--line); border-radius: 13px; padding: 12px; background: var(--surface-soft); }
+.document-review-basis label, .document-review-basis div { display: grid; gap: 5px; }
+.document-review-basis span, .document-review-basis small { color: var(--muted); font-size: 11px; }
+.document-review-basis select { border: 1px solid var(--line); background: var(--paper); border-radius: 8px; padding: 8px; font-weight: 700; }
+.document-review-basis b { font-size: 12.5px; }
+.document-review-fields { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.document-review-field { display: grid; grid-template-columns: 120px minmax(0, 1fr) minmax(0, 1fr); gap: 10px; align-items: center; padding: 10px 12px; border-top: 1px solid var(--line); }
+.document-review-field:first-child { border-top: 0; }
+.document-review-field.head { color: var(--muted); background: var(--surface-soft); font-size: 11px; font-weight: 800; }
+.document-review-field > b, .document-review-field > span { font-size: 12.5px; word-break: break-all; }
+.document-review-field input { border: 1px solid var(--line); border-radius: 8px; padding: 8px 9px; min-width: 0; font: inherit; }
+.document-review-field.corrected input { border-color: rgba(255, 105, 72, .5); background: #fffaf7; }
+.document-correction-history { display: grid; gap: 7px; }
+.document-correction-history h4 { margin: 0; font-size: 14px; }
+.document-correction-history h4 small { color: var(--muted); }
+.document-correction-history > p:not(.document-review-empty) { margin: 0; display: grid; grid-template-columns: 155px 120px minmax(0, 1fr); gap: 8px; padding: 8px 10px; border-radius: 9px; background: var(--surface-soft); font-size: 11.5px; }
+.document-correction-history time { color: var(--muted); }
+.document-review-empty { margin: 0; border: 1px dashed var(--line); border-radius: 12px; padding: 14px; color: var(--muted); font-size: 12px; }
+.document-review-card > footer { display: flex; justify-content: flex-end; gap: 8px; }
+
+@media (max-width: 680px) {
+  .document-review-backdrop { padding: 10px; }
+  .document-review-card { max-height: calc(100vh - 20px); padding: 16px; }
+  .document-review-basis { grid-template-columns: 1fr; }
+  .document-review-field { grid-template-columns: 90px minmax(0, 1fr); }
+  .document-review-field input { grid-column: 1 / -1; }
+  .document-correction-history > p:not(.document-review-empty) { grid-template-columns: 1fr; }
+  .locker-row { grid-template-columns: 1fr; }
+  .locker-actions { justify-content: space-between; }
+}
 
 @media (max-width: 820px) {
   .reading-body { grid-template-columns: 1fr; }

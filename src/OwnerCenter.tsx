@@ -528,6 +528,12 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
   const openedFile = openedDocument ? selectedFiles[openedDocument] : undefined
   const lockerDocuments: OwnerDocument[] = ownerData?.documents || []
   const documentStats: DocumentStats | undefined = ownerData?.documentStats
+  const reviewableDocuments = useMemo(() => {
+    const byId = new Map<string, OwnerDocument>()
+    for (const document of lockerDocuments) byId.set(document.id, document)
+    for (const document of Object.values(documentRecords)) byId.set(document.id, document)
+    return [...byId.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  }, [lockerDocuments, documentRecords])
 
   /** 필수 자료가 업로드 또는 기관연결로 채워졌는지. */
   /*
@@ -813,7 +819,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
           }
           const metadata = await placeFile(classification.sourceId, working)
           setClassifications((current) => ({ ...current, [classification.sourceId]: classification }))
-          void registerDocument({ file: working, sourceId: classification.sourceId, metadata })
+          await registerDocument({ file: working, sourceId: classification.sourceId, metadata })
           placed += 1
           continue
         }
@@ -836,7 +842,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
         }
         const metadata = await placeFile(resolved, original)
         setClassifications((current) => ({ ...current, [resolved]: response.classification }))
-        void registerDocument({
+        await registerDocument({
           file: original, sourceId: resolved, metadata,
           documentType: String((response.analysis.result as Record<string, unknown>)?.documentType || ''),
           ocrAnalysisId: response.analysis.id, fields: response.fields,
@@ -860,6 +866,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
     setSelectedFiles((current) => { const next = { ...current }; delete next[sourceId]; return next })
     setUploadedFiles((current) => { const next = { ...current }; delete next[sourceId]; return next })
     setDocumentMetadata((current) => { const next = { ...current }; delete next[sourceId]; return next })
+    setDocumentRecords((current) => { const next = { ...current }; delete next[sourceId]; return next })
   }
 
   const selectFile = async (sourceId: string, event: ChangeEvent<HTMLInputElement>) => {
@@ -884,7 +891,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
       notify(metadata.rowCount
         ? `${working.name}: ${metadata.headers.length}개 열·${metadata.rowCount.toLocaleString('ko-KR')}개 행을 확인했어요.`
         : `${working.name} 파일 형식과 크기를 확인했어요.`)
-      void registerDocument({ file: working, sourceId, metadata })
+      await registerDocument({ file: working, sourceId, metadata })
     } catch (error) { if (filesRef.current[sourceId] === working) notify((error as Error).message) }
   }
 
@@ -968,6 +975,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
     filesRef.current = {}
     setSelectedFiles({})
     setDocumentMetadata({})
+    setDocumentRecords({})
     setIntakeNote('')
     for (const option of uploadOptions) {
       const field = document.querySelector<HTMLInputElement>(`input[name="document-${option.id}"]`)
@@ -993,6 +1001,23 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
       setOwnerData(await api<any>('/api/owner'))
       notify('문서함에서 지웠어요.')
     } catch (error) { notify((error as Error).message) }
+  }
+
+  /** 판독값 확인·수정과 분류 교정을 저장하고, 현재 신청이 참조하는 문서도 즉시 바꾼다. */
+  const reviewLockerDocument = async (documentId: string, body: Record<string, unknown>) => {
+    const response = await api<{ document: OwnerDocument; message: string }>(`/api/owner/documents/${documentId}`, {
+      method: 'PATCH', body: JSON.stringify(body),
+    })
+    setDocumentRecords((current) => Object.fromEntries(Object.entries(current).map(([sourceId, document]) =>
+      document.id === documentId ? [response.document.sourceId || sourceId, response.document] : [sourceId, document],
+    )))
+    setOwnerData((current: any) => current ? {
+      ...current,
+      documents: (current.documents || []).map((document: OwnerDocument) => document.id === documentId ? response.document : document),
+    } : current)
+    notify(response.message)
+    // 서버 통계까지 다시 읽어 정정 건수·판독 일치율이 화면과 바로 맞게 한다.
+    setOwnerData(await api<any>('/api/owner'))
   }
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
@@ -1026,6 +1051,10 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
         ownership: ownership.filter((row) => row.name.trim() && row.share > 0),
         connectedSources,
         uploadedDocuments: uploadedFiles,
+        // 이번 신청에 선택한 문서만 OCR 결과와 연결한다.
+        documentIds: Object.fromEntries(Object.entries(documentRecords)
+          .filter(([sourceId, document]) => uploadedFiles[sourceId] === document.filename)
+          .map(([sourceId, document]) => [sourceId, document.id])),
         documentContents,
         documentMetadata,
         identityVerified,
@@ -1059,7 +1088,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
   return <div className="owner-page owner-v2">
     <section className="owner-page-hero">
       <div><span className="eyebrow light"><Store /> 먹투 사장님 센터</span><h1>가지고 계신 자료를<br /><em>그냥 올려주세요.</em></h1><p>재무제표를 새로 만들 필요 없어요. 사진·PDF·엑셀·CSV 무엇이든 올리면 먹투가 자료를 알맞은 항목으로 분류하고 평가에 필요한 정보를 정리합니다.</p><div className="owner-values"><span><Check /> 신청비 0원</span><span><Check /> 양식 작성 없음</span><span><Check /> 사진·PDF·엑셀 가능</span><span><Check /> 자동 분류</span><span><Check /> 자료 근거 제공</span><span><Check /> 부족한 자료는 미산정</span></div></div>
-      <div className="review-flow data-flow"><b>펀딩 등록 흐름</b>{['가게 정보 확인', '자료 올리기 · 자동 분류', '동의와 자금 계획', '35지표 성장성 예비평가', '운영자 확인 후 펀딩 등록'].map((title, index) => <div key={title}><span>{index + 1}</span><p>{title}</p><Check /></div>)}</div>
+      <div className="review-flow data-flow"><b>펀딩 등록 흐름</b>{['가게 정보 확인', '자료 올리기 · 자동 분류', '동의와 자금 계획', '35개 후보 지표 예비평가', '운영자 확인 후 펀딩 등록'].map((title, index) => <div key={title}><span>{index + 1}</span><p>{title}</p><Check /></div>)}</div>
     </section>
 
     <div className="owner-page-body">
@@ -1075,11 +1104,11 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
         <div className="result-heading">
           <span className={`result-badge ${result.status}`}>{result.status === 'approved' ? '펀딩 가능' : result.status === 'conditional' ? '조건부 승인' : result.status === 'manual_review' ? '운영자 확인 필요' : '보완 필요'}</span>
           <h2>먹투 성장성 예비평가 결과</h2>
-          <p>{result.restaurantName} · 운영자 최종 검토 전 예비평가입니다.</p>
+          <p>{result.restaurantName} · 자동 계산 권고 {result.recommendedStatus === 'approved' ? '승인' : result.recommendedStatus === 'conditional' ? '조건부 승인' : result.recommendedStatus === 'rejected' ? '보완' : '수동 검토'} · 운영자 최종 검토 전입니다.</p>
         </div>
         <div className={`result-score-primary ${result.status}`}>
           <div><span>먹투 성장성 예비평가</span><strong>{result.score}<small>/100</small></strong><p>{result.explanation}</p></div>
-          <aside><span>AI 제안 한도</span><b>{won(result.approvedLimit)}</b>{result.requestedLimit ? <small>희망 펀딩액 {won(result.requestedLimit)}</small> : null}</aside>
+          <aside><span>자동 계산 제안 한도</span><b>{won(result.approvedLimit)}</b>{result.requestedLimit ? <small>희망 펀딩액 {won(result.requestedLimit)}</small> : null}</aside>
         </div>
         {result.data?.creditAssessment && <CreditGradePanel credit={result.data.creditAssessment} combined={result.data.combinedAssessment} />}
 
@@ -1214,9 +1243,16 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
                 onFiles={(files) => void intakeFiles(files)}
               />
 
+              {reviewableDocuments.length > 0 && <DocumentLocker
+                documents={reviewableDocuments}
+                stats={documentStats}
+                onReview={reviewLockerDocument}
+                onRemove={(id) => void removeLockerDocument(id)}
+              />}
+
               <div className="form-section evidence-source-section">
                 <div className="form-section-title"><span>2</span><div><h3>자료가 어느 칸에 들어갔는지 확인해주세요</h3><p>기관에서 동의 기반으로 전송받은 자료와 사장님이 직접 올린 파일을 원장에 서로 다른 출처로 남깁니다.</p></div></div>
-                <div className="source-progress"><div><b>{evidenceCount}개</b><span>확보 자료</span></div><div className="progress-track"><i style={{ width: `${Math.min(100, evidenceCount / uploadOptions.length * 100)}%` }} /></div><small>필수: 사업자등록·영업신고 + POS·사업계좌(기관 연결 또는 직접 업로드)</small></div>
+                <div className="source-progress"><div><b>{evidenceCount}개</b><span>확보 자료</span></div><div className="progress-track"><i style={{ width: `${Math.min(100, evidenceCount / uploadOptions.length * 100)}%` }} /></div><small>필수: 사업자등록·영업신고·사업계좌 + 매출자료 택1(POS·카드·납세·배달)</small></div>
                 {missingRequired.length > 0 && <p className="wizard-missing"><TriangleAlert /> 아직 없는 필수 자료: {missingRequired.map((source) => labelOf(source)).join(', ')}</p>}
 
                 {/* 기관 연결은 동의서를 읽고 나서만 이뤄진다. 신용정보 제공 동의를 버튼 한 번으로
@@ -1414,9 +1450,16 @@ function UniversalIntake({ dragging, busy, note, onDragState, onFiles }: {
  * "판독이 얼마나 정확한가"를 말할 근거도 남지 않았다.
  * 여기서 확인·수정 이력을 보여준다. 확인한 항목 중 그대로 맞았던 비율이 곧 판독 정확도다.
  */
-function DocumentLocker({ documents, stats, onRemove }: { documents: OwnerDocument[]; stats?: DocumentStats; onRemove: (id: string) => void }) {
+function DocumentLocker({ documents, stats, onReview, onRemove }: {
+  documents: OwnerDocument[]
+  stats?: DocumentStats
+  onReview: (id: string, body: Record<string, unknown>) => Promise<void>
+  onRemove: (id: string) => void
+}) {
   const [open, setOpen] = useState(false)
+  const [reviewId, setReviewId] = useState('')
   const shown = open ? documents : documents.slice(0, 4)
+  const reviewing = documents.find((document) => document.id === reviewId)
   return <div className="document-locker">
     <header>
       <b>내 문서함 <small>{documents.length}건</small></b>
@@ -1440,12 +1483,67 @@ function DocumentLocker({ documents, stats, onRemove }: { documents: OwnerDocume
             {document.reclassified ? ' · 분류를 사장님이 고침' : ''}
           </small>
         </div>
-        <button type="button" className="locker-remove" onClick={() => onRemove(document.id)} aria-label={`${document.filename} 문서함에서 지우기`}><Trash2 /></button>
+        <div className="locker-actions">
+          <button type="button" className="locker-review" onClick={() => setReviewId(document.id)}><Eye /> {document.fields.length ? '판독값 확인·정정' : '분류 근거 확인'}</button>
+          <button type="button" className="locker-remove" onClick={() => onRemove(document.id)} aria-label={`${document.filename} 문서함에서 지우기`}><Trash2 /></button>
+        </div>
       </div>)}
     </div>
     {documents.length > 4 && <button type="button" className="locker-more" onClick={() => setOpen(!open)}>
       {open ? '접기' : `나머지 ${documents.length - 4}건 더 보기`}
     </button>}
+    {reviewing && <DocumentReviewEditor key={`${reviewing.id}:${reviewing.updatedAt}`} document={reviewing} onSave={onReview} onClose={() => setReviewId('')} />}
+  </div>
+}
+
+/** 사용자가 AI 판독값과 그 분류 근거를 한 화면에서 대조하고 확정한다. */
+function DocumentReviewEditor({ document, onSave, onClose }: {
+  document: OwnerDocument
+  onSave: (id: string, body: Record<string, unknown>) => Promise<void>
+  onClose: () => void
+}) {
+  const [sourceId, setSourceId] = useState(document.sourceId)
+  const [values, setValues] = useState<Record<string, string>>(Object.fromEntries(
+    document.fields.map((field) => [field.key, field.confirmedValue ?? field.aiValue ?? '']),
+  ))
+  const [saving, setSaving] = useState(false)
+  const history = [...(document.correctionHistory || [])].reverse()
+  const save = async () => {
+    setSaving(true)
+    try {
+      await onSave(document.id, {
+        sourceId,
+        fields: document.fields.map((field) => ({ key: field.key, value: values[field.key] ?? '' })),
+        confirmAll: true,
+      })
+      onClose()
+    } finally { setSaving(false) }
+  }
+  return <div className="document-review-backdrop" onMouseDown={onClose}>
+    <section className="document-review-card" onMouseDown={(event) => event.stopPropagation()} aria-label="판독값 확인과 사용자 정정">
+      <header><div><span>평가에 반영될 자료 확인</span><h3>{document.filename}</h3><p>AI가 읽은 값과 사장님 확정값을 나란히 확인합니다. 저장한 확정값이 이번 신청의 교차검증과 평가 근거에 반영됩니다.</p></div><button type="button" onClick={onClose} aria-label="닫기"><X /></button></header>
+      <div className="document-review-basis">
+        <label><span>자료 종류</span><select value={sourceId} onChange={(event) => setSourceId(event.target.value)}>{uploadOptions.map((option) => <option key={option.id} value={option.id}>{option.title}</option>)}</select></label>
+        <div><span>자동 분류 근거</span><b>{document.classification.reason}</b><small>판단 방식 {document.classification.basis} · 확신 {Math.round(document.classification.confidence * 100)}%</small></div>
+      </div>
+      {document.fields.length ? <div className="document-review-fields">
+        <div className="document-review-field head"><span>항목</span><span>AI 판독값</span><span>사장님 확정값</span></div>
+        {document.fields.map((field) => <label className={`document-review-field ${field.state}`} key={field.key}>
+          <b>{field.label}</b><span>{field.aiValue || '값 없음'}</span><input value={values[field.key] ?? ''} maxLength={200} onChange={(event) => setValues((current) => ({ ...current, [field.key]: event.target.value }))} aria-label={`${field.label} 확정값`} />
+        </label>)}
+      </div> : <p className="document-review-empty">이 자료는 표의 열·행 구조를 서버가 직접 계산하므로 개별 OCR 판독값이 없습니다. 위 자동 분류 근거를 확인해주세요.</p>}
+      <section className="document-correction-history">
+        <h4>사용자 정정 내역 <small>{history.length}건</small></h4>
+        {history.length ? history.map((event) => <p key={event.id}>
+          <time>{new Date(event.createdAt).toLocaleString('ko-KR')}</time>
+          <b>{event.label}</b>
+          <span>{event.action === 'reclassified'
+            ? `${labelOf(event.fromSourceId || '')} → ${labelOf(event.toSourceId || '')}`
+            : event.action === 'corrected' ? `${event.aiValue || '값 없음'} → ${event.confirmedValue || '값 없음'}` : `${event.confirmedValue || event.aiValue || '값 없음'} 확인`}</span>
+        </p>) : <p className="document-review-empty">아직 저장된 확인·정정 내역이 없습니다.</p>}
+      </section>
+      <footer><button type="button" className="button secondary" onClick={onClose}>취소</button><button type="button" className="button" disabled={saving} onClick={() => void save()}>{saving ? '저장 중...' : document.fields.length ? '확정값 저장' : '분류 확인 저장'}</button></footer>
+    </section>
   </div>
 }
 

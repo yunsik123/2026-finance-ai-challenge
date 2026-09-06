@@ -210,6 +210,8 @@ export interface OwnerDocument {
   /** 사장님이 분류를 손으로 바꿨는가. */
   reclassified: boolean
   fields: DocumentField[]
+  /** 사장님이 판독값·분류를 확인하거나 고친 순서. 현재값만 덮어쓰지 않고 감사 가능하게 남긴다. */
+  correctionHistory?: DocumentCorrection[]
   ocrAnalysisId?: string
   rowCount?: number
   headers?: string[]
@@ -218,6 +220,19 @@ export interface OwnerDocument {
   updatedAt: string
   /** 이 문서가 반영된 심사 신청 id. 재신청 때 어느 자료를 다시 썼는지 추적한다. */
   usedInApplicationIds: string[]
+}
+
+export type DocumentCorrection = {
+  id: string
+  action: 'confirmed' | 'corrected' | 'reclassified'
+  fieldKey?: string
+  label: string
+  aiValue?: string | null
+  previousValue?: string | null
+  confirmedValue?: string | null
+  fromSourceId?: string
+  toSourceId?: string
+  createdAt: string
 }
 
 export type DocumentField = {

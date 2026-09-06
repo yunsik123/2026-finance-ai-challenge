@@ -26,7 +26,7 @@ export default function CreditGradePanel({ credit, combined }: { credit: CreditA
       <div>
         <span className="eyebrow">먹투 성장성 예비평가</span>
         <h2>{credit.industry} 업종 기준 예비평가 결과</h2>
-        <p>35개 지표 중 {credit.measuredCount}개를 산정했어요. {credit.industryNote}</p>
+        <p>35개 후보 지표 중 {credit.measuredCount}개를 산정했어요. {credit.industryNote}</p>
       </div>
       {/* 산정률이 절반에 못 미치면 확정 등급이라고 말할 수 없다.
           등급만 크게 보이면 자료를 덜 낸 결과가 확정 판정처럼 읽힌다. */}
@@ -85,7 +85,7 @@ export default function CreditGradePanel({ credit, combined }: { credit: CreditA
     </div>}
 
     <button type="button" className="credit-toggle" onClick={() => setOpenAll((current) => !current)}>
-      35개 지표 전부 보기 <ChevronDown className={openAll ? 'rotated' : ''} />
+      35개 후보 지표 보기 <ChevronDown className={openAll ? 'rotated' : ''} />
     </button>
     {openAll && <div className="credit-table">
       <div className="credit-row credit-row-head"><span>지표</span><span>값</span><span>점수</span><span>가중치</span></div>

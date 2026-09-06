@@ -265,6 +265,8 @@ export interface KnowledgeGraph {
 
 export interface ApplicationResult {
   id: string; restaurantName: string; status: 'approved' | 'conditional' | 'manual_review' | 'rejected'
+  /** 자동 계산이 낸 권고. status는 운영자의 최종 처리 상태다. */
+  recommendedStatus?: 'approved' | 'conditional' | 'manual_review' | 'rejected'
   requestedLimit: number; approvedLimit: number; score: number; strengths: string[]; checks: string[]; improvements: string[]
   explanation: string; submittedAt: string
   /** 운영자가 보완을 요청하며 적은 말. 무엇을 고쳐야 하는지가 여기 담긴다. */
@@ -431,6 +433,7 @@ export interface OwnerDocument {
   classification: DocumentClassification
   reclassified: boolean
   fields: DocumentField[]
+  correctionHistory?: DocumentCorrection[]
   ocrAnalysisId?: string
   rowCount?: number
   headers?: string[]
@@ -438,6 +441,19 @@ export interface OwnerDocument {
   createdAt: string
   updatedAt: string
   usedInApplicationIds: string[]
+}
+
+export type DocumentCorrection = {
+  id: string
+  action: 'confirmed' | 'corrected' | 'reclassified'
+  fieldKey?: string
+  label: string
+  aiValue?: string | null
+  previousValue?: string | null
+  confirmedValue?: string | null
+  fromSourceId?: string
+  toSourceId?: string
+  createdAt: string
 }
 
 export type DocumentStats = {

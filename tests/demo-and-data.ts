@@ -32,13 +32,14 @@ assert(demoTopup.ephemeral === true, '체험 충전 결과는 비영구임을 �
 assert(demoTopup.balance === demoInvestorMe.user.cash + 50000, '체험 충전이 체험 잔액에 반영되어야 합니다.')
 
 const demoTarget = (await ok('/api/public')).restaurants.find((item: any) => item.fund.status === 'funding')
+const positionBeforeInvest = demoInvestorMe.positions.find((item: any) => item.fundId === demoTarget.fund.id)?.amount || 0
 const demoInvest = await ok(`/api/funds/${demoTarget.fund.id}/invest`, { method: 'POST', body: JSON.stringify({
   amount: 20000,
   consent: { version: legal.version, documentIds: legal.required.invest, riskAcknowledged: true },
 }) }, demoInvestor.token)
 assert(demoInvest.ephemeral === true, '체험 투자 결과는 비영구임을 표시해야 합니다.')
 const demoAfterInvest = await ok('/api/me', {}, demoInvestor.token)
-assert(demoAfterInvest.positions.some((item: any) => item.fundId === demoTarget.fund.id && item.amount === 20000), '체험 투자금이 체험 포트폴리오에 남아야 합니다.')
+assert(demoAfterInvest.positions.some((item: any) => item.fundId === demoTarget.fund.id && item.amount === positionBeforeInvest + 20000), '체험 투자금이 기존 보유액에 더해져 체험 포트폴리오에 남아야 합니다.')
 
 const demoCoupon = await ok(`/api/positions/${demoAfterInvest.positions[0].id}/coupon`, { method: 'POST' }, demoInvestor.token)
 assert(demoCoupon.coupon?.discount > 0, '체험 투자자는 쿠폰을 발급받아 볼 수 있어야 합니다.')
@@ -54,8 +55,9 @@ assert(sharedPublic.stats.funded === ledgerCashBefore, '체험 투자가 공유 
 const otherDemo = await ok('/api/auth/demo', { method: 'POST', body: JSON.stringify({ role: 'investor' }) })
 const otherDemoMe = await ok('/api/me', {}, otherDemo.token)
 assert(otherDemo.token !== demoInvestor.token && otherDemoMe.user.id !== demoInvestorMe.user.id, '투자자 체험에 다시 들어가면 새 세션이어야 합니다.')
-assert(otherDemoMe.user.cash === demoInvestorMe.demo.startingCash, '새 투자자 체험의 잔액은 시작 금액으로 초기화되어야 합니다.')
-assert(otherDemoMe.positions.length === 0, '체험 세션끼리도 서로의 기록이 보이면 안 됩니다.')
+const otherDemoInvested = otherDemoMe.positions.reduce((sum: number, item: any) => sum + item.amount, 0)
+assert(otherDemoMe.user.cash + otherDemoInvested === demoInvestorMe.demo.startingCash, '새 투자자 체험의 잔액과 기본 투자금 합계는 시작 금액으로 초기화되어야 합니다.')
+assert(otherDemoMe.positions.length === 3 && otherDemoMe.positions.every((item: any) => item.amount > 0), '새 체험 세션은 독립된 기본 응원 식당 3곳으로 시작해야 합니다.')
 // 새 체험 세션의 지갑에는 자기 가입 축하 쿠폰만 있어야 한다. 앞 세션이 발급한 쿠폰이 섞이면 안 된다.
 assert(!otherDemoMe.coupons.some((item: any) => item.id === demoCoupon.coupon.id), '앞 체험 세션의 쿠폰이 보이면 안 됩니다.')
 assert(otherDemoMe.coupons.length === 5 && otherDemoMe.coupons.every((item: any) => item.status === 'available' && !item.fundId),

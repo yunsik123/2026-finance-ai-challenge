@@ -4,9 +4,10 @@ import {
   Eye, MessageSquareWarning, RefreshCw, Search, ShieldCheck, Star, Store, Users, X,
 } from 'lucide-react'
 import { api } from './lib/api.ts'
+import CreditGradePanel from './CreditGradePanel.tsx'
 import EvidencePanel from './EvidencePanel.tsx'
 import { DocumentModal, SubmittedDocumentViewer, fileSizeLabel, type SubmittedDocument } from './DocumentViewer.tsx'
-import type { ApplicationResult, Coupon, Fund, LegalConsentRecord, MeState, Restaurant, Review, User } from './types.ts'
+import type { ApplicationResult, Coupon, Fund, LegalConsentRecord, MeState, OwnerDocument, Restaurant, Review, User } from './types.ts'
 
 const won = (value: number) => `${Math.round(value).toLocaleString('ko-KR')}원`
 const date = (value: string) => new Date(value).toLocaleDateString('ko-KR')
@@ -25,12 +26,16 @@ type Dashboard = {
 }
 type AdminApplicationDetail = {
   application: AdminApplication; owner?: User; restaurant?: Restaurant; fund?: Fund
+  documents?: OwnerDocument[]
   consent?: LegalConsentRecord
 }
 type Tab = 'overview' | 'applications' | 'users' | 'restaurants' | 'funds' | 'reviews' | 'support' | 'coupons' | 'ai'
 
 const applicationLabel: Record<ApplicationResult['status'], string> = {
   approved: '승인', conditional: '조건부 승인', manual_review: '최종 검토 대기', rejected: '보완 필요',
+}
+const recommendationLabel: Record<NonNullable<ApplicationResult['recommendedStatus']>, string> = {
+  approved: '승인 권고', conditional: '조건부 승인 권고', manual_review: '수동 검토 권고', rejected: '보완 권고',
 }
 const sourceLabel: Record<string, string> = {
   business: '사업자등록 자료', license: '영업신고 자료', identity: '대표자 본인인증', pos: 'POS 매출',
@@ -139,7 +144,7 @@ export default function AdminCenter({ me, onLogin, onLogout, notify }: { me: MeS
 
   const applications = <section className="admin-list">{[...filtered(dashboard.applications)].sort((a, b) => Number(b.status === 'manual_review') - Number(a.status === 'manual_review')).map((item) => <article className="admin-row-card" key={item.id}>
     <div className="admin-row-main"><span className={`admin-status ${item.status}`}>{applicationLabel[item.status]}</span><div><small>{item.owner?.name || '사장님'} · {date(item.submittedAt)}</small><h3>{item.restaurantName}</h3><p>{item.explanation}</p></div></div>
-    <div className="admin-score"><small>먹투 성장성 예비평가</small><b>{item.score}</b><span>{item.status === 'approved' ? '운영자 확정 한도' : 'AI 제안 한도'} {won(item.approvedLimit)}</span></div>
+    <div className="admin-score"><small>{item.recommendedStatus ? recommendationLabel[item.recommendedStatus] : '먹투 성장성 예비평가'}</small><b>{item.score}</b><span>{item.status === 'approved' ? '운영자 확정 한도' : '자동 계산 한도'} {won(item.approvedLimit)}</span></div>
     <button className="admin-review-button" disabled={detailLoading === item.id} onClick={() => void openApplication(item.id)}><FileText /> {detailLoading === item.id ? '불러오는 중' : 'AI 평가·제출자료'}</button>
     <select disabled={busy === item.id} value={item.status} onChange={(event) => mutate(item.id, `/api/admin/applications/${item.id}`, { status: event.target.value }, '심사 상태를 변경했어요.')}><option value="approved">승인</option><option value="conditional">조건부 승인</option><option value="manual_review">최종 검토 대기</option><option value="rejected">보완 필요</option></select>
   </article>)}{!filtered(dashboard.applications).length && <Empty text="표시할 심사가 없어요." />}</section>
@@ -172,7 +177,20 @@ export default function AdminCenter({ me, onLogin, onLogout, notify }: { me: MeS
       <header className="admin-review-head"><div><span><ShieldCheck /> AI 심사 완료 · 운영자 최종 검토</span><h2>{detail.application.restaurantName}</h2><p>{detail.owner?.name || '사장님'} · {detail.owner?.email || '-'} · {date(detail.application.submittedAt)}</p></div><div><small>먹투 성장성 예비평가</small><b>{detail.application.score}<em>/100</em></b><span>제안 한도 {won(detail.application.approvedLimit)}</span></div></header>
       <section className="admin-review-section"><h3>신청 내용</h3><div className="admin-review-facts"><span><small>사업자등록번호</small><b>{detailData?.businessNumber || '-'}</b></span><span><small>영업신고번호</small><b>{detailData?.licenseNumber || '-'}</b></span><span><small>사업장 주소</small><b>{detailData?.address || '-'}</b></span><span><small>희망 펀딩액</small><b>{won(Number(detail.application.requestedLimit) || 0)}</b></span></div><div className="admin-plan-grid"><article><b>자금 사용계획</b><p>{detailData?.fundPurpose || '-'}</p></article><article><b>사업계획·차별성</b><p>{detailData?.businessPlan || '-'}</p></article><article><b>예상 효과</b><p>{detailData?.expectedEffect || '-'}</p></article></div></section>
       <section className="admin-review-section"><h3>제출된 자료 <small>{documents.length}개 직접 업로드 · {(detailData?.sourceProvenance?.partnerConnections || []).length}개 기관 연결 · 자료를 누르면 내용을 열어봅니다</small></h3><div className="admin-document-grid">{documents.map(([source, metadata]) => <article key={source}><FileText /><div><b>{sourceLabel[source] || source}</b><span>{metadata.name}</span><small>{fileSizeLabel(metadata.size)} · {metadata.type || '형식 미확인'}{metadata.rowCount ? ` · ${metadata.rowCount.toLocaleString()}행` : ''}</small>{metadata.headers?.length ? <em>열: {metadata.headers.join(', ')}</em> : null}<button type="button" className="doc-open-button" onClick={() => setOpenedDocument(source)}><Eye /> 내용 열어보기</button></div></article>)}</div>{!documents.length && <p className="admin-review-empty">직접 업로드 파일 메타데이터가 없습니다.</p>}<div className="admin-partner-list">{(detailData?.sourceProvenance?.partnerConnections || []).map((item: any) => <span key={item.sourceId}><CheckCircle2 /><b>{sourceLabel[item.sourceId] || item.sourceId}</b> {item.provider} · {item.recordCount?.toLocaleString()}건 · {date(item.lastSyncedAt)}</span>)}</div></section>
-      <section className="admin-review-section"><h3>AI 평가 근거</h3><div className="admin-evaluation-summary"><article><small>35지표 등급</small><b>{credit?.grade || '미산정'}</b><span>{credit ? `${credit.measuredCount}/${credit.totalCount}개 산정` : ''}</span></article><article><small>데이터 신뢰도</small><b>{detailData?.dataConfidence || 0}%</b></article><article><small>사업자 확인</small><b>{detailData?.businessVerification?.verified ? '통과' : '확인 필요'}</b></article></div><p className="admin-ai-explanation">{detail.application.explanation}</p><div className="admin-review-columns"><div><b>확인된 강점</b>{detail.application.strengths.map((item) => <p key={item}><CheckCircle2 /> {item}</p>)}</div><div><b>확인·보완 항목</b>{detail.application.improvements.map((item) => <p key={item}><AlertTriangle /> {item}</p>)}</div></div></section>
+      <section className="admin-review-section"><h3>자동 평가 근거</h3><div className="admin-evaluation-summary"><article><small>35개 후보 지표 등급</small><b>{credit?.grade || '미산정'}</b><span>{credit ? `${credit.measuredCount}/${credit.totalCount}개 산정` : ''}</span></article><article><small>데이터 신뢰도</small><b>{detailData?.dataConfidence || 0}%</b></article><article><small>사업자 확인</small><b>{detailData?.businessVerification?.verified ? '통과' : '확인 필요'}</b></article></div><p className="admin-ai-explanation">{detail.application.explanation}</p><div className="admin-review-columns"><div><b>확인된 강점</b>{detail.application.strengths.map((item) => <p key={item}><CheckCircle2 /> {item}</p>)}</div><div><b>확인·보완 항목</b>{detail.application.improvements.map((item) => <p key={item}><AlertTriangle /> {item}</p>)}</div></div>{credit && <CreditGradePanel credit={credit} combined={detailData?.combinedAssessment} />}</section>
+      {(detail.documents || []).length > 0 && <section className="admin-review-section">
+        <h3>사용자 확인·정정 내역 <small>신청 접수 시점에 동결된 기록입니다</small></h3>
+        <div className="admin-correction-list">{(detail.documents || []).map((document) => {
+          const corrected = document.fields.filter((field) => field.state === 'corrected')
+          const reviewed = document.fields.filter((field) => field.state !== 'ai')
+          return <article key={document.id}>
+            <header><div><b>{document.filename}</b><span>{sourceLabel[document.sourceId] || document.sourceId}</span></div><em>{reviewed.length}/{document.fields.length}개 확인 · {corrected.length}개 정정</em></header>
+            <p className="admin-classification-basis">분류 근거: {document.classification.reason}</p>
+            {document.fields.length > 0 && <div className="admin-correction-fields">{document.fields.map((field) => <p className={field.state} key={field.key}><b>{field.label}</b><span>AI {field.aiValue || '값 없음'}</span><span>확정 {field.state === 'ai' ? '미확인' : field.confirmedValue || '값 없음'}</span></p>)}</div>}
+            {(document.correctionHistory || []).length > 0 && <details><summary>정정 이력 {(document.correctionHistory || []).length}건 보기</summary>{(document.correctionHistory || []).map((event) => <p className="admin-correction-event" key={event.id}><time>{new Date(event.createdAt).toLocaleString('ko-KR')}</time><b>{event.label}</b><span>{event.action === 'reclassified' ? `${sourceLabel[event.fromSourceId || ''] || event.fromSourceId} → ${sourceLabel[event.toSourceId || ''] || event.toSourceId}` : event.action === 'corrected' ? `${event.aiValue || '값 없음'} → ${event.confirmedValue || '값 없음'}` : `${event.confirmedValue || event.aiValue || '값 없음'} 확인`}</span></p>)}</details>}
+          </article>
+        })}</div>
+      </section>}
       {/* 증거 원장. 운영자가 "왜 이 값인가"를 파일·행 단위로 확인할 수 있어야 최종 승인 판단이 가능하다. */}
       {detailData?.evidenceLedger && <section className="admin-review-section">
         <h3>값의 근거와 자료 일치도 <small>지표를 누르면 어느 파일 몇 행에서 나온 값인지 펼칩니다</small></h3>

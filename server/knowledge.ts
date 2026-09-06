@@ -17,6 +17,7 @@
  */
 
 import type { Application, DataConnection, Fund, Restaurant } from './types.ts'
+import { documentGuides, SALES_EVIDENCE_SOURCES } from './issuance.ts'
 
 export const knowledgeAsOf = '2026-08'
 
@@ -213,19 +214,16 @@ export type ReviewStage = { id: string; order: number; label: string; done: stri
 /** 심사 진행 단계. 사장님에게 "지금 몇 번째"를 보여주기 위한 순서값. */
 export const reviewStages: ReviewStage[] = [
   { id: 'stage:identity', order: 1, label: '대표자·사업체 확인', done: '사업자등록번호와 대표자 본인인증이 끝났어요.' },
-  { id: 'stage:evidence', order: 2, label: '자료 제출', done: '필수 자료 4종(사업자등록·영업신고·POS·사업계좌)이 모두 들어왔어요.' },
+  { id: 'stage:evidence', order: 2, label: '자료 제출', done: '사업자등록·영업신고·사업계좌와 매출 확인자료 1종이 모두 들어왔어요.' },
   { id: 'stage:crosscheck', order: 3, label: '자료 대조', done: '제출 자료끼리 값이 서로 맞는지 확인을 마쳤어요.' },
   { id: 'stage:scoring', order: 4, label: '성장성 예비평가', done: '매출·현금흐름·상권을 반영한 예비 점수가 나왔어요.' },
   { id: 'stage:admin', order: 5, label: '운영자 확인', done: '운영자가 원본을 확인하는 단계예요.' },
   { id: 'stage:open', order: 6, label: '모집 공개', done: '투자자에게 공개돼 모금이 진행 중이에요.' },
 ]
 
-const requiredSourceLabels: Record<string, string> = {
-  business: '사업자등록 자료',
-  license: '영업신고 자료',
-  pos: 'POS 매출 원자료',
-  account: '사업용 계좌 거래내역',
-}
+const requiredSourceLabels: Record<string, string> = Object.fromEntries(
+  documentGuides.filter((guide) => guide.requirement === 'required').map((guide) => [guide.sourceId, guide.title]),
+)
 
 const optionalSourceLabels: Record<string, string> = {
   card: '카드·정산 자료',
@@ -256,7 +254,12 @@ export function ownerSituation(input: {
   const connectedFromPartner = connections.filter((item) => item.status === 'active').map((item) => item.sourceId as string)
   const connected = [...new Set([...connectedFromApplication, ...connectedFromPartner])]
 
-  const missingRequired = Object.keys(requiredSourceLabels).filter((source) => !connected.includes(source))
+  const missingRequiredSources = Object.keys(requiredSourceLabels).filter((source) => !connected.includes(source))
+  const hasSalesEvidence = SALES_EVIDENCE_SOURCES.some((source) => connected.includes(source))
+  const missingRequired = [
+    ...missingRequiredSources.map((source) => requiredSourceLabels[source]),
+    ...(!hasSalesEvidence ? ['매출 확인자료(POS·카드·납세·배달 중 1개)'] : []),
+  ]
   const missingOptional = Object.keys(optionalSourceLabels).filter((source) => !connected.includes(source))
   const verification = application?.data?.financialVerification as Record<string, any> | undefined
   const mismatches: string[] = Array.isArray(verification?.mismatches) ? verification!.mismatches.map(String) : []
@@ -285,11 +288,11 @@ export function ownerSituation(input: {
   // 다음에 할 일. 가장 효과가 큰 것부터 최대 4개.
   const nextActions: string[] = []
   if (!application) {
-    if (missingRequired.length) nextActions.push(`필수 자료 중 ${missingRequired.map((s) => requiredSourceLabels[s]).join(', ')}이(가) 아직 없어요. 사장님 센터에서 올리거나 기관 연결로 채워주세요.`)
+    if (missingRequired.length) nextActions.push(`필수 자료 중 ${missingRequired.join(', ')}이(가) 아직 없어요. 사장님 센터에서 올리거나 기관 연결로 채워주세요.`)
     else nextActions.push('필수 자료가 다 모였어요. 사장님 센터에서 “먹투 자동분석 시작”을 눌러 심사를 접수해주세요.')
   } else {
     if (mismatches.length) nextActions.push(`제출 자료 사이에 맞지 않는 값이 ${mismatches.length}건 있어요: ${mismatches.slice(0, 2).join(' / ')}`)
-    if (missingRequired.length) nextActions.push(`필수 자료 ${missingRequired.map((s) => requiredSourceLabels[s]).join(', ')}이(가) 비어 있어 자동심사로 넘어가지 못해요.`)
+    if (missingRequired.length) nextActions.push(`필수 자료 ${missingRequired.join(', ')}이(가) 비어 있어 자동분석으로 넘어가지 못해요.`)
     if (application.status === 'conditional') nextActions.push('조건부 승인이라 한도가 낮게 잡혔어요. 홈택스·대출 자료를 추가하면 한도 재산정을 요청할 수 있어요.')
     if (application.status === 'manual_review') nextActions.push('운영자가 원본을 확인하는 중이에요. 추가 자료를 올려두면 확인이 빨라집니다.')
     if (missingOptional.length >= 4) nextActions.push(`선택 자료(${missingOptional.slice(0, 3).map((s) => optionalSourceLabels[s]).join(', ')} 등)를 더 연결하면 데이터 신뢰도가 올라가 점수에 반영돼요.`)
@@ -308,7 +311,7 @@ export function ownerSituation(input: {
     /** AI가 숫자를 헷갈리지 않게 완성된 문장으로도 준다. */
     stageLabel: `${reviewStages.length}단계 중 ${currentStage.order}단계 · ${currentStage.label}`,
     connectedSources: connected.map((source) => requiredSourceLabels[source] || optionalSourceLabels[source] || source),
-    missingRequired: missingRequired.map((source) => requiredSourceLabels[source]),
+    missingRequired,
     missingOptional: missingOptional.map((source) => optionalSourceLabels[source]),
     mismatches,
     nextActions: nextActions.slice(0, 4),

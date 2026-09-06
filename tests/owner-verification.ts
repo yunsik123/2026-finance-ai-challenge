@@ -23,10 +23,27 @@ const owner = await call('/api/auth/signup', { method: 'POST', body: JSON.string
   consent: { version: legal.version, documentIds: legal.required.signup },
 }) })
 const documents = ['business', 'license', 'pos', 'account', 'card', 'delivery', 'tax', 'customer', 'lease', 'debt', 'staff']
+const registeredDocuments: Record<string, any> = {}
+for (const sourceId of documents) {
+  const filename = `${sourceId}.${['business', 'license', 'tax', 'lease'].includes(sourceId) ? 'pdf' : 'csv'}`
+  const registered = await call('/api/owner/documents', { method: 'POST', body: JSON.stringify({
+    filename, fileHash: `owner-verification-${stamp}-${sourceId}`, byteSize: 128, mimeType: filename.endsWith('.pdf') ? 'application/pdf' : 'text/csv',
+    sourceId,
+    ...(sourceId === 'business' ? { fields: [{ key: 'merchant', label: '상호', aiValue: 'AI 오독 상호', confirmedValue: null, state: 'ai' }] } : {}),
+  }) }, owner.token)
+  registeredDocuments[sourceId] = registered.document
+}
+const correctedBusiness = await call(`/api/owner/documents/${registeredDocuments.business.id}`, { method: 'PATCH', body: JSON.stringify({
+  fields: [{ key: 'merchant', value: `검증식당-${stamp}` }],
+}) }, owner.token)
+assert(correctedBusiness.document.fields[0].state === 'corrected', '사장님이 AI 판독값을 직접 정정할 수 있어야 합니다.')
+assert(correctedBusiness.document.correctionHistory?.some((item: any) => item.action === 'corrected'), '사용자 정정 이력이 시간과 함께 누적되어야 합니다.')
+registeredDocuments.business = correctedBusiness.document
 const submitted = await call('/api/applications', { method: 'POST', body: JSON.stringify({
   restaurantName: `검증식당-${stamp}`, ownerName: '김소담', businessNumber: '1234567891', licenseNumber: '제2024-000123호',
   address: '서울특별시 마포구 망원동 12-3', category: '한식', signature: '들기름 고등어 한상', avgPrice: 13000,
   connectedSources: [...documents, 'identity'], uploadedDocuments: Object.fromEntries(documents.map((id) => [id, `${id}.${['business', 'license', 'tax', 'lease'].includes(id) ? 'pdf' : 'csv'}`])),
+  documentIds: Object.fromEntries(documents.map((sourceId) => [sourceId, registeredDocuments[sourceId].id])),
   documentContents: {
     pos: sample('meoktu-pos-sample.csv'), account: sample('meoktu-account-sample.csv'), card: sample('meoktu-card-settlement-sample.csv'),
     delivery: sample('meoktu-delivery-sample.csv'), customer: sample('meoktu-customer-sample.csv'), debt: sample('meoktu-debt-sample.csv'), staff: sample('meoktu-staff-sample.csv'),
@@ -50,6 +67,10 @@ assert(adminDetail.application.data.financialVerification?.steps?.length === 6, 
 assert(Object.keys(adminDetail.application.data.documentMetadata || {}).length === documents.length, '운영자 상세에 제출 파일 메타데이터가 모두 있어야 합니다.')
 assert(!adminDetail.application.data.documentContents, '관리자 대시보드 응답에 고객 거래 CSV 원문 전체를 저장·노출하면 안 됩니다.')
 assert(Array.isArray(adminDetail.ocrAnalyses), '운영자 상세에 신청과 연결된 AI 판독 목록이 있어야 합니다.')
+assert(adminDetail.documents.length === documents.length, '운영자는 이번 신청에 사용된 문서만 확인할 수 있어야 합니다.')
+const reviewedBusiness = adminDetail.documents.find((item: any) => item.sourceId === 'business')
+assert(reviewedBusiness.fields[0].confirmedValue === `검증식당-${stamp}`, '운영자 상세에 신청 당시 사용자 확정값이 보여야 합니다.')
+assert(reviewedBusiness.correctionHistory.some((item: any) => item.action === 'corrected'), '운영자 상세에 사용자 정정 이력이 보여야 합니다.')
 
 // 샘플이 운영자 확인 판정인 경우에도 관리자가 승인하면 같은 공개 파이프라인을 타야 한다.
 if (submitted.application.status !== 'approved') {

@@ -206,6 +206,8 @@ export interface Application {
   restaurantName: string
   submittedAt: string
   status: 'approved' | 'conditional' | 'manual_review' | 'rejected'
+  /** 서버 계산 결과이며, 운영자의 최종 심사 상태와 구분한다. */
+  recommendedStatus?: 'approved' | 'conditional' | 'manual_review' | 'rejected'
   requestedLimit: number
   approvedLimit: number
   score: number
