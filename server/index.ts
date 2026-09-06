@@ -1266,13 +1266,53 @@ const DEMO_PARTNER_PROVIDERS: Record<string, { title: string; provider: string; 
 const demoRestaurantOf = (restaurantId?: string) => db.restaurants.find((item) => item.id === restaurantId)
 
 /**
- * 체험 세션의 원장. 처음 열릴 때 체험 시작 쿠폰을 넣어 준다.
- * 체험자도 회원과 똑같이 지갑에 쿠폰 다섯 장을 들고 시작해야 교환장을 눌러볼 수 있다.
+ * 체험 투자자가 처음부터 들고 있는 응원 내역.
+ *
+ * 빈 MY 화면에서는 "투자 중인 식당"도, 쿠폰이 자라는 모습도, 예약 거래도 보이지 않는다.
+ * 그래서 실제 투자자 계정(u-investor)과 같은 구성으로 세 곳을 미리 깔아둔다.
+ * 모집 중 한 곳과 예약 거래 두 곳을 섞어 두 흐름을 모두 눌러볼 수 있게 하고,
+ * 할인율은 발급 기준선(10%) 위아래로 나눠 쿠폰 발급 조건이 화면에서 드러나게 한다.
+ */
+const demoSeedPositions = [
+  { fundId: 'f-mokhwa', amount: 80000, early: true, couponProgress: 24.5, daysAgo: 12 },
+  { fundId: 'f-dotori', amount: 120000, early: false, couponProgress: 13.2, daysAgo: 6 },
+  { fundId: 'f-sobok', amount: 60000, early: true, couponProgress: 8.6, daysAgo: 2 },
+]
+
+/**
+ * 시작 투자분을 샌드박스에 넣는다.
+ *
+ * 투자금은 시작 잔액에서 빼서 "투자금 + 남은 잔액 = 받은 먹투머니"가 맞아떨어지게 한다.
+ * fundDeltas 는 건드리지 않는다. 이 투자분은 이미 모집액에 반영된 것으로 보고,
+ * 체험자가 여기서 더 넣거나 회수할 때만 공개 모집액이 움직여야 하기 때문이다.
+ */
+function seedDemoPositions(sandbox: DemoSandbox) {
+  for (const seed of demoSeedPositions) {
+    const fund = db.funds.find((item) => item.id === seed.fundId)
+    // 시드가 바뀌어 펀드가 없어졌으면 조용히 건너뛴다. 체험 진입 자체를 막을 일은 아니다.
+    if (!fund) continue
+    // 한 식당 투자 한도(목표액의 1%)는 체험 시작분에도 똑같이 적용한다.
+    const amount = Math.min(seed.amount, Math.floor(fund.goal * .01 / 1000) * 1000)
+    if (amount <= 0 || amount > sandbox.cash) continue
+    sandbox.cash -= amount
+    sandbox.positions.push({
+      id: demoId('position'), userId: sandbox.id, fundId: fund.id, amount,
+      early: seed.early, couponProgress: seed.couponProgress,
+      updatedAt: new Date(Date.now() - seed.daysAgo * 86400000).toISOString(),
+    })
+  }
+}
+
+/**
+ * 체험 세션의 원장. 처음 열릴 때 시작 투자분과 체험 시작 쿠폰을 넣어 준다.
+ * 체험자도 회원과 똑같이 응원 중인 식당과 지갑 쿠폰을 들고 시작해야
+ * MY 화면과 교환장이 무엇을 하는 곳인지 바로 보인다.
  */
 function demoSandbox(id: string, role: Role) {
   const sandbox = sandboxFor(id, role)
   if (!sandbox.welcomed && role === 'investor') {
     sandbox.welcomed = true
+    seedDemoPositions(sandbox)
     const coupons = buildWelcomeCoupons(sandbox.id, demoId, '체험 시작')
     sandbox.coupons.unshift(...coupons)
     if (coupons.length) {
