@@ -18,6 +18,7 @@
 import { spawn } from 'node:child_process'
 import fs from 'node:fs/promises'
 import { rebuildSamplePack } from './zip-samples.mjs'
+import { PROFILE, SYNTHETIC_DOCUMENTS, documentHtml } from './sample-docs/synthetic.mjs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -96,6 +97,25 @@ const profile = await fs.mkdtemp(path.join(os.tmpdir(), 'meoktu-docs-'))
 const common = ['--headless=new', '--disable-gpu', '--no-sandbox', '--hide-scrollbars', '--virtual-time-budget=3000', `--user-data-dir=${profile}`]
 
 console.log(`모의 심사 서류를 생성합니다 (크롬: ${path.basename(chrome)})`)
+console.log(`  사업체: ${PROFILE.businessName} · ${PROFILE.ownerName} · ${PROFILE.businessNumber}`)
+
+/*
+ * 합성 서류(01~10).
+ *
+ * 예전에는 이 PNG 들이 저장소 밖에서 만들어져 들어온 그림이었다. 그래서 거기 찍힌
+ * 사업자등록번호가 검증번호를 통과하지 못한다는 걸 알고도 고칠 방법이 없었다.
+ * 이제 scripts/sample-docs/synthetic.mjs 한 곳에서 HTML 을 만들어 렌더한다.
+ */
+const staging = await fs.mkdtemp(path.join(os.tmpdir(), 'meoktu-synthetic-'))
+for (const document of SYNTHETIC_DOCUMENTS) {
+  const html = path.join(staging, `${document.file}.html`)
+  await fs.writeFile(html, documentHtml(document), 'utf8')
+  const png = path.join(out, `${document.file}.png`)
+  await render(chrome, [...common, '--window-size=1240,1754', `--screenshot=${png}`, `file://${html}`], png)
+  console.log(`  ✓ ${document.file}.png`)
+}
+await fs.rm(staging, { recursive: true, force: true })
+
 for (const document of DOCUMENTS) {
   const source = `file://${path.join(templates, document.template)}`
   const png = path.join(out, `${document.name}.png`)

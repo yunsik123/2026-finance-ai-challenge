@@ -171,12 +171,13 @@ try {
   await login('owner')
   await waitFor('Boolean(document.querySelector(".owner-dashboard"))', 'owner dashboard')
   await waitFor('Boolean(document.querySelector(".report-grid h3"))', 'owner report')
-  // 사장님 센터는 네 단계로 넘어간다. 단계가 실제로 전환되는지, 필수 자료가 없으면
-  // 넘어가지 못하는지, 마지막 단계에서만 제출 버튼이 나오는지까지 실제 브라우저로 확인한다.
+  // 사장님 센터는 세 단계로 넘어간다. 판독값 확인은 2단계의 'AI 자료 분석 결과' 안으로 들어갔다.
+  // 단계가 실제로 전환되는지, 필수 자료가 없으면 넘어가지 못하는지,
+  // 마지막 단계에서만 제출 버튼이 나오는지까지 실제 브라우저로 확인한다.
   // /owner 로 들어가면 첫 단계 주소로 넘어간다. 단계마다 주소가 실제로 바뀌어야 한다.
   await visit('/owner')
   await waitFor('location.pathname === "/owner/store"', 'owner redirects to first step url')
-  await waitFor('document.querySelectorAll(".wizard-rail button").length === 4', 'owner wizard rail')
+  await waitFor('document.querySelectorAll(".wizard-rail button").length === 3', 'owner wizard rail')
   await waitFor('Boolean(document.querySelector(".wizard-step.active .identity-action"))', 'wizard starts on store step')
   // 1단계: 아무것도 채우지 않고 다음을 누르면 주소가 바뀌지 않아야 한다.
   await click('다음')
@@ -184,10 +185,9 @@ try {
   // 앞 단계를 끝내지 않은 채 뒤 단계 주소를 직접 열면 되돌려보낸다.
   await evaluate('history.pushState({}, "", "/owner/plan"); window.dispatchEvent(new PopStateEvent("popstate"))')
   await waitFor('location.pathname === "/owner/store"', 'direct access to a later step is redirected back')
-  await evaluate('document.querySelector(".sample-set.clean").click()')
+  await evaluate('document.querySelector(".virtual-data-upload-btn").click()')
   await waitFor('document.querySelectorAll(".document-upload-card.uploaded").length === 11', 'sample uploads')
   await waitFor('location.pathname === "/owner/upload" && Boolean(document.querySelector(".wizard-step.active .intake-zone"))', 'sample fill moves to upload step url')
-  await waitFor('document.querySelectorAll(".intake-row").length === 11', 'intake rows listed')
   await click('올린 자료 열어보기')
   await waitFor('Boolean(document.querySelector(".doc-figure img")?.naturalWidth)', 'uploaded image preview')
   assert(await evaluate('fetch(document.querySelector(".doc-figure img").src).then(r => r.ok)'))
@@ -206,8 +206,9 @@ try {
     // 열 이름이 '거래일자/판매금액'인 어긋난 POS 자료. 표 머리글만 보고 POS 칸으로 가야 한다.
     await drop('/samples/meoktu-rough-pos-sample.csv', '2026상반기_정산.csv', 'text/csv')
   })()`)
-  await waitFor('document.querySelectorAll(".intake-row.done").length === 1', 'universal intake classified a table')
-  await waitFor('Boolean([...document.querySelectorAll(".intake-row")].find(row => row.innerText.includes("POS 매출 원자료")))', 'table routed to POS slot')
+  // 처리 결과 목록을 없앴으므로, 어느 칸에 들어갔는지는 자료 카드로 확인한다.
+  await waitFor('document.querySelectorAll(".document-upload-card.uploaded").length === 1', 'universal intake classified a table')
+  await waitFor('Boolean([...document.querySelectorAll(".document-upload-card.uploaded")].find(card => card.innerText.includes("POS 매출 원자료")))', 'table routed to POS slot')
   await waitFor('Boolean(document.querySelector(".document-upload-card.uploaded .document-classified"))', 'classification reason shown on card')
   // 엑셀은 브라우저에서 표로 바꿔 넣는다. 은행식 열 이름('맡기신금액')이라도 계좌 칸으로 가야 한다.
   await evaluate(`(async () => {
@@ -216,9 +217,8 @@ try {
     transfer.items.add(new File([blob], '거래내역조회.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }))
     document.querySelector('.intake-zone').dispatchEvent(new DragEvent('drop', { dataTransfer: transfer, bubbles: true, cancelable: true }))
   })()`)
-  await waitFor('document.querySelectorAll(".intake-row.done").length === 2 || document.querySelectorAll(".intake-row.failed").length > 0', 'xlsx intake finished')
-  assert(await evaluate('document.querySelectorAll(".intake-row.failed").length === 0'), '엑셀 변환이 실패했습니다')
-  await waitFor('Boolean([...document.querySelectorAll(".intake-row")].find(row => row.innerText.includes("사업용 계좌 내역") && /\\d,?\\d*행/.test(row.innerText)))', 'xlsx converted to table rows')
+  await waitFor('document.querySelectorAll(".document-upload-card.uploaded").length === 2', 'xlsx intake finished')
+  await waitFor('Boolean([...document.querySelectorAll(".document-upload-card.uploaded")].find(card => card.innerText.includes("사업용 계좌 내역") && /\\d,?\\d*행/.test(card.innerText)))', 'xlsx converted to table rows')
 
   // PDF 는 브라우저에서 첫 장을 그림으로 바꿔 판독 경로로 보낸다. 변환 자체가 도는지 본다.
   await evaluate(`(async () => {
@@ -227,11 +227,10 @@ try {
     transfer.items.add(new File([blob], 'meoktu-business-sample.pdf', { type: 'application/pdf' }))
     document.querySelector('.intake-zone').dispatchEvent(new DragEvent('drop', { dataTransfer: transfer, bubbles: true, cancelable: true }))
   })()`)
-  await waitFor('document.querySelectorAll(".intake-row.done").length === 3 || document.querySelectorAll(".intake-row.failed").length > 0', 'pdf intake finished')
-  assert(await evaluate('document.querySelectorAll(".intake-row.failed").length === 0'), 'PDF 변환이 실패했습니다')
-  await waitFor('Boolean([...document.querySelectorAll(".intake-row")].find(row => row.innerText.includes("사업자등록 자료")))', 'pdf routed to business slot')
+  await waitFor('document.querySelectorAll(".document-upload-card.uploaded").length === 3', 'pdf intake finished')
+  await waitFor('Boolean([...document.querySelectorAll(".document-upload-card.uploaded")].find(card => card.innerText.includes("사업자등록 자료")))', 'pdf routed to business slot')
   // 다시 샘플로 채워 필수 자료를 갖춘 뒤 남은 단계를 확인한다.
-  await evaluate('document.querySelector(".sample-set.clean").click()')
+  await evaluate('document.querySelector(".virtual-data-upload-btn").click()')
   await waitFor('document.querySelectorAll(".document-upload-card.uploaded").length === 11', 'sample uploads restored')
 
   // 요건 구조: 필수/택1 배지와 발급 안내가 실제로 그려지는지.
@@ -241,30 +240,50 @@ try {
   await waitFor('document.querySelectorAll(".requirement-badge.req-oneof").length >= 4', 'sales one-of badges')
   await waitFor('Boolean(document.querySelector(".sales-evidence-status.ok"))', 'sales evidence satisfied')
   await evaluate('document.querySelectorAll(".issuance-trigger")[0].click()')
-  await waitFor('Boolean(document.querySelector(".issuance-panel a[href^=\'https://\']"))', 'issuance help shows an official link')
-  await evaluate('document.querySelector(".issuance-panel header button").click()')
-  await waitFor('!document.querySelector(".issuance-panel")', 'issuance help closes')
+  await waitFor('Boolean(document.querySelector(".issuance-dialog a[href^=\'https://\']"))', 'issuance help shows an official link')
+  await evaluate('document.querySelector(".issuance-dialog header button").click()')
+  await waitFor('!document.querySelector(".issuance-dialog")', 'issuance help closes')
   // 부채는 답을 해야 넘어간다. 샘플이 '대출 있음'으로 채워둔 상태여야 한다.
   await waitFor('Boolean(document.querySelector(".debt-choice button.active"))', 'debt question answered')
 
+  // 판독값 확인은 이 단계의 'AI 자료 분석 결과' 안에 있다. 별도 페이지로 넘기지 않는다.
+  await waitFor('Boolean(document.querySelector(".ai-upload-feedback .ai-ocr-block"))', 'reading review lives inside the AI analysis panel')
+  await waitFor('Boolean(document.querySelector(".ai-ocr-block .reading-tables li"))', 'table summary inside the AI analysis panel')
+  await waitFor('Boolean(document.querySelector(".ai-ocr-block .reading-pending button"))', 'unread documents can be analysed in place')
+
+  // '다시 올리기'는 방금 고른 파일을 읽어야 한다.
+  // 예전에는 판독 함수가 selectedFiles(상태)에서 파일을 집었는데, 그 상태는 다음 렌더에나
+  // 갱신되므로 직전 파일이 잡혔다. 옛 파일을 판독 API로 보내고 결과는 버려서,
+  // 화면에는 아무 일도 일어나지 않은 것처럼 보였다. 파일 이름이 실제로 바뀌는지로 확인한다.
+  await evaluate('document.querySelector(".ai-ocr-block .reading-pending button").click()')
+  await waitFor('Boolean(document.querySelector(".ai-ocr-block .reading-card"))', 'a reading card appears after analysis')
+  const readBefore = await evaluate('document.querySelector(".reading-card header small").innerText')
+  await evaluate(`(async () => {
+    const blob = await fetch('/samples/09_commercial_lease_excerpt.png').then(r => r.blob())
+    const transfer = new DataTransfer()
+    transfer.items.add(new File([blob], 'reupload-check.png', { type: 'image/png' }))
+    const input = document.querySelector('.reading-card .reading-reupload input')
+    input.files = transfer.files
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+  })()`)
+  await waitFor('[...document.querySelectorAll(".reading-card header small")].some(item => item.innerText.includes("reupload-check.png"))', 'reupload analyses the newly chosen file')
+  assert(!readBefore.includes('reupload-check.png'), '재업로드 전에는 새 파일 이름이 없어야 합니다')
+
   // 2 → 3단계 전환. 자료가 모두 있으니 넘어가야 한다.
   await click('다음')
-  await waitFor('location.pathname === "/owner/reading" && document.body.innerText.includes("AI가 읽은 값이 맞는지")', 'reading step url')
-  await waitFor('Boolean(document.querySelector(".reading-tables li"))', 'table summary on reading step')
+  await waitFor('location.pathname === "/owner/plan" && Boolean(document.querySelector(".wizard-step.active .consent-reader-head"))', 'consent step url')
   // 브라우저 뒤로 가기로 앞 단계에 돌아가야 한다. 단계가 진짜 페이지라는 뜻이다.
   await evaluate('history.back()')
   await waitFor('location.pathname === "/owner/upload" && Boolean(document.querySelector(".intake-zone"))', 'browser back returns to upload step')
   await evaluate('history.forward()')
-  await waitFor('location.pathname === "/owner/reading"', 'browser forward returns to reading step')
-  await click('다음')
-  await waitFor('location.pathname === "/owner/plan" && Boolean(document.querySelector(".wizard-step.active .consent-reader-head"))', 'consent step url')
+  await waitFor('location.pathname === "/owner/plan"', 'browser forward returns to consent step')
   await evaluate('document.querySelectorAll(".consent-reader-head").forEach(button => button.click())')
   await waitFor('[...document.querySelectorAll(".consent-reader-agree input")].length === 3 && [...document.querySelectorAll(".consent-reader-agree input")].every(input => !input.disabled)', 'application consent documents')
   await evaluate('document.querySelectorAll(".consent-reader-agree input").forEach(input => input.click())')
   // 이전으로 돌아가도 입력이 남아 있어야 한다. 단계 전환으로 값이 사라지면 신청을 다시 써야 한다.
   await evaluate('document.querySelectorAll(".wizard-rail button")[0].click()')
-  await waitFor('location.pathname === "/owner/store" && document.querySelector("[name=restaurantName]").value === "샘플식당"', 'store input survives page change')
-  await evaluate('document.querySelectorAll(".wizard-rail button")[3].click()')
+  await waitFor('location.pathname === "/owner/store" && document.querySelector("[name=restaurantName]").value === "먹투 테스트식당"', 'store input survives page change')
+  await evaluate('document.querySelectorAll(".wizard-rail button")[2].click()')
   await waitFor('location.pathname === "/owner/plan"', 'rail navigates by url')
   // 자금 사용계획: 합계가 희망 펀딩액과 맞아야 제출된다.
   await waitFor('document.querySelectorAll(".fund-use-row").length >= 2', 'fund use rows')
@@ -273,7 +292,11 @@ try {
   await waitFor('location.pathname === "/owner/result" && (Boolean(document.querySelector(".source-review-result")) || document.body.innerText.includes("Restaurant Health Profile"))', 'application submitted on result url')
   // 증거 원장이 결과 화면에 실제로 그려지는지. 서버가 값을 만들어도 화면에 길이 없으면 의미가 없다.
   await waitFor('Boolean(document.querySelector(".evidence-panel .quality-dial"))', 'evidence quality dial')
-  await waitFor('document.querySelectorAll(".evidence-panel .crosscheck").length > 0', 'cross-check cards')
+  // 데모 자료는 표(CSV)와 서류(PNG)를 함께 넣으므로 자료끼리 대조가 실제로 돌아야 한다.
+  // 표를 빼고 그림만 넣던 때에는 이 카드가 통째로 비었다.
+  await waitFor('document.querySelectorAll(".evidence-panel .crosscheck").length >= 4', 'cross-check cards')
+  assert(await evaluate('document.querySelectorAll(".evidence-panel .crosscheck.failed").length === 0'), '깨끗한 데모 세트에서 불일치가 나오면 안 됩니다')
+  await waitFor('Boolean(document.querySelector(".evidence-panel .evidence-links li"))', 'evidence ledger links')
   await evaluate('document.querySelector(".evidence-links li > button").click()')
   await waitFor('document.querySelectorAll(".evidence-links li.open .support").length > 0', 'metric evidence expands')
   // 화면에서 받은 심사 자료가 결과에 다시 나오는지. 점수와 무관하다는 안내도 함께 있어야 한다.

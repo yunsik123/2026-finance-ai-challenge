@@ -77,38 +77,79 @@ export default function OwnerMyPage({ me, refresh, notify }: { me: MeState; refr
   const applications = useMemo(() => [...(owner?.applications || me.applications)].sort((a, b) => b.submittedAt.localeCompare(a.submittedAt)), [owner, me.applications])
 
   /**
-   * 사장님이 등록한 가게마다 '현재 라운드 펀드 + 그 가게의 심사 이력'을 묶는다.
+   * 사업체 하나에 '펀드 + 그 사업체의 심사 이력 전체'를 묶는다.
    *
-   * 예전에는 restaurants[0]·funds[0] 만 읽어서 가게를 두 곳 등록해도
-   * 첫 번째 가게의 모금액·리포트·매출 공개 설정만 보였다.
+   * 예전에는 이 목록을 db.restaurants 로만 만들었다. 그런데 가게 원장은 운영자가 최종 승인해
+   * 공개할 때 비로소 생긴다. 그래서 두 사업체에 펀딩을 냈어도 아직 승인 전이면
+   * 목록이 비어 고를 대상이 하나도 없었고, 화면은 늘 가장 최근 신청 하나만 보여줬다.
+   *
+   * 그래서 승인 전 신청까지 사업체로 센다. 묶는 기준은 강한 것부터다.
+   *   ① 신청서에 담긴 targetRestaurantId (같은 가게의 다음 회차)
+   *   ② 그 신청으로 만들어진 가게 원장(sourceApplicationId)
+   *   ③ 사업자등록번호 — 상호를 바꿔 적어도 같은 사업체로 묶인다
+   *   ④ 마지막으로 상호명
    */
-  const portfolios = useMemo(() => {
+  const businessGroups = useMemo(() => {
     const restaurants = owner?.restaurants || []
     const funds = owner?.funds || []
-    return restaurants.map((restaurant) => ({
-      restaurant,
+    const digits = (value?: string | null) => String(value || '').replace(/\D/g, '')
+    const fundsOf = (restaurantId: string) => [...funds].filter((item) => item.restaurantId === restaurantId)
       // 한 가게에 라운드가 여러 개면 진행 중인 것을, 없으면 가장 최근 라운드를 본다.
-      fund: [...funds].filter((item) => item.restaurantId === restaurant.id)
-        .sort((a, b) => Number(a.status === 'closed') - Number(b.status === 'closed') || b.round - a.round)[0],
-      // 신청이 어느 가게 것인지: 신청서에 담긴 targetRestaurantId 가 가장 정확하다.
-      // 상호명 문자열 비교만 쓰면 2호점 이름이 비슷할 때 섞인다.
-      applications: applications.filter((item) => item.data?.targetRestaurantId === restaurant.id
-        || restaurant.sourceApplicationId === item.id
-        || (!item.data?.targetRestaurantId && item.restaurantName === restaurant.name)),
+      .sort((a, b) => Number(a.status === 'closed') - Number(b.status === 'closed') || b.round - a.round)
+
+    type Group = { key: string; name: string; restaurant?: Restaurant; fund?: Fund; applications: ApplicationResult[] }
+    const groups: Group[] = restaurants.map((restaurant) => ({
+      key: restaurant.id, name: restaurant.name, restaurant, fund: fundsOf(restaurant.id)[0], applications: [],
     }))
+
+    /** 이 신청이 이미 만들어진 가게 원장에 속하는가. */
+    const restaurantFor = (application: ApplicationResult) => restaurants.find((restaurant) =>
+      application.data?.targetRestaurantId === restaurant.id
+      || restaurant.sourceApplicationId === application.id
+      || (!application.data?.targetRestaurantId && restaurant.name === application.restaurantName))
+
+    for (const application of applications) {
+      const restaurant = restaurantFor(application)
+      if (restaurant) {
+        groups.find((group) => group.key === restaurant.id)?.applications.push(application)
+        continue
+      }
+      // 아직 가게로 등록되지 않은 신청. 사업자번호(없으면 상호)로 묶어 하나의 사업체로 센다.
+      const identity = digits(application.data?.businessNumber) || application.restaurantName
+      const key = `pending:${identity}`
+      const existing = groups.find((group) => group.key === key)
+      if (existing) existing.applications.push(application)
+      else groups.push({ key, name: application.restaurantName, applications: [application] })
+    }
+    // 회차가 큰 것이 위로. 각 사업체 안에서는 최근 신청이 먼저다.
+    for (const group of groups) {
+      group.applications.sort((a, b) => (Number(b.data?.applicationRound) || 0) - (Number(a.data?.applicationRound) || 0)
+        || b.submittedAt.localeCompare(a.submittedAt))
+    }
+    return groups
   }, [owner, applications])
 
   const picked = applications.find((item) => item.id === selectedId)
+  /**
+   * 아무것도 안 골랐을 때 무엇을 보여줄까.
+   *
+   * 목록 첫 번째를 그냥 쓰면 안 된다. 운영자가 먼저 등록해 둔 가게처럼 심사 기록이 없는
+   * 사업체가 앞에 있으면, 방금 낸 신청 결과를 두고도 빈 리포트가 뜬다.
+   * 그래서 가장 최근에 신청한 사업체를 기본으로 연다.
+   */
+  const defaultGroup = businessGroups.find((group) => group.applications.some((item) => item.id === applications[0]?.id))
+    || businessGroups.find((group) => group.applications.length > 0)
+    || businessGroups[0]
   const active = picked
-    ? portfolios.find((item) => picked.data?.targetRestaurantId === item.restaurant.id
-      || item.restaurant.sourceApplicationId === picked.id
-      || item.restaurant.name === picked.restaurantName)
-    : portfolios.find((item) => item.restaurant.id === selectedRestaurantId) || portfolios[0]
-  // 가게를 고르면 그 가게의 최근 심사가 리포트 기준이 된다. 아직 가게가 없으면 최근 신청을 본다.
-  const selected = picked || active?.applications[0] || (portfolios.length ? undefined : applications[0])
+    ? businessGroups.find((group) => group.applications.some((item) => item.id === picked.id))
+    : businessGroups.find((group) => group.key === selectedRestaurantId) || defaultGroup
+  // 사업체를 고르면 그 사업체의 최근 심사가 리포트 기준이 된다.
+  const selected = picked || active?.applications[0]
   const restaurant = active?.restaurant
   const fund = active?.fund
-  const showFund = (restaurantId: string) => { setSelectedRestaurantId(restaurantId); setSelectedId('') }
+  /** 지금 고른 사업체의 회차 목록. 회차마다 검증 리포트가 따로 나온다. */
+  const rounds = active?.applications || []
+  const showFund = (groupKey: string) => { setSelectedRestaurantId(groupKey); setSelectedId('') }
   const auditEvents = owner?.auditEvents || []
   const visibleAuditEvents = auditEvents.filter((event) => event.action !== 'coupon.dividend_issued').slice(0, 8)
 
@@ -147,23 +188,29 @@ export default function OwnerMyPage({ me, refresh, notify }: { me: MeState; refr
 
     {me.user.sessionMode === 'demo' && <div className="owner-my-demo"><Eye /><p><b>체험 모드 결과입니다.</b> 심사 화면과 결과 확인은 동일하지만 체험 식당은 다른 투자자 계정에 공개되지 않습니다.</p></div>}
 
-    {portfolios.length > 1 && <section className="owner-fund-switcher">
+    {businessGroups.length > 1 && <section className="owner-fund-switcher">
       <div className="owner-fund-switcher-head">
-        <div><span className="eyebrow coral"><Store /> 내 펀드 {portfolios.length}개</span><h2>어느 가게를 볼까요?</h2><p>가게를 고르면 아래 운영 현황, 검증 리포트, 매출 공개 설정이 모두 그 가게 기준으로 바뀝니다. 같은 가게로 회차를 더 받으면 그 가게 안에 쌓입니다.</p></div>
+        <div><span className="eyebrow coral"><Store /> 내 사업체 {businessGroups.length}곳</span><h2>어느 사업체를 볼까요?</h2><p>사업체를 고르면 아래 운영 현황, 검증 리포트, 매출 공개 설정이 모두 그 사업체 기준으로 바뀝니다. 운영자 승인 전이라 아직 펀드가 열리지 않은 신청도 여기서 고를 수 있어요.</p></div>
       </div>
-      <div className="owner-fund-switcher-list">{portfolios.map((item) => {
-        const isActive = item.restaurant.id === restaurant?.id
-        const progress = item.fund ? Math.min(100, Math.round(item.fund.raised / item.fund.goal * 100)) : 0
-        const state = restaurantStatusCopy[item.restaurant.verificationStatus || 'verified']
-        return <button type="button" key={item.restaurant.id} aria-pressed={isActive} className={isActive ? 'active' : ''} onClick={() => showFund(item.restaurant.id)}>
-          <span className="owner-fund-emoji">{item.restaurant.emoji}</span>
+      <div className="owner-fund-switcher-list">{businessGroups.map((group) => {
+        const isActive = group.key === active?.key
+        const progress = group.fund ? Math.min(100, Math.round(group.fund.raised / group.fund.goal * 100)) : 0
+        // 가게 원장이 아직 없으면 그 사업체의 최근 심사 결과를 상태로 보여준다.
+        const latest = group.applications[0]
+        const state = group.restaurant
+          ? restaurantStatusCopy[group.restaurant.verificationStatus || 'verified']
+          : latest ? { label: statusCopy[latest.status].label, tone: latest.status } : { label: '심사 준비 중', tone: 'manual_review' }
+        return <button type="button" key={group.key} aria-pressed={isActive} className={isActive ? 'active' : ''} onClick={() => showFund(group.key)}>
+          <span className="owner-fund-emoji">{group.restaurant?.emoji || '🍽️'}</span>
           <div className="owner-fund-copy">
-            <b>{item.restaurant.name}</b>
-            <small>{item.restaurant.region} {item.restaurant.neighborhood} · {item.restaurant.category}</small>
-            {item.fund
-              ? <em>{item.fund.round}차 모집 · {won(item.fund.raised)} / {won(item.fund.goal)} ({progress}%)</em>
-              : <em>아직 모집 중인 펀드가 없어요</em>}
-            {item.fund && <span className="owner-fund-progress"><i style={{ width: `${progress}%` }} /></span>}
+            <b>{group.name}</b>
+            <small>{group.restaurant
+              ? `${group.restaurant.region} ${group.restaurant.neighborhood} · ${group.restaurant.category}`
+              : `심사 ${group.applications.length}건 · 운영자 승인 전`}</small>
+            {group.fund
+              ? <em>{group.fund.round}차 모집 · {won(group.fund.raised)} / {won(group.fund.goal)} ({progress}%)</em>
+              : <em>{group.applications.length > 1 ? `검증 리포트 ${group.applications.length}건` : '아직 모집 중인 펀드가 없어요'}</em>}
+            {group.fund && <span className="owner-fund-progress"><i style={{ width: `${progress}%` }} /></span>}
           </div>
           <span className={`owner-fund-state ${state.tone}`}>{state.label}</span>
         </button>
@@ -174,7 +221,7 @@ export default function OwnerMyPage({ me, refresh, notify }: { me: MeState; refr
     {restaurant && <CouponVerify refresh={refresh} notify={notify} />}
 
     {restaurant && <section className={`sales-disclosure-control ${restaurant.salesDisclosure ? 'is-public' : ''}`}>
-      <div className="sales-disclosure-copy"><span><Eye /></span><div><small>데이터 공개 설정{portfolios.length > 1 ? ` · ${restaurant.name}` : ''}</small><b>투자자 매출 데이터 공개</b><p>검증된 매출 성장지수는 항상 공개하고, 정확한 월별 매출액은 사장님이 선택한 경우에만 보여줍니다.</p></div></div>
+      <div className="sales-disclosure-copy"><span><Eye /></span><div><small>데이터 공개 설정{businessGroups.length > 1 ? ` · ${restaurant.name}` : ''}</small><b>투자자 매출 데이터 공개</b><p>검증된 매출 성장지수는 항상 공개하고, 정확한 월별 매출액은 사장님이 선택한 경우에만 보여줍니다.</p></div></div>
       <div className="sales-disclosure-action"><div><small>현재 공개 범위</small><strong>{restaurant.salesDisclosure ? '성장지수 + 월별 매출액' : '성장지수만 공개'}</strong></div><button type="button" aria-pressed={restaurant.salesDisclosure} className={restaurant.salesDisclosure ? 'active' : ''} onClick={toggleDisclosure}><i />{restaurant.salesDisclosure ? '월별 매출 공개 중' : '월별 매출 공개하기'}</button></div>
     </section>}
 
@@ -183,6 +230,32 @@ export default function OwnerMyPage({ me, refresh, notify }: { me: MeState; refr
         <div><span><FileCheck2 /> FUND VERIFICATION REPORT</span><h2>내 펀드 검증 리포트</h2><p>최종 결과부터 평가 근거와 보완 항목까지 하나의 리포트로 정리했어요.</p></div>
         <div className="owner-report-identity"><small>검증 대상</small><b>{selected?.restaurantName || restaurant?.name}{Number(selected?.data?.applicationRound) ? ` · ${selected!.data!.applicationRound}회차` : ''}</b><span>{selected ? date(selected.submittedAt) : '현재 운영 원장 기준'}</span></div>
       </header>
+
+      {/*
+        같은 사업체로 회차를 여러 번 받으면 검증 리포트도 회차마다 하나씩 남는다.
+        회차마다 제출한 자료도, 점수도, 대조 결과도 다르기 때문에 하나로 덮으면 안 된다.
+        예전에는 최신 회차만 펼쳐 보였고 지난 회차는 맨 아래 '심사 신청 내역'까지
+        내려가야 바꿀 수 있었다. 리포트 바로 위에서 고르게 한다.
+      */}
+      {rounds.length > 1 && <div className="owner-report-rounds">
+        <div className="owner-report-rounds-head">
+          <b>이 사업체의 검증 리포트 {rounds.length}건</b>
+          <small>회차마다 제출 자료와 평가 결과가 다릅니다. 고른 회차 기준으로 아래 리포트 전체가 바뀝니다.</small>
+        </div>
+        <div className="owner-report-round-list">{rounds.map((application) => {
+          const round = Number(application.data?.applicationRound) || 0
+          const isActive = application.id === selected?.id
+          return <button
+            type="button" key={application.id} aria-pressed={isActive}
+            className={isActive ? 'active' : ''} onClick={() => setSelectedId(application.id)}
+          >
+            <b>{round ? `${round}회차` : '심사'}</b>
+            <small>{date(application.submittedAt)}</small>
+            <span className={`owner-history-status ${application.status}`}>{statusCopy[application.status].label}</span>
+            <em>예비평가 {application.score}점 · 제안 한도 {won(application.approvedLimit)}</em>
+          </button>
+        })}</div>
+      </div>}
 
       <div className="owner-report-section">
         <div className="owner-report-section-title"><span>01</span><div><small>RESULT</small><h3>최종 결과와 공개 상태</h3><p>현재 심사 결과와 투자자에게 보이는 범위를 함께 확인하세요.</p></div></div>

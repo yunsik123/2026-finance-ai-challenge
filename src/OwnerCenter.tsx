@@ -14,11 +14,12 @@
  * 그 확인·수정 결과가 문서함에 정답으로 쌓여 다음 판독을 개선할 재료가 된다.
  */
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, ArrowRight, BadgeCheck, Banknote, Building2, Check, ChevronRight, Database, Download, Eraser, Eye,
-  FileSpreadsheet, FileText, FolderDown, Image as ImageIcon, Landmark, Link2, LockKeyhole, PlugZap, ReceiptText,
-  RotateCcw, ShieldCheck, Sparkles, Store, Trash2, TriangleAlert, UploadCloud, UserCheck, Users, type LucideIcon,
+  FileSpreadsheet, FileText, FolderDown, Landmark, Link2, LockKeyhole, PlugZap, ReceiptText,
+  RotateCcw, ShieldCheck, Sparkles, Store, Trash2, TriangleAlert, UploadCloud, UserCheck, Users, X, type LucideIcon,
 } from 'lucide-react'
 import { api } from './lib/api.ts'
 import { DocumentModal, HighlightedImage, LocalFileViewer, fileSizeLabel, type OcrBox } from './DocumentViewer.tsx'
@@ -54,6 +55,15 @@ type UploadOption = {
   sampleLabel?: string
   /** 같은 문서의 PDF 판. 실제 발급 서류가 대부분 PDF라서 함께 제공한다. */
   samplePdfUrl?: string
+  /**
+   * '데모자료 한번에 업로드'가 이 칸에 넣을 파일.
+   *
+   * 카드에 걸린 sampleUrl 과 일부러 다르게 둘 수 있다. 매출·계좌 같은 기간 자료는
+   * 사장님이 보기엔 집계표 그림이 자연스럽지만, 서버가 숫자를 세어 자료끼리 대조하려면
+   * 표(CSV) 본문이 있어야 한다. 그림만 넣으면 지표가 하나도 산정되지 않고
+   * 결과 화면의 교차검증 카드가 통째로 비어버린다(실제로 그런 상태였다).
+   */
+  demoUrl?: string
   /** 같은 자료의 엑셀 판. 은행·세무 프로그램은 xlsx 로 내려주는 경우가 많다. */
   sampleAltUrl?: string
   sampleAltLabel?: string
@@ -94,8 +104,9 @@ const uploadOptions: UploadOption[] = [
     accept: '.png,.jpg,.jpeg,.pdf,.csv,.xlsx',
     sampleUrl: '/samples/06_business_bank_statement_clean.png',
     sampleLabel: '내역서 PNG',
-    sampleAltUrl: '/samples/06_business_bank_statement_photo.png',
-    sampleAltLabel: '촬영본 PNG',
+    sampleAltUrl: '/samples/meoktu-account-sample.csv',
+    sampleAltLabel: 'CSV 샘플',
+    demoUrl: '/samples/meoktu-account-sample.csv',
   },
   {
     id: 'pos',
@@ -105,6 +116,7 @@ const uploadOptions: UploadOption[] = [
     columns: '확인 항목: 월별 매출액, 주문건수, 결제수단별 금액, 취소환불액',
     accept: '.png,.jpg,.jpeg,.pdf,.csv,.xlsx',
     sampleUrl: '/samples/04_pos_sales_summary.png',
+    demoUrl: '/samples/meoktu-pos-sample.csv',
     sampleLabel: '집계표 PNG',
     sampleAltUrl: '/samples/meoktu-pos-sample.csv',
     sampleAltLabel: 'CSV 샘플',
@@ -117,6 +129,7 @@ const uploadOptions: UploadOption[] = [
     columns: '확인 항목: 승인건수, 승인금액, 수수료, 실입금액',
     accept: '.png,.jpg,.jpeg,.pdf,.csv,.xlsx',
     sampleUrl: '/samples/05_card_van_settlement.png',
+    demoUrl: '/samples/meoktu-card-settlement-sample.csv',
     sampleLabel: '정산표 PNG',
     sampleAltUrl: '/samples/meoktu-card-settlement-sample.csv',
     sampleAltLabel: 'CSV 샘플',
@@ -129,6 +142,7 @@ const uploadOptions: UploadOption[] = [
     columns: '확인 항목: 배달 주문금액, 중개수수료, 정산입금액, 주문건수',
     accept: '.png,.jpg,.jpeg,.pdf,.csv,.xlsx',
     sampleUrl: '/samples/07_delivery_platform_settlement.png',
+    demoUrl: '/samples/meoktu-delivery-sample.csv',
     sampleLabel: '정산표 PNG',
     sampleAltUrl: '/samples/meoktu-delivery-sample.csv',
     sampleAltLabel: 'CSV 샘플',
@@ -175,6 +189,7 @@ const uploadOptions: UploadOption[] = [
     columns: '확인 항목: 대출기관, 대출잔액, 이자율, 월 원리금 상환액, 만기일',
     accept: '.png,.jpg,.jpeg,.pdf,.csv,.xlsx',
     sampleUrl: '/samples/08_debt_schedule.png',
+    demoUrl: '/samples/meoktu-debt-sample.csv',
     sampleLabel: '부채현황 PNG',
     sampleAltUrl: '/samples/meoktu-debt-sample.csv',
     sampleAltLabel: 'CSV 샘플',
@@ -187,6 +202,7 @@ const uploadOptions: UploadOption[] = [
     columns: '확인 항목: 직원수, 기본급, 지급총액, 공제내역, 실지급액',
     accept: '.png,.jpg,.jpeg,.pdf,.csv,.xlsx',
     sampleUrl: '/samples/10_payroll_ledger.png',
+    demoUrl: '/samples/meoktu-staff-sample.csv',
     sampleLabel: '급여대장 PNG',
     sampleAltUrl: '/samples/meoktu-staff-sample.csv',
     sampleAltLabel: 'CSV 샘플',
@@ -215,8 +231,8 @@ const sampleProfile: Record<string, string> = {
   signature: '들기름 고등어 한상',
   avgPrice: '13000',
   ownerName: '김테스트',
-  businessNumber: '123-45-67890',
-  licenseNumber: '제 2022-마포-0451 호',
+  businessNumber: '123-45-67891',
+  licenseNumber: '제2026-테스트-0001호',
   address: '서울특별시 마포구 테스트로 123, 1층',
   targetAmount: '30000000',
   fundPurpose: '저온 저장고 교체 1,800만원 / 주방 동선 개선 1,200만원',
@@ -276,17 +292,6 @@ const metricLabels: Record<string, string> = {
 const moneyMetrics = new Set(['recent12MonthAverageSales', 'estimatedMonthlyOperatingCashflow', 'averageTicket'])
 const percentMetrics = new Set(['recent12MonthSalesGrowth', 'salesVolatility', 'repeatRate', 'deliverySalesShare', 'rentToSalesRatio', 'debtServiceToCashflowRatio', 'districtSalesGrowth', 'relativeSalesGrowth', 'salesReconciliationRate'])
 
-/** 만능 업로드함이 처리 중인 파일 한 줄. */
-type IntakeRow = {
-  key: string
-  filename: string
-  state: 'working' | 'done' | 'failed'
-  message: string
-  sourceId?: string
-  confidence?: number
-  alternatives?: string[]
-}
-
 /**
  * 단계마다 주소가 하나씩 있다.
  *
@@ -299,8 +304,7 @@ type IntakeRow = {
  */
 const stepDefinitions = [
   { id: 'store', slug: 'store', title: '가게 정보', hint: '사업자등록증에 적힌 대로 넣어주세요.' },
-  { id: 'upload', slug: 'upload', title: '자료 올리기', hint: '가지고 계신 파일을 그냥 올려주세요. 무엇인지는 먹투가 알아봅니다.' },
-  { id: 'reading', slug: 'reading', title: '읽은 값 확인', hint: 'AI가 읽은 값이 맞는지만 봐주세요.' },
+  { id: 'upload', slug: 'upload', title: '자료 올리기', hint: '자료를 올리면 AI가 읽은 값까지 이 화면에서 바로 확인합니다.' },
   { id: 'plan', slug: 'plan', title: '동의와 계획', hint: '꼭 필요한 동의와 자금 계획만 받습니다.' },
 ] as const
 
@@ -315,6 +319,47 @@ const emptyFields = (): ApplicationFields => ({
   requestedLimit: '30000000', fundingPeriodMonths: '18', ownCapital: '10000000', maxDiscount: '40',
   fundPurpose: '', businessPlan: '', expectedEffect: '',
 })
+/**
+ * 사업자등록번호 검사. 서버 verifyBusiness 와 같은 규칙을 화면에서 먼저 돌린다.
+ *
+ * 서버는 자리수와 국세청 검증번호를 모두 보고 안 맞으면 접수를 400 으로 막는다.
+ * 그런데 화면은 아무 말도 하지 않아서, 마지막 '자동분석 시작'을 누른 뒤에야
+ * 두 화면 앞에서 잘못 적은 번호 때문에 막혔다는 걸 알게 됐다. 같은 검사를 여기서 먼저 한다.
+ */
+const businessNumberDigits = (value: string) => value.replace(/\D/g, '')
+/** 국세청 사업자등록번호 검증번호 규칙. server/verification.ts 와 같은 계산이다. */
+const businessNumberChecksum = (number: string) => {
+  const weights = [1, 3, 7, 1, 3, 7, 1, 3, 5]
+  const digits = [...number].map(Number)
+  let sum = digits.slice(0, 9).reduce((total, digit, index) => total + digit * weights[index], 0)
+  sum += Math.floor((digits[8] * 5) / 10)
+  return (10 - (sum % 10)) % 10 === digits[9]
+}
+const businessNumberValid = (value: string) => {
+  const digits = businessNumberDigits(value)
+  return digits.length === 10 && businessNumberChecksum(digits)
+}
+/**
+ * 영업신고번호.
+ *
+ * 처음에는 숫자만 받았다. 그런데 meoktu_ocr_test_documents 의 실제 영업신고증 공개본을 보면
+ * 신고번호는 '제 2024-0123 호', '제 2022-마포-0451 호'처럼 연도·관할구청명·일련번호가
+ * 섞인 형태로 발급된다. 숫자만 받으면 사장님이 서류에 적힌 번호를 그대로 못 넣는다.
+ *
+ * 그래서 '숫자여야 한다'는 요구는 이렇게 지킨다.
+ *   · 서식 글자(제·호)와 공백은 떼고 본다.
+ *   · 남은 것은 숫자·하이픈·관할구청 이름(한글)만 허용한다.
+ *   · 연도나 일련번호에 해당하는 4자리 이상 숫자가 반드시 있어야 한다.
+ * 이러면 '신고번호 입력' 같은 글자나 아무 말이나 적은 값은 그대로 걸린다.
+ */
+const licenseNumberCore = (value: string) => value.trim().replace(/^제\s*/, '').replace(/\s*호$/, '').trim()
+const licenseNumberValid = (value: string) => {
+  const core = licenseNumberCore(value)
+  if (!core) return false
+  if (!/^[\d가-힣\s-]+$/.test(core)) return false
+  return /\d{4,}/.test(core.replace(/-/g, ' '))
+}
+
 /** 1단계에서 반드시 채워야 하는 칸. */
 const storeFieldRules: Array<[string, string]> = [
   ['restaurantName', '상호명을 입력해주세요.'],
@@ -349,8 +394,11 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
   const [result, setResult] = useState<ApplicationResult | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [fillingSample, setFillingSample] = useState('')
-  const [intakeRows, setIntakeRows] = useState<IntakeRow[]>([])
+  /** 지금 살펴보는 중인 파일 이름. 목록 대신 한 줄로만 보여준다. */
+  const [intakeNote, setIntakeNote] = useState('')
   const [intakeBusy, setIntakeBusy] = useState(false)
+  /** 제휴기관 연결 동의서를 띄운 출처 id. 동의 없이 바로 연결되지 않게 한 단계 둔다. */
+  const [consentPartner, setConsentPartner] = useState('')
   const [dragging, setDragging] = useState(false)
   /** 지금 열어 본 업로드 자료의 출처 id. 파일은 브라우저 안에만 있고 서버로 보내지 않는다. */
   const [openedDocument, setOpenedDocument] = useState('')
@@ -455,6 +503,39 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
     return record.fields.some((field) => field.state === 'ai')
   })
 
+  /**
+   * 입력 중에 바로 보여주는 형식 오류.
+   * 비어 있을 때는 아무 말도 하지 않는다. 아직 안 쓴 칸에 빨간 글씨를 띄우면 겁부터 먹는다.
+   */
+  const businessNumberError = !fields.businessNumber.trim() || businessNumberValid(fields.businessNumber) ? ''
+    : businessNumberDigits(fields.businessNumber).length !== 10
+      ? `사업자등록번호 형식이 맞지 않아요. 000-00-00000 처럼 숫자 10자리로 넣어주세요. (지금 숫자 ${businessNumberDigits(fields.businessNumber).length}자리)`
+      : '숫자 10자리는 맞지만 국세청 검증번호가 맞지 않아요. 사업자등록증의 번호를 다시 확인해주세요.'
+  const licenseNumberError = fields.licenseNumber.trim() && !licenseNumberValid(fields.licenseNumber)
+    ? '영업신고번호를 신고증에 적힌 대로 넣어주세요. 연도와 일련번호(4자리 이상 숫자)가 들어가야 합니다. (예: 제 2024-0123 호)'
+    : ''
+
+  /**
+   * 데모 정보로 1단계를 한 번에 채운다.
+   * public/samples 의 합성 서류와 같은 값이라, 그대로 두면 판독값과 신고값이 서로 맞는다.
+   */
+  const fillStoreProfile = () => {
+    setFields((current) => ({
+      ...current,
+      restaurantName: sampleProfile.restaurantName,
+      ownerName: sampleProfile.ownerName,
+      category: sampleProfile.category,
+      signature: sampleProfile.signature,
+      avgPrice: sampleProfile.avgPrice,
+      businessNumber: sampleProfile.businessNumber,
+      licenseNumber: sampleProfile.licenseNumber,
+      address: sampleProfile.address,
+    }))
+    setIdentityVerified(true)
+    setOwnership((current) => (current.length ? current : [{ name: sampleProfile.ownerName, share: 100, role: '대표자' }]))
+    notify('데모 사업체 정보로 채웠어요. 올리실 서류에 맞춰 값을 고쳐도 됩니다.')
+  }
+
   const resetApplication = () => {
     setOpenedDocument('')
     setUploadedFiles({})
@@ -465,7 +546,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
     setOcrImages({})
     setClassifications({})
     setDocumentRecords({})
-    setIntakeRows([])
+    setIntakeNote('')
     setIdentityVerified(false)
     setAgreedDocuments([])
     setFields(emptyFields())
@@ -493,13 +574,17 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
    * 앞 단계로 되돌릴 때 경고를 쏟아붓지 않아야 하고, 단계 표시줄의 활성 여부도 이 값으로 정한다.
    */
   const stepComplete = (index: number) => {
-    if (index === 0) return storeFieldRules.every(([name]) => fields[name]?.trim()) && identityVerified
+    if (index === 0) {
+      return storeFieldRules.every(([name]) => fields[name]?.trim()) && identityVerified
+        && businessNumberValid(fields.businessNumber) && licenseNumberValid(fields.licenseNumber)
+    }
     if (index === 1) {
+      // 판독값 확인도 이 단계 안('AI 자료 분석 결과')에서 끝낸다. 별도 단계가 없어졌기 때문이다.
       return missingRequired.length === 0 && !salesEvidenceMissing && declaredDebt.answered
         && (!declaredDebt.hasDebt || declaredDebt.loans.some((loan) => loan.lender.trim() || loan.balance > 0))
+        && unreviewedReadings.length === 0
     }
-    if (index === 2) return unreviewedReadings.length === 0
-    if (index === 3) {
+    if (index === 2) {
       return planFieldRules.every(([name]) => fields[name]?.trim())
         && Number(fields.requestedLimit) >= 5000000
         && fundUseTotal === Number(fields.requestedLimit)
@@ -525,6 +610,18 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
       for (const [name, message] of storeFieldRules) {
         if (!fields[name]?.trim()) { notify(message); focusField(name); return false }
       }
+      if (!businessNumberValid(fields.businessNumber)) {
+        notify(businessNumberDigits(fields.businessNumber).length === 10
+          ? '사업자등록번호 검증번호가 맞지 않아요. 사업자등록증의 번호를 다시 확인해주세요.'
+          : '사업자등록번호 형식이 맞지 않아요. 000-00-00000 처럼 숫자 10자리로 입력해주세요.')
+        focusField('businessNumber')
+        return false
+      }
+      if (!licenseNumberValid(fields.licenseNumber)) {
+        notify('영업신고번호를 신고증에 적힌 대로 입력해주세요. 연도와 일련번호(4자리 이상 숫자)가 들어가야 합니다. (예: 제 2024-0123 호)')
+        focusField('licenseNumber')
+        return false
+      }
       if (!identityVerified) { notify('대표자 본인인증을 먼저 완료해주세요.'); return false }
       return true
     }
@@ -546,16 +643,13 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
         notify('대출이 있다고 하셨어요. 금융기관과 잔액을 한 건 이상 적어주세요.')
         return false
       }
-      return true
-    }
-    if (index === 2) {
       if (unreviewedReadings.length) {
-        notify(`AI가 읽은 값 중 아직 확인하지 않은 서류가 ${unreviewedReadings.length}건 있어요. 맞는지 확인해주세요.`)
+        notify(`‘AI 자료 분석 결과’에서 아직 확인하지 않은 판독값이 ${unreviewedReadings.length}건 있어요. 맞으면 확인을, 틀렸으면 다시 올리기를 눌러주세요.`)
         return false
       }
       return true
     }
-    if (index === 3) {
+    if (index === 2) {
       for (const [name, message] of planFieldRules) {
         if (!fields[name]?.trim()) { notify(message); focusField(name); return false }
       }
@@ -654,25 +748,28 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
    *
    * 표(CSV·엑셀)는 열 이름으로 분류하고, 사진·PDF 는 판독 결과의 문서 종류로 분류한다.
    * 열 이름 신호가 판독보다 정확하기 때문에 표는 AI를 부르지 않는다(비용·시간 절약).
+   *
+   * 처리 결과를 줄줄이 나열하던 목록은 없앴다. 어느 칸에 들어갔는지는 아래 'B. 자료가 들어간 칸'이
+   * 이미 그대로 보여주고, 판독값은 'AI 자료 분석 결과'에서 확인한다. 같은 말을 세 번 하고 있었다.
+   * 대신 진행 중인 파일 한 줄과 실패 알림만 남긴다.
    */
   const intakeFiles = async (files: File[]) => {
     if (!owner) { onLogin(); return }
     if (intakeBusy) return
     setIntakeBusy(true)
     const accepted = files.slice(0, 12)
+    let placed = 0
     for (const original of accepted) {
-      const key = `${original.name}-${original.size}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
-      const pending: IntakeRow = { key, filename: original.name, state: 'working', message: '살펴보는 중이에요...' }
-      setIntakeRows((current) => [pending, ...current].slice(0, 20))
-      const update = (patch: Partial<IntakeRow>) => setIntakeRows((current) => current.map((row) => (row.key === key ? { ...row, ...patch } : row)))
+      const note = (message: string) => setIntakeNote(`${original.name} · ${message}`)
       try {
+        note('살펴보는 중이에요...')
         if (original.size > 20 * 1024 * 1024) throw new Error('20MB 이하 파일만 올릴 수 있어요.')
         const kind = kindOf(original)
         if (kind === 'unknown') throw new Error('사진·PDF·엑셀·CSV 파일만 읽을 수 있어요.')
 
         let working = original
         if (kind === 'sheet') {
-          update({ message: '엑셀을 표로 바꾸는 중이에요...' })
+          note('엑셀을 표로 바꾸는 중이에요...')
           const { csv } = await sheetToCsv(original)
           if (!csv.trim()) throw new Error('엑셀에서 읽을 내용을 찾지 못했어요.')
           working = new File([csv], `${original.name.replace(/\.(xlsx|xlsm)$/i, '')}.csv`, { type: 'text/csv' })
@@ -680,32 +777,28 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
 
         if (kind === 'csv' || kind === 'sheet') {
           const shape = csvShape(await working.text())
-          update({ message: `열 ${shape.headers.length}개를 보고 무엇인지 확인하는 중이에요...` })
+          note(`열 ${shape.headers.length}개를 보고 무엇인지 확인하는 중이에요...`)
           const { classification } = await api<{ classification: DocumentClassification }>('/api/documents/classify', {
             method: 'POST',
             body: JSON.stringify({ filename: working.name, headers: shape.headers, tabular: true }),
           })
           if (classification.sourceId === 'other') {
-            update({ state: 'done', message: classification.reason, sourceId: 'other', confidence: 0, alternatives: uploadOptions.map((option) => option.id) })
+            notify(`${working.name}: ${classification.reason} 아래 자료 칸에서 직접 골라 넣어주세요.`)
             continue
           }
           const metadata = await placeFile(classification.sourceId, working)
           setClassifications((current) => ({ ...current, [classification.sourceId]: classification }))
           void registerDocument({ file: working, sourceId: classification.sourceId, metadata })
-          update({
-            state: 'done', sourceId: classification.sourceId, confidence: classification.confidence,
-            alternatives: classification.alternatives,
-            message: `${labelOf(classification.sourceId)}로 넣었어요 · ${shape.headers.length}열 ${shape.rowCount.toLocaleString('ko-KR')}행 · ${classification.reason}`,
-          })
+          placed += 1
           continue
         }
 
         // 사진과 PDF 는 판독을 거쳐야 무엇인지 알 수 있다.
-        update({ message: kind === 'pdf' ? 'PDF 첫 장을 그림으로 바꾸는 중이에요...' : '사진을 읽는 중이에요...' })
+        note(kind === 'pdf' ? 'PDF 첫 장을 그림으로 바꾸는 중이에요...' : '사진을 읽는 중이에요...')
         const dataUrl = kind === 'pdf' ? (await pdfFirstPageToPng(original)).dataUrl : await readAsDataUrl(original)
         const estimatedMb = (dataUrl.length * .75) / 1024 / 1024
         if (estimatedMb > UPLOAD_MB) throw new Error(`판독할 그림이 ${UPLOAD_MB}MB를 넘어요. 더 작은 파일로 올려주세요.`)
-        update({ message: 'AI가 서류를 읽는 중이에요...' })
+        note('AI가 서류를 읽는 중이에요...')
         const response = await api<{ analysis: OcrAnalysis; classification: DocumentClassification; fields: DocumentField[] }>('/api/ai/ocr', {
           method: 'POST',
           body: JSON.stringify({ image: dataUrl, filename: original.name, sourceId: 'auto', plan: '펀딩 신청 원천자료 사전검증' }),
@@ -713,7 +806,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
         const resolved = response.analysis.sourceId && response.analysis.sourceId !== 'other'
           ? response.analysis.sourceId : response.classification.sourceId
         if (!resolved || resolved === 'other') {
-          update({ state: 'done', message: response.classification.reason, sourceId: 'other', confidence: 0, alternatives: uploadOptions.map((option) => option.id) })
+          notify(`${original.name}: ${response.classification.reason} 아래 자료 칸에서 직접 골라 넣어주세요.`)
           continue
         }
         const metadata = await placeFile(resolved, original)
@@ -725,46 +818,17 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
           documentType: String((response.analysis.result as Record<string, unknown>)?.documentType || ''),
           ocrAnalysisId: response.analysis.id, fields: response.fields,
         })
-        update({
-          state: 'done', sourceId: resolved, confidence: response.classification.confidence,
-          alternatives: response.classification.alternatives,
-          message: `${labelOf(resolved)}로 넣었어요 · ${response.classification.reason}`,
-        })
+        placed += 1
       } catch (error) {
-        update({ state: 'failed', message: (error as Error).message })
+        // 실패는 목록이 없어졌으니 알림으로 알린다. 조용히 사라지면 안 된다.
+        notify(`${original.name}: ${(error as Error).message}`)
       }
     }
+    setIntakeNote('')
     setIntakeBusy(false)
+    if (placed) notify(`${placed}개 자료를 알맞은 칸에 넣었어요. 아래에서 어느 칸에 들어갔는지 확인해주세요.`)
     await refresh().catch(() => undefined)
     api<any>('/api/owner').then((data) => setOwnerData(data)).catch(() => undefined)
-  }
-
-  /** 자동 분류가 틀렸을 때 사장님이 직접 고친다. 이 교정도 문서함에 남는다. */
-  const reassign = async (row: IntakeRow, sourceId: string) => {
-    const file = row.sourceId && row.sourceId !== 'other' ? selectedFiles[row.sourceId] : undefined
-    if (!file) { notify('이 파일을 다시 올려주세요. 원본이 화면에 남아 있지 않아요.'); return }
-    if (row.sourceId && row.sourceId !== sourceId) clearSlot(row.sourceId)
-    const metadata = await placeFile(sourceId, file)
-    setIntakeRows((current) => current.map((item) => (item.key === row.key
-      ? { ...item, sourceId, message: `${labelOf(sourceId)}로 바꿨어요. 사장님이 직접 고른 분류예요.`, confidence: 1 } : item)))
-    const analysis = row.sourceId ? ocrResults[row.sourceId] : undefined
-    if (analysis && row.sourceId) {
-      setOcrResults((current) => {
-        const next = { ...current }
-        delete next[row.sourceId!]
-        next[sourceId] = analysis
-        return next
-      })
-      setOcrImages((current) => {
-        const next = { ...current }
-        const image = next[row.sourceId!]
-        delete next[row.sourceId!]
-        if (image) next[sourceId] = image
-        return next
-      })
-    }
-    void registerDocument({ file, sourceId, metadata, ocrAnalysisId: analysis?.id, fields: documentRecords[row.sourceId || '']?.fields })
-    notify(`${labelOf(sourceId)}로 바꿨어요.`)
   }
 
   const clearSlot = (sourceId: string) => {
@@ -811,10 +875,12 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
    */
   const fillWithSamples = async (set: SampleSet) => {
     if (!owner) return
-    const options = uploadOptions.filter((option) => option.sampleUrl)
+    const options = uploadOptions.filter((option) => option.demoUrl || option.sampleUrl)
     setFillingSample(set.id)
     try {
-      const urls = options.map((option) => set.overrides?.[option.id] || (option.sampleUrl as string))
+      // 표 자료는 CSV(demoUrl), 서류는 합성 PNG(sampleUrl). 둘을 섞어야 판독 화면과
+      // 교차검증이 동시에 살아난다.
+      const urls = options.map((option) => set.overrides?.[option.id] || option.demoUrl || (option.sampleUrl as string))
       const files = await Promise.all(urls.map((url, index) => fetchSampleFile(url, options[index].title)))
       const metadataList = await Promise.all(files.map(readDocumentMetadata))
       const names: Record<string, string> = {}
@@ -831,14 +897,6 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
       setDocumentMetadata(metadata)
       setOcrResults({})
       setOcrImages({})
-      setIntakeRows(options.map((option, index) => ({
-        key: `sample-${set.id}-${option.id}`,
-        filename: files[index].name,
-        state: 'done' as const,
-        sourceId: option.id,
-        confidence: 1,
-        message: `${set.id === 'rough' && set.overrides?.[option.id] ? '어긋난 샘플' : '샘플'} 자료를 ${option.title} 칸에 넣었어요.`,
-      })))
       setFields((current) => ({ ...current, ...sampleProfile }))
       setIdentityVerified(true)
       // 샘플은 새로 추가된 항목까지 채운다. 안 채우면 샘플로 끝까지 가볼 수 없다.
@@ -846,16 +904,21 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
         { category: '주방설비', amount: 18000000, note: '저온 저장고 1대 교체' },
         { category: '인테리어', amount: 12000000, note: '주방 동선 개선 공사' },
       ])
+      // 신고값은 데모 부채 자료(meoktu-debt-sample.csv)의 최근월과 정확히 같게 둔다.
+      // 어긋나면 결과 화면에서 '신고 대출잔액과 자료가 다르다'는 불일치로 잡힌다.
       setDeclaredDebt({
         hasDebt: true, answered: true,
-        loans: [{ lender: '○○은행', balance: 70000000, rate: 5.4, monthlyPayment: 1985000, maturity: '2028-06' }],
+        loans: [
+          { lender: '한빛은행', balance: 27600000, rate: 5.4, monthlyPayment: 780000, maturity: '2029-04' },
+          { lender: '소상공인시장진흥공단', balance: 20400000, rate: 2.9, monthlyPayment: 370000, maturity: '2029-04' },
+        ],
       })
       setOwnership([{ name: '김테스트', share: 100, role: '대표자' }])
       const rows = metadataList.reduce((sum, item) => sum + item.rowCount, 0)
       goToStep(1)
       notify(set.id === 'rough'
         ? `어긋난 샘플 ${files.length}종을 올렸어요. 표 자료 ${rows.toLocaleString('ko-KR')}행을 확인했습니다. 자동분석을 돌리면 매출↔계좌·매출↔카드 대조에서 불일치가 잡힙니다.`
-        : `가상 서류(PNG) ${files.length}종을 올렸어요. 가게 정보와 자금 계획란도 채웠습니다.`)
+        : `데모 자료 ${files.length}종을 올렸어요. 서류는 합성 PNG로, 매출·계좌 자료는 표(CSV) ${rows.toLocaleString('ko-KR')}행으로 넣어 교차검증까지 돌아갑니다. 가게 정보와 자금 계획란도 채웠습니다.`)
       // 문서함에도 남긴다. 화면을 막지 않도록 뒤에서 처리한다.
       void Promise.allSettled(options.map((option, index) => registerDocument({
         file: files[index], sourceId: option.id, metadata: metadataList[index],
@@ -873,7 +936,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
     setDocumentMetadata({})
     setOcrResults({})
     setOcrImages({})
-    setIntakeRows([])
+    setIntakeNote('')
     for (const option of uploadOptions) {
       const field = document.querySelector<HTMLInputElement>(`input[name="document-${option.id}"]`)
       if (field) field.value = ''
@@ -881,17 +944,58 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
     notify('업로드한 자료를 모두 비웠어요.')
   }
 
+  /** 동의서를 읽고 확인한 뒤에만 불린다. 서버도 consent:true 없이는 연결을 거절한다. */
   const connectPartner = async (sourceId: string) => {
     try {
       const response = await api<{ message: string }>(`/api/data-connections/${sourceId}`, { method: 'POST', body: JSON.stringify({ consent: true }) })
       notify(response.message)
+      setConsentPartner('')
       setOwnerData(await api<any>('/api/owner'))
       await refresh()
     } catch (error) { notify((error as Error).message) }
   }
 
-  const analyzeDocument = async (sourceId: string) => {
-    const file = selectedFiles[sourceId]
+  /**
+   * 판독이 틀렸을 때 더 잘 나온 사진으로 바꿔 넣는다.
+   * 값을 하나씩 고치는 것보다 다시 찍어 올리는 편이 빠른 경우가 많다(그늘·기울기·잘림).
+   * 새 파일을 넣고 곧바로 다시 읽어서, 사장님이 버튼을 한 번 더 누르지 않아도 되게 한다.
+   */
+  const reuploadDocument = async (sourceId: string, file: File) => {
+    if (file.size > 20 * 1024 * 1024) { notify('업로드 파일은 20MB 이하여야 해요.'); return }
+    let working = file
+    if (kindOf(file) === 'sheet') {
+      try {
+        const { csv } = await sheetToCsv(file)
+        working = new File([csv], `${file.name.replace(/\.(xlsx|xlsm)$/i, '')}.csv`, { type: 'text/csv' })
+      } catch (error) { notify((error as Error).message); return }
+    }
+    setOcrResults((current) => { const next = { ...current }; delete next[sourceId]; return next })
+    setOcrImages((current) => { const next = { ...current }; delete next[sourceId]; return next })
+    try {
+      const metadata = await placeFile(sourceId, working)
+      if (filesRef.current[sourceId] !== working) return
+      void registerDocument({ file: working, sourceId, metadata })
+      const kind = kindOf(working)
+      if (kind === 'image' || kind === 'pdf') {
+        notify(`${working.name}로 바꿨어요. 다시 읽어볼게요.`)
+        // 방금 넣은 파일을 그대로 넘긴다. 상태(selectedFiles)는 아직 갱신 전이다.
+        await analyzeDocument(sourceId, working)
+      } else {
+        notify(`${working.name}로 바꿨어요. 표 자료는 먹투가 직접 합산합니다.`)
+      }
+    } catch (error) { notify((error as Error).message) }
+  }
+
+  /**
+   * 서류 한 장을 AI로 읽는다.
+   *
+   * 읽을 파일은 인자로 받을 수 있게 해 두었다. 방금 넣은 파일을 곧바로 읽어야 하는 경우
+   * (다시 올리기)에 selectedFiles 를 쓰면 안 되기 때문이다. setSelectedFiles 는 다음 렌더에
+   * 반영되므로, 같은 이벤트 안에서 읽으면 직전 파일이 잡힌다. 실제로 그래서 '다시 올리기'가
+   * 옛 파일을 판독 API로 보내고(요금만 쓰고) 그 결과를 버리고 있었다.
+   */
+  const analyzeDocument = async (sourceId: string, override?: File) => {
+    const file = override || selectedFiles[sourceId]
     if (!file) return
     const kind = kindOf(file)
     if (kind !== 'image' && kind !== 'pdf') return notify('사진 또는 PDF 서류만 AI 판독할 수 있어요.')
@@ -1012,7 +1116,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
   return <div className="owner-page owner-v2">
     <section className="owner-page-hero">
       <div><span className="eyebrow light"><Store /> 먹투 사장님 센터</span><h1>가지고 계신 자료를<br /><em>그냥 올려주세요.</em></h1><p>재무제표를 새로 만들 필요 없어요. 사진·PDF·엑셀·CSV 무엇이든 올리면 먹투가 무슨 자료인지 알아보고, 필요한 값을 뽑아 서로 맞는지 대조합니다.</p><div className="owner-values"><span><Check /> 신청비 0원</span><span><Check /> 양식 작성 없음</span><span><Check /> 사진·PDF·엑셀 가능</span><span><Check /> 자동 분류</span><span><Check /> 자료 일치도 공개</span><span><Check /> 부족한 자료는 미산정</span></div></div>
-      <div className="review-flow data-flow"><b>펀딩 등록 흐름</b>{['가게 정보 확인', '자료 올리기(자동 분류)', 'AI가 읽은 값 확인', '동의와 자금 계획', '35지표 예비평가와 자료 일치도', '운영자 확인 후 펀딩 등록'].map((title, index) => <div key={title}><span>{index + 1}</span><p>{title}</p><Check /></div>)}</div>
+      <div className="review-flow data-flow"><b>펀딩 등록 흐름</b>{['가게 정보 확인', '자료 올리기 · 자동 분류 · AI가 읽은 값 확인', '동의와 자금 계획', '35지표 예비평가와 자료 일치도', '운영자 확인 후 펀딩 등록'].map((title, index) => <div key={title}><span>{index + 1}</span><p>{title}</p><Check /></div>)}</div>
     </section>
 
     <div className="owner-page-body">
@@ -1065,11 +1169,17 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
         <fieldset disabled={!owner || submitting || Boolean(fillingSample)}>
           <div className="form-heading"><span>원천데이터 기반 예비심사</span><h2>{stepDefinitions[step].title}</h2><p>{stepDefinitions[step].hint}</p></div>
 
-          {/* 샘플 자료 버튼은 어느 단계에서든 보이게 둔다.
-              2단계 안에만 두었더니, 1단계를 채우지 못한 사장님은 1·4단계 입력까지
-              함께 채워주는 이 버튼에 도달할 방법이 없었다(실제 브라우저 검사에서 걸렸다). */}
-          {owner && uploadedCount > 0 && <div className="sample-sets">
-            <button type="button" className="sample-clear" disabled={Boolean(fillingSample)} onClick={clearUploads}><Eraser /> 업로드 비우기</button>
+          {/* 데모 자료 버튼은 어느 단계에서든 닿을 수 있어야 한다.
+              이 버튼은 자료뿐 아니라 1·3단계 입력란까지 함께 채우는데, 2단계 안에만 두었더니
+              1단계를 못 채운 사장님은 여기에 도달할 방법이 없었다(실제 브라우저 검사에서 걸렸다).
+              2단계에서는 화면 맨 위 SamplePack 이 같은 일을 하므로 여기서는 감춘다. */}
+          {owner && <div className="sample-sets">
+            {step !== 1 && <button
+              type="button" className="virtual-data-upload-btn compact"
+              disabled={Boolean(fillingSample)}
+              onClick={() => void fillWithSamples(sampleSets[0])}
+            ><UploadCloud /> {fillingSample ? '데모 자료를 불러오는 중...' : '데모자료 한번에 업로드'}</button>}
+            {uploadedCount > 0 && <button type="button" className="sample-clear" disabled={Boolean(fillingSample)} onClick={clearUploads}><Eraser /> 업로드 비우기</button>}
           </div>}
 
           <nav className="wizard-rail" aria-label="신청 단계">
@@ -1114,15 +1224,23 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
               </div>}
 
               <div className="form-section">
-                <div className="form-section-title"><span>1</span><div><h3>사업체 기본정보와 대표자 확인</h3><p>상권 자료는 주소를 기준으로 먹투가 직접 수집합니다.</p></div></div>
+                {/* '한 번에 채우기'는 여기가 자리다. 예전에는 소유구조 칸에만 있어서,
+                    정작 채워야 할 사업체·대표자 입력란과 떨어져 있었다. */}
+                <div className="form-section-title"><span>1</span><div><h3>사업체 기본정보와 대표자 확인</h3><p>상권 자료는 주소를 기준으로 먹투가 직접 수집합니다.</p></div>
+                  <div className="section-title-action">
+                    <button type="button" className="autofill-basic" onClick={fillStoreProfile}>
+                      <Sparkles /> 데모 정보로 한 번에 채우기
+                    </button>
+                  </div>
+                </div>
                 <div className="field-grid">
                   <label className="field"><span>상호명</span><input name="restaurantName" placeholder="예: 소복소복" value={fields.restaurantName} onChange={setField('restaurantName')} /></label>
                   <label className="field"><span>대표자명</span><input name="ownerName" placeholder="사업자등록증과 동일하게" value={fields.ownerName} onChange={setField('ownerName')} /></label>
                   <label className="field"><span>업종</span><select name="category" value={fields.category} onChange={setField('category')}><option>한식</option><option>중식</option><option>일식</option><option>양식</option><option>카페·베이커리</option><option>분식</option><option>주점</option><option>기타</option></select></label>
                   <label className="field"><span>대표 메뉴</span><input name="signature" placeholder="예: 들기름 고등어 한상" value={fields.signature} onChange={setField('signature')} /></label>
                   <label className="field"><span>평균 식사 가격</span><div className="number-field"><input type="number" name="avgPrice" min={1000} step={1000} value={fields.avgPrice} onChange={setField('avgPrice')} /><span>원</span></div></label>
-                  <label className="field"><span>사업자등록번호</span><input name="businessNumber" placeholder="000-00-00000" value={fields.businessNumber} onChange={setField('businessNumber')} /></label>
-                  <label className="field"><span>영업신고번호</span><input name="licenseNumber" placeholder="신고번호 입력" value={fields.licenseNumber} onChange={setField('licenseNumber')} /></label>
+                  <label className={`field ${businessNumberError ? 'invalid' : ''}`}><span>사업자등록번호</span><input name="businessNumber" inputMode="numeric" placeholder="000-00-00000" value={fields.businessNumber} onChange={setField('businessNumber')} />{businessNumberError && <em className="field-error"><TriangleAlert /> {businessNumberError}</em>}</label>
+                  <label className={`field ${licenseNumberError ? 'invalid' : ''}`}><span>영업신고번호</span><input name="licenseNumber" inputMode="numeric" placeholder="신고증에 적힌 대로 (예: 제 2024-0123 호)" value={fields.licenseNumber} onChange={setField('licenseNumber')} />{licenseNumberError && <em className="field-error"><TriangleAlert /> {licenseNumberError}</em>}</label>
                   <label className="field full-field"><span>사업장 주소</span><input name="address" placeholder="상권·경쟁·생활인구 분석에 사용됩니다." value={fields.address} onChange={setField('address')} /></label>
                 </div>
                 <button type="button" className={`identity-action ${identityVerified ? 'verified' : ''}`} onClick={() => setIdentityVerified(true)}><UserCheck />{identityVerified ? '대표자 본인인증 완료' : '휴대전화로 대표자 본인인증'}<span>{identityVerified ? '신청자와 대표자 일치 여부를 확인했습니다.' : 'MVP에서는 버튼을 누르면 시연용 인증이 완료됩니다.'}</span></button>
@@ -1130,13 +1248,19 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
               </div>
             </section>}
 
-            {/* ── 2단계 · 자료 올리기 ───────────────────────── */}
+            {/* ── 2단계 · 자료 올리기 + 판독값 확인 ─────────── */}
             {step === 1 && <section className={`wizard-step active ${direction === 'back' ? 'back' : ''}`}>
+              {/* 준비된 자료가 없는 사람이 가장 먼저 만나야 하는 버튼이라 맨 위에 둔다.
+                  예전에는 화면 맨 아래에 있어서, 올릴 자료가 없는 사람은 스크롤을 다 내려야 발견했다. */}
+              <SamplePack
+                busy={Boolean(fillingSample)}
+                onLoadDemo={() => void fillWithSamples(sampleSets[0])}
+              />
+
               <UniversalIntake
-                dragging={dragging} busy={intakeBusy} rows={intakeRows}
+                dragging={dragging} busy={intakeBusy} note={intakeNote}
                 onDragState={setDragging}
                 onFiles={(files) => void intakeFiles(files)}
-                onReassign={(row, sourceId) => void reassign(row, sourceId)}
               />
 
               <div className="form-section evidence-source-section">
@@ -1144,11 +1268,12 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
                 <div className="source-progress"><div><b>{evidenceCount}개</b><span>확보 자료</span></div><div className="progress-track"><i style={{ width: `${Math.min(100, evidenceCount / uploadOptions.length * 100)}%` }} /></div><small>필수: 사업자등록·영업신고 + POS·사업계좌(기관 연결 또는 직접 업로드)</small></div>
                 {missingRequired.length > 0 && <p className="wizard-missing"><TriangleAlert /> 아직 없는 필수 자료: {missingRequired.map((source) => labelOf(source)).join(', ')}</p>}
 
-                <div className="evidence-lane partner-lane"><div className="evidence-lane-heading"><PlugZap /><div><b>A. 제휴기관·마이데이터형 연결</b><p>동의 범위·제공기관·동기화 시각이 함께 기록됩니다. 현재 버튼은 실제 기관 API 대신 시연 어댑터를 사용합니다.</p></div></div><div className="partner-connection-grid">{partnerOptions.map((option) => { const Icon = option.icon; const connection = activeConnections.find((item: any) => item.sourceId === option.id); return <article className={connection ? 'connected' : ''} key={option.id}><Icon /><div><b>{option.title}</b><span>{option.provider}</span><small>{option.scope}</small>{connection && <em><Check /> {connection.recordCount.toLocaleString()}건 · {new Date(connection.lastSyncedAt).toLocaleDateString('ko-KR')}</em>}</div><button type="button" disabled={Boolean(connection)} onClick={() => connectPartner(option.id)}>{connection ? '연결됨' : '동의하고 연결'}</button></article> })}</div></div>
+                {/* 기관 연결은 동의서를 읽고 나서만 이뤄진다. 신용정보 제공 동의를 버튼 한 번으로
+                    끝내면 실제 서비스에서 그대로 문제가 된다. */}
+                <div className="evidence-lane partner-lane"><div className="evidence-lane-heading"><PlugZap /><div><b>A. 제휴기관·마이데이터형 연결</b><p>동의 범위·제공기관·동기화 시각이 함께 기록됩니다. ‘동의하고 연결’을 누르면 조회 범위와 보유기간이 적힌 동의서를 먼저 보여드립니다. 현재 버튼은 실제 기관 API 대신 시연 어댑터를 사용합니다.</p></div></div><div className="partner-connection-grid">{partnerOptions.map((option) => { const Icon = option.icon; const connection = activeConnections.find((item: any) => item.sourceId === option.id); return <article className={connection ? 'connected' : ''} key={option.id}><Icon /><div><b>{option.title}</b><span>{option.provider}</span><small>{option.scope}</small>{connection && <em><Check /> {connection.recordCount.toLocaleString()}건 · {new Date(connection.lastSyncedAt).toLocaleDateString('ko-KR')}</em>}</div><button type="button" disabled={Boolean(connection)} onClick={() => setConsentPartner(option.id)}>{connection ? '연결됨' : '동의하고 연결'}</button></article> })}</div></div>
 
                 <div className="evidence-lane upload-lane">
                 <div className="evidence-lane-heading"><UploadCloud /><div><b>B. 자료가 들어간 칸</b><p>위에서 올린 파일이 여기에 자동으로 들어갑니다. 비어 있는 칸은 직접 골라 넣어도 됩니다. 엑셀은 표로 바꿔서 넣습니다.</p></div></div>
-                <SamplePack />
                 {/* 요건 묶음으로 나눠 보여준다. 무엇이 필수이고 무엇이 택1인지가 카드 옆에 그대로 붙는다. */}
                 {groupedOptions.map(({ group, options: groupOptions }) => {
                   const options = group === '추가 자료' ? [...groupOptions, ...unplacedOptions] : groupOptions
@@ -1176,7 +1301,9 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
                 </div>
                 })}
 
-                {/* AI 자료 분석 피드백 — 업로드 후 어떤 자료가 부족한지 AI가 판단해 보여준다 */}
+                {/* AI 자료 분석 결과.
+                    부족한 자료 안내와 'AI가 읽은 값 확인'을 한 곳에서 끝낸다. 예전에는 판독값 확인만
+                    3단계로 따로 떨어져 있어서, 같은 자료를 두 화면에서 두 번 설명하고 있었다. */}
                 {uploadedCount > 0 && <div className="ai-upload-feedback">
                   <div className="ai-feedback-header"><Sparkles /><b>AI 자료 분석 결과</b></div>
                   <div className="ai-feedback-list">
@@ -1198,19 +1325,30 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
                     })}
                   </div>
                   {missingRequired.length > 0 && <p className="ai-feedback-summary"><ShieldCheck /> 현재 {uploadedCount}개 자료가 등록되었고, 필수 자료 {missingRequired.length}개가 부족합니다. 위 안내를 참고해 추가 업로드해주세요.</p>}
-                  {missingRequired.length === 0 && !salesEvidenceMissing && <p className="ai-feedback-summary complete"><Check /> 필수 자료가 모두 확보되었습니다. 다음 단계로 진행할 수 있어요!</p>}
-                </div>}
+                  {missingRequired.length === 0 && !salesEvidenceMissing && unreviewedReadings.length === 0 && <p className="ai-feedback-summary complete"><Check /> 필수 자료가 모두 확보되었습니다. 다음 단계로 진행할 수 있어요!</p>}
 
-                {/* 가상자료 한번에 업로드하기 버튼 */}
-                <button
-                  type="button"
-                  className="virtual-data-upload-btn sample-set clean"
-                  disabled={Boolean(fillingSample)}
-                  onClick={() => void fillWithSamples(sampleSets[0])}
-                >
-                  <UploadCloud />
-                  {fillingSample ? '데모 자료를 불러오는 중...' : '데모자료 한번에 업로드하기'}
-                </button>
+                  <div className="ai-ocr-block">
+                    <div className="ai-ocr-intro">
+                      <b>AI가 서류에서 읽은 값</b>
+                      <p>잘 읽었으면 확인을 눌러주세요. 값이 이상하면 그 자리에서 고치거나 <b>다시 올리기</b>로 더 잘 나온 사진을 넣으면 됩니다. 확인·수정 결과는 다음 판독을 더 정확하게 만드는 데도 쓰입니다.</p>
+                    </div>
+                    <ReadingConfirm
+                      sources={readingSources}
+                      ocrResults={ocrResults}
+                      ocrImages={ocrImages}
+                      records={documentRecords}
+                      analyzing={analyzingSource}
+                      tables={Object.entries(documentMetadata).filter(([, metadata]) => metadata.rowCount > 0)}
+                      pendingDocuments={Object.entries(selectedFiles).filter(([sourceId, file]) => !ocrResults[sourceId] && (kindOf(file) === 'image' || kindOf(file) === 'pdf'))}
+                      onAnalyze={(sourceId) => void analyzeDocument(sourceId)}
+                      onConfirmField={(sourceId, key) => void reviewField(sourceId, key, null)}
+                      onCorrectField={(sourceId, key, value) => void reviewField(sourceId, key, value)}
+                      onConfirmAll={(sourceId) => void confirmAllFields(sourceId)}
+                      onReupload={(sourceId, file) => void reuploadDocument(sourceId, file)}
+                      onOpen={(sourceId) => setOpenedDocument(sourceId)}
+                    />
+                  </div>
+                </div>}
               </div>
               {/* 부채는 자료보다 답이 먼저다. 대출이 없으면 클릭 한 번으로 끝나고,
                   있으면 적어주신 값과 증빙을 대조한다. 증빙 업로드 칸도 이 묶음 안에 둔다. */}
@@ -1231,31 +1369,10 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
               </div>
             </section>}
 
-            {/* ── 3단계 · 읽은 값 확인 ─────────────────────── */}
+            {/* ── 3단계 · 동의와 계획 ──────────────────────── */}
             {step === 2 && <section className={`wizard-step active ${direction === 'back' ? 'back' : ''}`}>
-              <div className="form-section">
-                <div className="form-section-title"><span>3</span><div><h3>AI가 읽은 값이 맞는지 봐주세요</h3><p>틀린 값을 고쳐주시면 그 자리에서 바로 반영되고, 다음 판독을 더 정확하게 만드는 데도 쓰입니다.</p></div></div>
-                <ReadingConfirm
-                  sources={readingSources}
-                  ocrResults={ocrResults}
-                  ocrImages={ocrImages}
-                  records={documentRecords}
-                  analyzing={analyzingSource}
-                  tables={Object.entries(documentMetadata).filter(([, metadata]) => metadata.rowCount > 0)}
-                  pendingDocuments={Object.entries(selectedFiles).filter(([sourceId, file]) => !ocrResults[sourceId] && (kindOf(file) === 'image' || kindOf(file) === 'pdf'))}
-                  onAnalyze={(sourceId) => void analyzeDocument(sourceId)}
-                  onConfirmField={(sourceId, key) => void reviewField(sourceId, key, null)}
-                  onCorrectField={(sourceId, key, value) => void reviewField(sourceId, key, value)}
-                  onConfirmAll={(sourceId) => void confirmAllFields(sourceId)}
-                  onOpen={(sourceId) => setOpenedDocument(sourceId)}
-                />
-              </div>
-            </section>}
-
-            {/* ── 4단계 · 동의와 계획 ──────────────────────── */}
-            {step === 3 && <section className={`wizard-step active ${direction === 'back' ? 'back' : ''}`}>
               <div className="form-section legal-consent-section">
-                <div className="form-section-title"><span>4</span><div><h3>분석에 꼭 필요한 동의만 확인</h3><p>마케팅·광고 동의는 받지 않습니다. ‘전문 보기’를 누르면 수집 항목·목적·보유기간과 이의제기 절차가 펼쳐지고, 그 전문 맨 아래에서 동의할 수 있습니다.</p></div></div>
+                <div className="form-section-title"><span>3</span><div><h3>분석에 꼭 필요한 동의만 확인</h3><p>마케팅·광고 동의는 받지 않습니다. ‘전문 보기’를 누르면 수집 항목·목적·보유기간과 이의제기 절차가 펼쳐지고, 그 전문 맨 아래에서 동의할 수 있습니다.</p></div></div>
                 <div className="consent-progress"><b>{consentDocuments.filter((document) => agreedDocuments.includes(document.id)).length}/{consentDocuments.length}</b><span>필수 고지 동의 완료</span><small>각 항목의 전문을 펼치면 맨 아래에서 동의할 수 있어요.</small></div>
                 {consentDocuments.map((document) => <LegalConsentReader key={`${legal?.version}:${document.id}`} documentId={document.id} title={document.title} summary={document.summary} agreed={agreedDocuments.includes(document.id)} onToggle={() => toggleConsent(document.id)} />)}
                 {!consentDocuments.length && <p className="legal-loading">필수 고지사항을 불러오는 중이에요.</p>}
@@ -1263,7 +1380,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
               </div>
 
               <div className="form-section">
-                <div className="form-section-title"><span>5</span><div><h3>사장님이 직접 작성할 내용</h3><p>데이터만으로 알 수 없는 자금 목적과 실행계획만 직접 설명해주세요.</p></div></div>
+                <div className="form-section-title"><span>4</span><div><h3>사장님이 직접 작성할 내용</h3><p>데이터만으로 알 수 없는 자금 목적과 실행계획만 직접 설명해주세요.</p></div></div>
                 <div className="field-grid">
                   <label className="field"><span>희망 펀딩액</span><div className="number-field"><input type="number" name="requestedLimit" min={5000000} step={1000000} value={fields.requestedLimit} onChange={setField('requestedLimit')} /><span>원</span></div></label>
                   <label className="field"><span>필요 기간</span><div className="number-field"><input type="number" name="fundingPeriodMonths" min={3} max={36} value={fields.fundingPeriodMonths} onChange={setField('fundingPeriodMonths')} /><span>개월</span></div></label>
@@ -1297,6 +1414,16 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
         </fieldset>
       </form>}
     </div>
+    {consentPartner && (() => {
+      const option = partnerOptions.find((item) => item.id === consentPartner)
+      if (!option) return null
+      return <PartnerConsentModal
+        option={option}
+        onCancel={() => setConsentPartner('')}
+        onConfirm={() => void connectPartner(option.id)}
+        onOpenTerms={() => { setConsentPartner(''); navigate('/legal/credit-info') }}
+      />
+    })()}
     {openedFile && <DocumentModal
       title={uploadOptions.find((option) => option.id === openedDocument)?.title || '제출 자료'}
       filename={openedFile.name}
@@ -1328,14 +1455,16 @@ const readAsDataUrl = (file: File) => new Promise<string>((resolve, reject) => {
  *
  * 문서 종류를 먼저 고르게 하지 않는다. 고령 사장님에게 "부가세 신고서를 이 칸에"라고
  * 요구하는 순간 화면이 벽이 되기 때문이다. 받아놓고 뒤에서 판단한다.
+ *
+ * 처리 결과 목록은 없앴다. 어느 칸에 무엇이 들어갔는지는 바로 아래 'B. 자료가 들어간 칸'이
+ * 보여주고, 판독값은 'AI 자료 분석 결과'가 보여준다. 여기서는 진행 중인 한 줄만 남긴다.
  */
-function UniversalIntake({ dragging, busy, rows, onDragState, onFiles, onReassign }: {
+function UniversalIntake({ dragging, busy, note, onDragState, onFiles }: {
   dragging: boolean
   busy: boolean
-  rows: IntakeRow[]
+  note: string
   onDragState: (value: boolean) => void
   onFiles: (files: File[]) => void
-  onReassign: (row: IntakeRow, sourceId: string) => void
 }) {
   return <div className="intake-block">
     <div
@@ -1362,30 +1491,8 @@ function UniversalIntake({ dragging, busy, rows, onDragState, onFiles, onReassig
         />
       </label>
       <div className="intake-formats"><em>사진 (JPG·PNG)</em><em>PDF</em><em>엑셀 (XLSX)</em><em>CSV</em><em>한 번에 여러 개</em></div>
+      {busy && note && <p className="intake-progress" aria-live="polite"><RotateCcw /> {note}</p>}
     </div>
-
-    {rows.length > 0 && <div className="intake-results">
-      {rows.map((row) => <div className={`intake-row ${row.state}`} key={row.key}>
-        <span className="intake-icon">{row.state === 'failed' ? <TriangleAlert /> : row.state === 'working' ? <RotateCcw /> : /\.csv$/i.test(row.filename) ? <FileSpreadsheet /> : /\.pdf$/i.test(row.filename) ? <FileText /> : <ImageIcon />}</span>
-        <div>
-          <b>{row.filename}</b>
-          <small>{row.message}</small>
-          {row.state === 'done' && row.confidence !== undefined && row.sourceId !== 'other' && <span className={`intake-confidence ${row.confidence < .7 ? 'low' : ''}`}>
-            먹투 판단 확신 {Math.round(row.confidence * 100)}%
-          </span>}
-        </div>
-        {row.state === 'done' && <div className="intake-kind-pick">
-          <select
-            value={row.sourceId && row.sourceId !== 'other' ? row.sourceId : ''}
-            onChange={(event) => { if (event.target.value) onReassign(row, event.target.value) }}
-            aria-label={`${row.filename} 자료 종류`}
-          >
-            <option value="">직접 고르기</option>
-            {uploadOptions.map((option) => <option key={option.id} value={option.id}>{option.title}</option>)}
-          </select>
-        </div>}
-      </div>)}
-    </div>}
   </div>
 }
 
@@ -1396,7 +1503,7 @@ function UniversalIntake({ dragging, busy, rows, onDragState, onFiles, onReassig
  * 고치면 고친 값이 확정되면서 어느 항목에서 오독이 나는지가 문서함에 쌓인다.
  * 이 기록이 없으면 판독 정확도를 주장할 근거가 서비스에 존재하지 않는다.
  */
-function ReadingConfirm({ sources, ocrResults, ocrImages, records, analyzing, tables, pendingDocuments, onAnalyze, onConfirmField, onCorrectField, onConfirmAll, onOpen }: {
+function ReadingConfirm({ sources, ocrResults, ocrImages, records, analyzing, tables, pendingDocuments, onAnalyze, onConfirmField, onCorrectField, onConfirmAll, onReupload, onOpen }: {
   sources: string[]
   ocrResults: Record<string, OcrAnalysis>
   ocrImages: Record<string, string>
@@ -1408,6 +1515,7 @@ function ReadingConfirm({ sources, ocrResults, ocrImages, records, analyzing, ta
   onConfirmField: (sourceId: string, key: string) => void
   onCorrectField: (sourceId: string, key: string, value: string) => void
   onConfirmAll: (sourceId: string) => void
+  onReupload: (sourceId: string, file: File) => void
   onOpen: (sourceId: string) => void
 }) {
   return <div className="reading-list">
@@ -1451,10 +1559,22 @@ function ReadingConfirm({ sources, ocrResults, ocrImages, records, analyzing, ta
             {(result.warnings || []).map((warning: string) => <p className="reading-warning" key={warning}><TriangleAlert /> {warning}</p>)}
           </div>
         </div>
-        {record?.fields.length ? <div className="reading-actions">
-          <button type="button" className="primary" onClick={() => onConfirmAll(sourceId)}><Check /> 이 서류 값 전부 맞아요</button>
+        <div className="reading-actions">
+          {record?.fields.length ? <button type="button" className="primary" onClick={() => onConfirmAll(sourceId)}><Check /> 이 서류 값 전부 맞아요</button> : null}
+          {/* 값을 하나씩 고치는 것보다 더 잘 나온 사진으로 바꾸는 편이 빠를 때가 많다. */}
+          <label className="reading-reupload">
+            <RotateCcw /> 다시 올리기
+            <input
+              type="file" accept=".png,.jpg,.jpeg,.pdf,.csv,.xlsx"
+              onChange={(event) => {
+                const picked = event.target.files?.[0]
+                event.target.value = ''
+                if (picked) onReupload(sourceId, picked)
+              }}
+            />
+          </label>
           <button type="button" onClick={() => onOpen(sourceId)}><Eye /> 원본 다시 보기</button>
-        </div> : null}
+        </div>
       </article>
     })}
 
@@ -1542,26 +1662,112 @@ function DocumentLocker({ documents, stats, onRemove }: { documents: OwnerDocume
 }
 
 /**
- * 자료가 없어도 업로드 흐름을 그대로 체험할 수 있게 만든 샘플 묶음.
- * 12개월치 가상 원자료가 서로 맞물려 있어서 교차검증 결과까지 확인할 수 있다.
+ * 자료가 없어도 업로드 흐름을 그대로 체험할 수 있게 만든 데모 묶음.
+ *
+ * ZIP 을 내려받아 다시 올리라고 하던 안내를 없앴다. 두 단계를 거칠 이유가 없다.
+ * 여기서 바로 10종을 각 칸에 넣고 1·3단계 입력까지 채운다. 개별 파일이 필요하면
+ * 아래 자료 카드마다 붙어 있는 '샘플 다운로드'로 받을 수 있다.
  */
-function SamplePack() {
-  return <div className="sample-pack">
+function SamplePack({ busy, onLoadDemo }: { busy: boolean; onLoadDemo: () => void }) {
+  return <div className="sample-pack sample-pack-top">
     <div className="sample-pack-head">
       <span><FolderDown /></span>
       <div>
-        <b>준비된 자료가 없어도 괜찮아요 · 샘플 자료 한 번에 받기</b>
-        <p>가상 식당 <em>샘플식당</em>의 12개월 원자료입니다. 내려받아 그대로 올려보면 형식 검사·열·행 확인과 AI 문서 판독까지 전부 체험할 수 있어요.</p>
+        <b>준비된 자료가 없어도 괜찮아요 · 데모 자료로 바로 체험하기</b>
+        <p>가상 식당 <em>먹투 테스트식당</em>의 12개월 원자료입니다. 누르면 자료 10종이 알맞은 칸에 바로 들어가고, 가게 정보와 자금 계획란까지 함께 채워집니다.</p>
       </div>
-      <a className="button small" href="/samples/meoktu-sample-pack.zip" download><Download /> 전체 묶음 받기 (ZIP)</a>
+      <button type="button" className="virtual-data-upload-btn" disabled={busy} onClick={onLoadDemo}>
+        <UploadCloud /> {busy ? '데모 자료를 불러오는 중...' : '데모자료 한번에 업로드'}
+      </button>
     </div>
     <ul className="sample-pack-hint">
-      <li><Check /> 1단계에는 <b>샘플식당 · 김소담 · 123-45-67891 · 서울특별시 마포구 망원동 12-3</b>을 그대로 입력하면 문서 판독값과 일치해요.</li>
+      <li><Check /> 넣은 자료는 아래 <b>B. 자료가 들어간 칸</b>에서 어느 칸에 들어갔는지 바로 확인할 수 있어요.</li>
       <li><Check /> 각 자료 카드의 <b>샘플 다운로드</b> 버튼으로 필요한 파일만 따로 받을 수도 있어요.</li>
       <li><Check /> 자료를 올린 뒤에는 <b>올린 자료 열어보기</b>로 내려받지 않고 그 자리에서 내용을 확인할 수 있어요.</li>
       <li><Check /> 문서 자료는 <b>PNG와 PDF</b>를 함께 제공하고, 모두 ‘실제 제출 불가’ 표시가 들어간 가상 문서입니다.</li>
     </ul>
   </div>
+}
+
+/**
+ * 제휴기관 연결 동의서.
+ *
+ * 신용정보 제공은 버튼 한 번으로 끝낼 일이 아니다. 어디에서 무엇을 얼마나 가져가고
+ * 언제까지 두는지 읽고 나서 동의하도록 한 단계를 둔다. 서버도 consent 없이는 거절한다.
+ */
+function PartnerConsentModal({ option, onCancel, onConfirm, onOpenTerms }: {
+  option: { id: string; title: string; provider: string; scope: string }
+  onCancel: () => void
+  onConfirm: () => void
+  onOpenTerms: () => void
+}) {
+  const [agreed, setAgreed] = useState(false)
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') onCancel() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onCancel])
+
+  return createPortal(
+    <div className="partner-consent-backdrop" onMouseDown={onCancel}>
+      <div
+        className="partner-consent-dialog" role="dialog" aria-modal="true"
+        aria-label={`${option.title} 연결 동의서`}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <header>
+          <div>
+            <span><ShieldCheck /> 개인(신용)정보 제3자 조회·제공 동의</span>
+            <h3>{option.title} 자료를 연결할까요?</h3>
+            <p>아래 범위 안에서만 가져옵니다. 동의하지 않아도 파일을 직접 올려 신청할 수 있어요.</p>
+          </div>
+          <button type="button" onClick={onCancel} aria-label="닫기"><X /></button>
+        </header>
+
+        <div className="partner-consent-terms">
+          <section>
+            <h4>제공받는 기관</h4>
+            <p>{option.provider}</p>
+          </section>
+          <section>
+            <h4>조회·수집 범위</h4>
+            <p>{option.scope}</p>
+          </section>
+          <section>
+            <h4>이용 목적</h4>
+            <p>먹투 성장성 예비평가 산출과 제출 자료 교차검증. 이 평가는 금융기관의 공식 신용평가가 아니며, 대출 승인·거절의 근거로 쓰이지 않습니다.</p>
+          </section>
+          <section>
+            <h4>보유·이용 기간</h4>
+            <p>동의일로부터 심사 종료 후 5년. 연결을 해제하면 법령상 보관 의무가 있는 자료를 빼고 지체 없이 파기합니다.</p>
+          </section>
+          <section>
+            <h4>동의 거부 권리</h4>
+            <p>거부하셔도 됩니다. 이 경우 해당 자료를 직접 업로드해 주시면 같은 심사를 받을 수 있습니다.</p>
+          </section>
+          <section>
+            <h4>현재 단계 안내</h4>
+            <p>MVP 에서는 실제 기관 API 대신 시연 어댑터가 동작하며, 실제 제3자 제공은 이뤄지지 않습니다.</p>
+          </section>
+        </div>
+
+        <button type="button" className="partner-consent-link" onClick={onOpenTerms}>
+          <FileText /> 개인(신용)정보 처리·제공 동의서 전문 보기
+        </button>
+
+        <label className="partner-consent-agree">
+          <input type="checkbox" checked={agreed} onChange={() => setAgreed((current) => !current)} />
+          <span>위 <b>조회 범위·목적·보유기간</b>을 확인했고, {option.provider}에서 자료를 받아오는 데 동의합니다.</span>
+        </label>
+
+        <div className="partner-consent-actions">
+          <button type="button" onClick={onCancel}>취소</button>
+          <button type="button" className="primary" disabled={!agreed} onClick={onConfirm}>동의하고 연결</button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  )
 }
 
 function DocumentUploadCard({ option, guide, fileName, metadata, classification, onChange, onOpen }: { option: UploadOption; guide?: DocumentGuide; fileName?: string; metadata?: DocumentMetadata; classification?: DocumentClassification; onChange: (event: ChangeEvent<HTMLInputElement>) => void; onOpen: () => void }) {

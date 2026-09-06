@@ -14,6 +14,7 @@ import './discover-ai.css'
 import './design-unify.css'
 import './admin.css'
 import './ux-review.css'
+import './owner-center-fix.css'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

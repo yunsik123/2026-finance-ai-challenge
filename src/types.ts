@@ -292,6 +292,10 @@ export interface ApplicationResult {
     targetRestaurantId?: string | null
     applicationKind?: 'new-store' | 'additional-round'
     applicationRound?: number
+    /** 신청서에 적은 사업체 식별값. 아직 가게로 등록되기 전 신청을 묶는 기준이 된다. */
+    businessNumber?: string
+    ownerName?: string
+    address?: string
   }
 }
 

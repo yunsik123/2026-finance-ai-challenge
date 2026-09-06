@@ -48,14 +48,18 @@ const columnSignals: Array<{ sourceId: DocumentKind; must: RegExp; any: RegExp; 
   { sourceId: 'staff', must: /직원|인원|급여|인건/, any: /인원|급여|월|명|지급|인건/, label: '인원·급여 열', priority: 3 },
   { sourceId: 'lease', must: /임대|임차|보증금|월세|월차임/, any: /금액|보증금|월세|임료|차임|기간/, label: '임대차 금액 열', priority: 3 },
   { sourceId: 'customer', must: /고객|회원/, any: /방문|횟수|최초|재방문|가입/, label: '고객 방문 이력 열', priority: 3 },
-  { sourceId: 'account', must: /입금|출금|맡기신|찾으신/, any: /잔액|금액|적요|잔고/, label: '계좌 입출금·잔액 열', priority: 2 },
+  // 실제 은행 거래내역 저장 화면(meoktu_ocr_test_documents/variable_vendor_screens)의 열 이름:
+  // 거래일자·거래시간·적요·출금(원)·입금(원)·내용·잔액(원)·거래점. 은행마다 이름이 달라
+  // '맡기신금액/찾으신금액'을 쓰는 곳도 있어 둘 다 신호로 둔다.
+  { sourceId: 'account', must: /입금|출금|맡기신|찾으신/, any: /잔액|금액|적요|잔고|거래점|거래일|내용/, label: '계좌 입출금·잔액 열', priority: 2 },
   { sourceId: 'pos', must: /주문|결제|영수|판매|매출/, any: /금액|승인|합계|가격|총액/, label: 'POS 주문·결제 열', priority: 1 },
 ]
 
 /** AI 판독이 돌려준 문서 종류 → 출처. 판독 프롬프트의 선택지와 맞춘다. */
 const documentTypeSignals: Array<{ sourceId: DocumentKind; pattern: RegExp }> = [
   { sourceId: 'business', pattern: /사업자\s*등록|사업자등록증명|고유번호증/ },
-  { sourceId: 'license', pattern: /영업\s*신고|영업허가|영업신고증|위생/ },
+  // 실제 영업신고증에는 '영업의 종류: 식품접객업 · 일반음식점'이 찍혀 나온다.
+  { sourceId: 'license', pattern: /영업\s*신고|영업허가|영업신고증|위생|식품접객업|일반음식점|휴게음식점/ },
   { sourceId: 'tax', pattern: /납세|부가\s*가치세|부가세|세금계산서|소득세|과세|국세|지방세|신고서|손익|재무제표|재무상태|결산/ },
   { sourceId: 'debt', pattern: /부채|대출|여신|차입|상환|금융거래확인|채무/ },
   { sourceId: 'lease', pattern: /임대차|전세|월세|계약서|점포계약/ },
@@ -84,6 +88,23 @@ const emptyResult = (reason: string): Classification => ({
 })
 
 /**
+ * 신청서(빈 서식)를 발급본으로 착각해 올리는 경우.
+ *
+ * 국가법령정보센터에서 받을 수 있는 '식품 영업 신고서'는 영업신고증을 받기 위해 내는
+ * 신청서지 발급본이 아니다(meoktu_ocr_test_documents/official_forms_pdf 참고).
+ * 이걸 영업신고증으로 분류해버리면 요건이 충족된 것처럼 보이고, 정작 심사에서는
+ * 확인할 값이 하나도 없다. 서식 번호('별지 제37호서식')와 '신고서/신청서' 표기로 먼저 걸러낸다.
+ */
+const applicationFormPattern = /별지\s*제?\s*\d+\s*호?\s*서식|영업\s*신고서|영업\s*신청서|신고\s*신청서/
+const issuedDocumentPattern = /신고증|허가증|등록증|증명원|증명서/
+function applicationFormReason(filename: string, documentType: string) {
+  const text = `${filename} ${documentType}`
+  if (!applicationFormPattern.test(text)) return ''
+  if (issuedDocumentPattern.test(text)) return ''
+  return '이 파일은 관청에 내는 신고서(신청서) 서식으로 보여요. 심사에는 신청서가 아니라 발급받은 영업신고증(또는 사업자등록증명)이 필요합니다.'
+}
+
+/**
  * 파일 하나를 분류한다.
  * headers 가 있으면(표 자료) 그것만으로 거의 확정된다.
  * documentType 은 AI 판독 결과, filename 은 마지막 단서다.
@@ -98,6 +119,12 @@ export function classifyDocument(input: {
   const filename = String(input.filename || '')
   const headerText = (input.headers || []).join(' ')
   const documentType = String(input.documentType || '')
+
+  // 표가 아닌데 신청서 서식이면 여기서 멈춘다. 억지로 배정하면 요건만 채워지고 값은 없다.
+  if (!headerText.trim()) {
+    const formReason = applicationFormReason(filename, documentType)
+    if (formReason) return emptyResult(formReason)
+  }
 
   // ① 표 머리글
   if (headerText.trim()) {

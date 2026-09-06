@@ -10,7 +10,8 @@
  * 그리고 발급 안내. "사업자등록증명 어디서 받아요?"에서 막히는 사장님이 가장 많다.
  * 요건·발급창구는 서버(server/issuance.ts)에서 내려받아 화면과 AI 상담이 같은 값을 쓴다.
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   Banknote, Building2, CircleHelp, ExternalLink, Landmark, Plus, Store, Trash2, TriangleAlert, Users, X,
 } from 'lucide-react'
@@ -37,42 +38,58 @@ export function RequirementBadge({ requirement, label }: { requirement: Document
 
 /**
  * "어디서 어떻게 받나요?" 도움말.
- * 클릭으로 열고 Esc·바깥 클릭으로 닫는다. 마우스 호버만으로 열면 터치 기기에서 못 쓴다.
+ *
+ * 예전에는 자료 카드 안에서 말풍선으로 열었다. 그런데 카드에 hover transform 이 걸려 있어
+ * 카드가 쌓임 맥락(stacking context)을 만들고, 말풍선의 z-index 가 그 안에 갇혀
+ * 뒤에 오는 카드에 가려졌다. 카드 폭 밖으로 나가는 부분이 잘리기도 했다.
+ *
+ * 그래서 body 로 옮겨 화면 가운데 창으로 띄운다. 어떤 부모에도 갇히지 않으므로
+ * 겹침·잘림이 구조적으로 생기지 않는다. Esc·바깥 클릭·닫기 버튼으로 닫는다.
  */
 export function IssuanceHelp({ guide }: { guide: DocumentGuide }) {
   const [open, setOpen] = useState(false)
-  const box = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
     if (!open) return
     const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false) }
-    const onClick = (event: MouseEvent) => {
-      if (box.current && !box.current.contains(event.target as Node)) setOpen(false)
-    }
     window.addEventListener('keydown', onKey)
-    window.addEventListener('mousedown', onClick)
-    return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('mousedown', onClick) }
+    // 창이 떠 있는 동안 뒤 화면이 같이 스크롤되면 어느 카드의 안내인지 잃어버린다.
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      document.body.style.overflow = previousOverflow
+    }
   }, [open])
 
-  return <div className="issuance-help" ref={box}>
-    <button type="button" className="issuance-trigger" onClick={() => setOpen(!open)} aria-expanded={open}>
+  return <div className="issuance-help">
+    <button type="button" className="issuance-trigger" onClick={() => setOpen(true)} aria-expanded={open}>
       <CircleHelp /> 어디서 받나요?
     </button>
-    {open && <div className="issuance-panel" role="dialog" aria-label={`${guide.title} 발급 안내`}>
-      <header>
-        <div><b>{guide.title}</b><small>{guide.exact}</small></div>
-        <button type="button" onClick={() => setOpen(false)} aria-label="닫기"><X /></button>
-      </header>
-      <p className="issuance-why">{guide.whyItMatters}</p>
-      <ol>
-        {guide.issuance.map((item) => <li key={item.channel}>
-          <b>{item.channel}</b>
-          <p>{item.how}</p>
-          {item.url && <a href={item.url} target="_blank" rel="noreferrer noopener">{item.url.replace(/^https?:\/\//, '')} <ExternalLink /></a>}
-          {item.note && <em>{item.note}</em>}
-        </li>)}
-      </ol>
-      <small className="issuance-foot">기관 화면과 메뉴 이름은 바뀔 수 있어요. 못 찾으면 1:1 문의로 알려주시면 같이 찾아드립니다.</small>
-    </div>}
+    {open && createPortal(
+      <div className="issuance-backdrop" onMouseDown={() => setOpen(false)}>
+        <div
+          className="issuance-dialog" role="dialog" aria-modal="true"
+          aria-label={`${guide.title} 발급 안내`}
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          <header>
+            <div><b>{guide.title}</b><small>{guide.exact}</small></div>
+            <button type="button" onClick={() => setOpen(false)} aria-label="닫기"><X /></button>
+          </header>
+          <p className="issuance-why">{guide.whyItMatters}</p>
+          <ol>
+            {guide.issuance.map((item) => <li key={item.channel}>
+              <b>{item.channel}</b>
+              <p>{item.how}</p>
+              {item.url && <a href={item.url} target="_blank" rel="noreferrer noopener">{item.url.replace(/^https?:\/\//, '')} <ExternalLink /></a>}
+              {item.note && <em>{item.note}</em>}
+            </li>)}
+          </ol>
+          <small className="issuance-foot">기관 화면과 메뉴 이름은 바뀔 수 있어요. 못 찾으면 1:1 문의로 알려주시면 같이 찾아드립니다.</small>
+        </div>
+      </div>,
+      document.body,
+    )}
   </div>
 }
 
@@ -263,7 +280,7 @@ export function OwnershipEditor({ rows, ownerName, onChange }: {
     {rows.length === 0 && <button
       type="button" className="ownership-solo"
       onClick={() => onChange([{ name: ownerName || '대표자', share: 100, role: '대표자' }])}
-    >혼자 100% 운영이에요 (한 번에 채우기)</button>}
+    >혼자 100% 운영이에요</button>}
     {rows.map((row, index) => <div className="ownership-row" key={index}>
       <input value={row.name} onChange={(event) => update(index, { name: event.target.value })} placeholder="이름" aria-label="이름" />
       <div className="number-field"><input type="number" min={0} max={100} value={row.share || ''} onChange={(event) => update(index, { share: Number(event.target.value) || 0 })} placeholder="지분" aria-label="지분" /><span>%</span></div>

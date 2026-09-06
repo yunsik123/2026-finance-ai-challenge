@@ -179,3 +179,19 @@
 .owner-fund-state.manual_review{background:#fdf2e2;color:#8a6023}
 .owner-fund-state.rejected{background:#fdeae6;color:#a4402c}
 @media(max-width:640px){.owner-fund-switcher{padding:16px}.owner-fund-switcher-list{grid-template-columns:1fr}}
+
+/* ── 회차별 검증 리포트 고르기 ──────────────────────────────
+   같은 사업체로 회차를 여러 번 받으면 리포트도 회차마다 하나씩 남는다.
+   지난 회차를 보려고 화면 맨 아래까지 내려가야 했던 것을 리포트 바로 위로 올렸다. */
+.owner-report-rounds{margin:0 0 4px;padding:18px 20px;border:1px solid var(--line);border-radius:18px;background:#fbfaf7}
+.owner-report-rounds-head b{display:block;font-size:14px}
+.owner-report-rounds-head small{display:block;margin-top:3px;font-size:12px;line-height:1.6;color:var(--muted)}
+.owner-report-round-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(226px,1fr));gap:9px;margin-top:13px}
+.owner-report-round-list>button{display:grid;gap:4px;padding:13px 14px;border:1.5px solid var(--line);border-radius:14px;background:#fff;text-align:left;cursor:pointer;transition:border-color .15s,background .15s}
+.owner-report-round-list>button:hover{border-color:#e3c4b8}
+.owner-report-round-list>button.active{border-color:var(--coral);background:#fff6f2;box-shadow:0 6px 18px rgba(255,105,72,.13)}
+.owner-report-round-list>button b{font-size:15px}
+.owner-report-round-list>button small{font-size:11px;color:var(--muted)}
+.owner-report-round-list>button .owner-history-status{justify-self:start}
+.owner-report-round-list>button em{font-size:11.5px;font-style:normal;color:var(--ink-soft)}
+@media(max-width:640px){.owner-report-rounds{padding:15px 16px}.owner-report-round-list{grid-template-columns:1fr}}

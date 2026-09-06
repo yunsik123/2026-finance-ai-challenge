@@ -2977,12 +2977,28 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
   if (typeof data.targetRestaurantId === 'string' && data.targetRestaurantId && !targetRestaurant) {
     return res.status(400).json({ error: '사장님 가게 목록에서 찾을 수 없는 가게예요. 다시 선택해주세요.' })
   }
-  /** 같은 가게의 몇 번째 라운드인가. 기존 펀드 수 + 진행 중 신청 수로 센다. */
-  const previousRounds = targetRestaurant
-    ? db.funds.filter((item) => item.restaurantId === targetRestaurant.id).length
-      + db.applications.filter((item) => item.userId === req.user!.id
-        && (item.data as Record<string, unknown> | undefined)?.targetRestaurantId === targetRestaurant.id).length
-    : 0
+  /*
+   * 같은 사업체의 몇 번째 라운드인가.
+   *
+   * 예전에는 targetRestaurantId 가 있을 때만 셌다. 그런데 가게 원장은 운영자가 최종 승인해야
+   * 생기므로, 승인 전에 같은 사업체로 두 번 신청하면 둘 다 '1회차'가 됐다.
+   * 마이페이지의 회차별 검증 리포트가 '1회차'만 두 개 나오는 것도 그래서였다.
+   *
+   * 그래서 사업자등록번호로도 센다. 가게 원장이 없어도 같은 사업체면 회차가 이어진다.
+   */
+  const applicationDigits = String(data.businessNumber || '').replace(/\D/g, '')
+  const sameBusiness = (item: Application) => {
+    const itemData = item.data as Record<string, unknown> | undefined
+    if (targetRestaurant && itemData?.targetRestaurantId === targetRestaurant.id) return true
+    if (!applicationDigits) return false
+    return String(itemData?.businessNumber || '').replace(/\D/g, '') === applicationDigits
+  }
+  // 펀드와 신청을 더하면 안 된다. 승인된 신청은 펀드를 만들기 때문에 한 회차가 두 번 세어진다.
+  // (실측: 1회차 승인 뒤 2회차를 내면 '3회차'가 됐다.) 둘 중 큰 값을 지난 회차 수로 본다.
+  const previousRounds = Math.max(
+    db.funds.filter((item) => targetRestaurant && item.restaurantId === targetRestaurant.id).length,
+    db.applications.filter((item) => item.userId === req.user!.id && sameBusiness(item)).length,
+  )
   const applicationRound = previousRounds + 1
 
   /*
@@ -3542,7 +3558,9 @@ app.post('/api/ai/ocr', auth('owner'), async (req: AuthedRequest, res) => {
               { type: 'text', text: `문서를 판독해 JSON만 반환하세요. 등록된 자금 사용계획: ${plan}.
 스키마의 <> 안은 채워야 할 설명이며, 그 문구를 값으로 그대로 쓰면 안 됩니다.
 {"documentType":"<영수증·세금계산서·매출전표·계약서·사업자등록·영업신고·납세증명·부채증명·기타 중 하나>","merchant":"<상호. 없으면 빈 문자열>","businessNumber":"<사업자등록번호. 없으면 빈 문자열>","date":"<문서 기준일 YYYY-MM-DD. 없으면 빈 문자열>","periodStart":"<과세기간 시작일. 없으면 빈 문자열>","periodEnd":"<과세기간 종료일. 없으면 빈 문자열>","total":<대표 금액을 숫자로. 금액이 없으면 null>,"planMatch":"<이 문서가 위 자금 사용계획과 맞는지: 적합·검토 필요·부적합 중 하나. 사용계획과 무관한 서류면 '검토 필요'>","confidence":<0.0~1.0 사이 실수. 이번 판독을 얼마나 확신하는지. 예시값이 아니라 실제 확신도를 넣고 절대 0으로 두지 마세요>,"warnings":["<판독하며 걸린 점. 없으면 빈 배열>"],"rawText":"<읽은 원문>","boundingBoxes":[{"field":"<merchant 또는 businessNumber 또는 date 또는 total 중 정확히 하나만>","label":"<화면에 보여줄 이름>","value":"<그 자리에서 읽은 값>","bbox":[<x>,<y>,<width>,<height>],"confidence":<0.0~1.0>}]}
-bbox는 0~1000 기준 [x,y,width,height]이며 이미지 전체를 가리키는 [0,0,1000,1000]은 쓰지 마세요. 읽히지 않는 값은 추측하지 마세요.` },
+bbox는 0~1000 기준 [x,y,width,height]이며 이미지 전체를 가리키는 [0,0,1000,1000]은 쓰지 마세요. 읽히지 않는 값은 추측하지 마세요.
+실제 서식의 라벨은 이름이 다릅니다. 사업자등록증은 사업자등록번호를 '등록번호', 대표자를 '성명', 개업일을 '개업연월일', 주소를 '사업장 소재지', 업종을 '업태/종목'으로 적습니다. 영업신고증은 상호를 '영업소 명칭', 주소를 '소재지', 업종을 '영업의 종류'로 적고 맨 위에 '신고번호'가 있습니다. 이런 라벨도 같은 항목으로 읽으세요.
+빈 서식이거나 신고서·신청서(발급본이 아닌 제출용 양식)로 보이면 warnings 에 '발급본이 아니라 신청서 서식입니다'라고 적으세요.` },
               { type: 'image_url', image_url: { url: `data:${match[1]};base64,${encoded}` } },
             ] },
           ],
