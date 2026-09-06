@@ -26,6 +26,7 @@ import type { ApplicationResult, AppNotification, MeState, Position, PublicState
 const won = (value: number) => `${Math.round(value).toLocaleString('ko-KR')}원`
 const compactWon = (value: number) => value >= 100000000 ? `${(value / 100000000).toFixed(1)}억원` : `${Math.round(value / 10000).toLocaleString()}만원`
 const shortDate = (value: string) => new Date(value).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' })
+const isOwnerCenterPath = (pathname: string) => pathname === '/owner' || (pathname.startsWith('/owner/') && !pathname.startsWith('/owner/my'))
 
 function App() {
   const [state, setState] = useState<PublicState | null>(null)
@@ -225,7 +226,7 @@ function Header({ user, notifications, unread, refresh, onLogin, onLogout }: { u
     <div className="header-inner">
       <NavLink to={user?.role === 'owner' ? '/owner' : '/'} className="logo"><span className="brand-mark">먹</span><span>먹투<small>먹는 투자의 시작</small></span></NavLink>
       <nav className={menuOpen ? 'desktop-nav open' : 'desktop-nav'}>
-        {user?.role === 'admin' ? <NavLink to="/admin">운영센터</NavLink> : user?.role === 'owner' ? <><NavLink end to="/owner">사장님 센터</NavLink><NavLink to="/owner/my">마이페이지</NavLink><NavLink to="/support">신고·문의</NavLink></> : <><NavLink to="/discover">식당 발견</NavLink><NavLink to="/market">거래장</NavLink><NavLink to="/insight">AI 인사이트</NavLink><NavLink to="/support">신고·문의</NavLink>{user?.role === 'investor' && <NavLink to="/my">마이페이지</NavLink>}</>}
+        {user?.role === 'admin' ? <NavLink to="/admin">운영센터</NavLink> : user?.role === 'owner' ? <><NavLink end to="/owner" className={() => isOwnerCenterPath(location.pathname) ? 'active' : ''}>사장님 센터</NavLink><NavLink to="/owner/my">마이페이지</NavLink><NavLink to="/support">신고·문의</NavLink></> : <><NavLink to="/discover">식당 발견</NavLink><NavLink to="/market">거래장</NavLink><NavLink to="/insight">AI 인사이트</NavLink><NavLink to="/support">신고·문의</NavLink>{user?.role === 'investor' && <NavLink to="/my">마이페이지</NavLink>}</>}
       </nav>
       <div className="header-actions">
         {user ? <NotificationBell notifications={notifications} unread={unread} refresh={refresh} /> : <button className="icon-button hide-mobile" aria-label="알림" onClick={onLogin}><Bell size={20} /></button>}
@@ -237,8 +238,9 @@ function Header({ user, notifications, unread, refresh, onLogin, onLogout }: { u
 }
 
 function MobileNav({ user }: { user?: User }) {
+  const location = useLocation()
   return <nav className={`mobile-nav ${user?.role === 'owner' ? 'owner-mobile-nav' : ''}`}>
-    {user?.role === 'admin' ? <NavLink to="/admin"><ShieldCheck /><span>운영</span></NavLink> : user?.role === 'owner' ? <><NavLink end to="/owner"><Building2 /><span>센터</span></NavLink><NavLink to="/owner/my"><UserRound /><span>MY</span></NavLink><NavLink to="/support"><MessageCircleQuestion /><span>문의</span></NavLink></> : <><NavLink to="/discover"><Search /><span>발견</span></NavLink><NavLink to="/market"><ArrowRight /><span>거래</span></NavLink><NavLink to="/insight"><Sparkles /><span>AI</span></NavLink><NavLink to="/support"><MessageCircleQuestion /><span>문의</span></NavLink>{user?.role === 'investor' ? <NavLink to="/my"><UserRound /><span>MY</span></NavLink> : <NavLink to="/"><Store /><span>홈</span></NavLink>}</>}
+    {user?.role === 'admin' ? <NavLink to="/admin"><ShieldCheck /><span>운영</span></NavLink> : user?.role === 'owner' ? <><NavLink end to="/owner" className={() => isOwnerCenterPath(location.pathname) ? 'active' : ''}><Building2 /><span>센터</span></NavLink><NavLink to="/owner/my"><UserRound /><span>MY</span></NavLink><NavLink to="/support"><MessageCircleQuestion /><span>문의</span></NavLink></> : <><NavLink to="/discover"><Search /><span>발견</span></NavLink><NavLink to="/market"><ArrowRight /><span>거래</span></NavLink><NavLink to="/insight"><Sparkles /><span>AI</span></NavLink><NavLink to="/support"><MessageCircleQuestion /><span>문의</span></NavLink>{user?.role === 'investor' ? <NavLink to="/my"><UserRound /><span>MY</span></NavLink> : <NavLink to="/"><Store /><span>홈</span></NavLink>}</>}
   </nav>
 }
 

@@ -11,12 +11,19 @@ async function ok(path: string, options: RequestInit = {}, token?: string) {
 function assert(value: unknown, message: string): asserts value { if (!value) throw new Error(message) }
 const money = (value: number) => `${Math.round(value).toLocaleString('ko-KR')}원`
 
-// /owner/my 에서 상위 경로 /owner까지 활성화되면 데스크톱 점과 모바일 선택 표시가 두 개 생긴다.
-// 사장님 센터 링크는 정확한 /owner 경로에서만 활성화되도록 두 내비게이션 모두 end를 써야 한다.
+// /owner/store·/owner/upload·/owner/plan에서는 센터가 활성화되고 /owner/my에서는 MY만 활성화돼야 한다.
 const appSource = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8')
 const fundDetailSource = readFileSync(new URL('../src/FundDetailModal.tsx', import.meta.url), 'utf8')
-assert((appSource.match(/<NavLink end to="\/owner">/g) || []).length === 2,
-  '데스크톱·모바일 사장님 센터 링크는 /owner/my에서 비활성화되도록 정확히 일치해야 합니다.')
+const ownerCenterSource = readFileSync(new URL('../src/OwnerCenter.tsx', import.meta.url), 'utf8')
+const adminSource = readFileSync(new URL('../src/AdminCenter.tsx', import.meta.url), 'utf8')
+const verificationSource = readFileSync(new URL('../src/VerificationReport.tsx', import.meta.url), 'utf8')
+assert((appSource.match(/isOwnerCenterPath\(location\.pathname\)/g) || []).length === 2,
+  '데스크톱·모바일 사장님 센터 링크가 신청 하위 경로에서도 활성화되어야 합니다.')
+assert(appSource.includes("!pathname.startsWith('/owner/my')"), '마이페이지에서는 사장님 센터 활성 표시를 제외해야 합니다.')
+assert(ownerCenterSource.includes('<DocumentPreparationGuide />'), '데모 업로드 전에 제출 자료 준비 안내가 있어야 합니다.')
+assert(!ownerCenterSource.includes('<AnalysisRow'), '사장님 화면에 AI 판독값 펼쳐보기 기능을 렌더링하면 안 됩니다.')
+assert(!adminSource.includes('admin-ocr-grid'), '운영자 심사 상세에 AI 문서 판독 기능을 렌더링하면 안 됩니다.')
+assert(!verificationSource.includes('financial.steps'), '사장님 결과에 재무 교차검증 6단계를 렌더링하면 안 됩니다.')
 assert(fundDetailSource.includes('riskAcknowledged: riskAccepted'), '투자 위험 확인 체크값을 서버 요청의 약관 정보에 포함해야 합니다.')
 
 // 실제 화면 문구와 상담 지도가 맞는지 기능별로 확인한다.

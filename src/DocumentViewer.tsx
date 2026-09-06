@@ -9,7 +9,7 @@
  *  - 운영자 화면: 접수 때 저장해 둔 표 미리보기와 공개 샘플 원본을 읽는다.
  */
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { AlertTriangle, FileSpreadsheet, FileText, Image as ImageIcon, X } from 'lucide-react'
+import { AlertTriangle, FileSpreadsheet, Image as ImageIcon, X } from 'lucide-react'
 import './document-viewer.css'
 
 export type TablePreview = {
@@ -236,10 +236,10 @@ export function LocalFileViewer({ file, boxes }: { file: File; boxes?: OcrBox[] 
  * 운영자 화면: 접수 때 저장해 둔 내용을 연다.
  *
  * 표 자료는 상단 일부 행을 그대로 보여주고, 공개 샘플로 접수했다면 원본 파일을 그대로 띄운다.
- * 사장님이 올린 실제 이미지·PDF 원본은 보관하지 않기로 한 자료라서, 그 자리에는
- * 무엇을 왜 볼 수 없는지와 AI 판독 결과를 대신 보여준다.
+ * 사장님이 올린 실제 이미지·PDF 원본은 보관하지 않기로 한 자료라서,
+ * 원본이 없는 경우에는 재제출이 필요하다는 안내만 보여준다.
  */
-export function SubmittedDocumentViewer({ document: item, ocr }: { document: SubmittedDocument; ocr?: Record<string, any> }) {
+export function SubmittedDocumentViewer({ document: item }: { document: SubmittedDocument }) {
   const sections: ReactNode[] = []
   if (item.preview?.headers?.length) {
     sections.push(<section key="table" className="doc-section">
@@ -251,32 +251,14 @@ export function SubmittedDocumentViewer({ document: item, ocr }: { document: Sub
     </section>)
   }
   if (item.sampleUrl) {
-    const boxes = (ocr?.result?.boundingBoxes || []) as OcrBox[]
     sections.push(<section key="original" className="doc-section">
-      <h3><ImageIcon /> 원본 문서 {boxes.length ? <small>AI가 읽은 자리 {boxes.length}곳 표시</small> : null}</h3>
-      <EmbeddedOriginal url={item.sampleUrl} name={item.name} type={item.type} boxes={boxes} />
+      <h3><ImageIcon /> 원본 문서</h3>
+      <EmbeddedOriginal url={item.sampleUrl} name={item.name} type={item.type} />
       {isTableDocument(item.name) && <p className="doc-note">공개 샘플 자료로 접수한 신청이라 원본 파일을 그대로 확인할 수 있어요.</p>}
     </section>)
   }
-  if (ocr) {
-    const result = (ocr.result || {}) as Record<string, any>
-    const fields: Array<[string, string]> = [
-      ['문서 종류', result.documentType || '-'],
-      ['상호', result.merchant || '-'],
-      ['사업자번호', result.businessNumber || '-'],
-      ['문서 기준일', result.date || '-'],
-      ['판독 금액', Number.isFinite(Number(result.total)) && Number(result.total) ? `${Math.round(Number(result.total)).toLocaleString('ko-KR')}원` : '-'],
-      ['자금계획 부합', result.planMatch || '-'],
-    ]
-    sections.push(<section key="ocr" className="doc-section">
-      <h3><FileText /> AI 문서 판독 결과 <small>신뢰도 {Math.round((Number(result.confidence) || 0) * 100)}%</small></h3>
-      <div className="doc-fields">{fields.map(([label, value]) => <div key={label}><small>{label}</small><b>{value}</b></div>)}</div>
-      {result.rawText ? <pre className="doc-text">{String(result.rawText).slice(0, 4000)}</pre> : null}
-      {(result.warnings || []).map((warning: string) => <p className="doc-note warn" key={warning}><AlertTriangle /> {warning}</p>)}
-    </section>)
-  }
   if (!sections.length) {
-    sections.push(<p className="doc-note" key="none"><AlertTriangle /> 이 자료는 원본을 보관하지 않아 내용을 열어볼 수 없어요. 이미지·PDF 증빙은 접수 시 AI 판독으로 구조화한 값만 남기고 원본은 저장하지 않습니다. 원본 확인이 필요하면 사장님에게 재제출을 요청해주세요.</p>)
+    sections.push(<p className="doc-note" key="none"><AlertTriangle /> 이 자료는 원본을 보관하지 않아 내용을 열어볼 수 없어요. 원본 확인이 필요하면 사장님에게 재제출을 요청해주세요.</p>)
   }
   return <>
     <div className="doc-fields doc-fields-meta">

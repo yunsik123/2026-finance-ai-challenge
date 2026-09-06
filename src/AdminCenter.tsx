@@ -6,7 +6,7 @@ import {
 import { api } from './lib/api.ts'
 import EvidencePanel from './EvidencePanel.tsx'
 import { DocumentModal, SubmittedDocumentViewer, fileSizeLabel, type SubmittedDocument } from './DocumentViewer.tsx'
-import type { ApplicationResult, Coupon, Fund, LegalConsentRecord, MeState, OcrAnalysis, Restaurant, Review, User } from './types.ts'
+import type { ApplicationResult, Coupon, Fund, LegalConsentRecord, MeState, Restaurant, Review, User } from './types.ts'
 
 const won = (value: number) => `${Math.round(value).toLocaleString('ko-KR')}원`
 const date = (value: string) => new Date(value).toLocaleDateString('ko-KR')
@@ -25,7 +25,7 @@ type Dashboard = {
 }
 type AdminApplicationDetail = {
   application: AdminApplication; owner?: User; restaurant?: Restaurant; fund?: Fund
-  ocrAnalyses: OcrAnalysis[]; consent?: LegalConsentRecord
+  consent?: LegalConsentRecord
 }
 type Tab = 'overview' | 'applications' | 'users' | 'restaurants' | 'funds' | 'reviews' | 'support' | 'coupons' | 'ai'
 
@@ -158,7 +158,6 @@ export default function AdminCenter({ me, onLogin, onLogout, notify }: { me: MeS
   const current = tabItems.find((item) => item.id === tab)!
   const detailData = detail?.application.data as Record<string, any> | undefined
   const documents = Object.entries((detailData?.documentMetadata || {}) as Record<string, Record<string, any>>)
-  const financial = detailData?.financialVerification
   const credit = detailData?.creditAssessment
   const openedDocumentData = documents.find(([source]) => source === openedDocument)?.[1] as SubmittedDocument | undefined
   return <div className="admin-hub">
@@ -169,14 +168,13 @@ export default function AdminCenter({ me, onLogin, onLogout, notify }: { me: MeS
       <header className="admin-review-head"><div><span><ShieldCheck /> AI 심사 완료 · 운영자 최종 검토</span><h2>{detail.application.restaurantName}</h2><p>{detail.owner?.name || '사장님'} · {detail.owner?.email || '-'} · {date(detail.application.submittedAt)}</p></div><div><small>먹투 성장성 예비평가</small><b>{detail.application.score}<em>/100</em></b><span>제안 한도 {won(detail.application.approvedLimit)}</span></div></header>
       <section className="admin-review-section"><h3>신청 내용</h3><div className="admin-review-facts"><span><small>사업자등록번호</small><b>{detailData?.businessNumber || '-'}</b></span><span><small>영업신고번호</small><b>{detailData?.licenseNumber || '-'}</b></span><span><small>사업장 주소</small><b>{detailData?.address || '-'}</b></span><span><small>희망 펀딩액</small><b>{won(Number(detail.application.requestedLimit) || 0)}</b></span></div><div className="admin-plan-grid"><article><b>자금 사용계획</b><p>{detailData?.fundPurpose || '-'}</p></article><article><b>사업계획·차별성</b><p>{detailData?.businessPlan || '-'}</p></article><article><b>예상 효과</b><p>{detailData?.expectedEffect || '-'}</p></article></div></section>
       <section className="admin-review-section"><h3>제출된 자료 <small>{documents.length}개 직접 업로드 · {(detailData?.sourceProvenance?.partnerConnections || []).length}개 기관 연결 · 자료를 누르면 내용을 열어봅니다</small></h3><div className="admin-document-grid">{documents.map(([source, metadata]) => <article key={source}><FileText /><div><b>{sourceLabel[source] || source}</b><span>{metadata.name}</span><small>{fileSizeLabel(metadata.size)} · {metadata.type || '형식 미확인'}{metadata.rowCount ? ` · ${metadata.rowCount.toLocaleString()}행` : ''}</small>{metadata.headers?.length ? <em>열: {metadata.headers.join(', ')}</em> : null}<button type="button" className="doc-open-button" onClick={() => setOpenedDocument(source)}><Eye /> 내용 열어보기</button></div></article>)}</div>{!documents.length && <p className="admin-review-empty">직접 업로드 파일 메타데이터가 없습니다.</p>}<div className="admin-partner-list">{(detailData?.sourceProvenance?.partnerConnections || []).map((item: any) => <span key={item.sourceId}><CheckCircle2 /><b>{sourceLabel[item.sourceId] || item.sourceId}</b> {item.provider} · {item.recordCount?.toLocaleString()}건 · {date(item.lastSyncedAt)}</span>)}</div></section>
-      <section className="admin-review-section"><h3>AI 문서 판독 <small>원본 이미지는 저장하지 않고 구조화 결과만 보관</small></h3><div className="admin-ocr-grid">{detail.ocrAnalyses.map((item) => <article key={item.id}><div><b>{item.filename}</b><span className={item.status}>{item.status === 'ai_extracted' ? 'AI 구조화 완료' : '수동 확인 필요'}</span></div><p>{item.result.documentType || sourceLabel[item.sourceId] || item.sourceId} · 신뢰도 {Math.round((item.result.confidence || 0) * 100)}%</p>{item.result.businessNumber && <small>사업자번호 {item.result.businessNumber}</small>}{item.result.total ? <small>판독 금액 {won(item.result.total)}</small> : null}{item.result.warnings?.map((warning) => <em key={warning}><AlertTriangle /> {warning}</em>)}</article>)}</div>{!detail.ocrAnalyses.length && <p className="admin-review-empty">이 신청에 연결된 AI 이미지 판독 기록이 없습니다. CSV는 아래 산출지표와 교차검증에서 확인합니다.</p>}</section>
-      <section className="admin-review-section"><h3>AI 평가와 교차검증 근거</h3><div className="admin-evaluation-summary"><article><small>데이터 신뢰도</small><b>{detailData?.dataConfidence || 0}%</b></article><article><small>35지표 등급</small><b>{credit?.grade || '미산정'}</b><span>{credit ? `${credit.measuredCount}/${credit.totalCount}개 산정` : ''}</span></article><article><small>사업자 확인</small><b>{detailData?.businessVerification?.verified ? '통과' : '확인 필요'}</b></article><article><small>문서 대조</small><b>{financial?.readyForAdminReview ? '최종 검토 가능' : '추가 확인'}</b><span>{financial ? `${financial.documentCount}건 · 평균 ${Math.round(financial.averageConfidence * 100)}%` : ''}</span></article></div><p className="admin-ai-explanation">{detail.application.explanation}</p><div className="admin-review-columns"><div><b>확인된 강점</b>{detail.application.strengths.map((item) => <p key={item}><CheckCircle2 /> {item}</p>)}</div><div><b>확인·보완 항목</b>{detail.application.improvements.map((item) => <p key={item}><AlertTriangle /> {item}</p>)}</div></div>{financial?.steps?.length ? <div className="admin-verification-steps">{financial.steps.map((step: any) => <article className={step.status} key={step.code}><b>{step.label}</b><span>{step.detail}</span></article>)}</div> : null}</section>
+      <section className="admin-review-section"><h3>AI 평가 근거</h3><div className="admin-evaluation-summary"><article><small>35지표 등급</small><b>{credit?.grade || '미산정'}</b><span>{credit ? `${credit.measuredCount}/${credit.totalCount}개 산정` : ''}</span></article><article><small>데이터 신뢰도</small><b>{detailData?.dataConfidence || 0}%</b></article><article><small>사업자 확인</small><b>{detailData?.businessVerification?.verified ? '통과' : '확인 필요'}</b></article></div><p className="admin-ai-explanation">{detail.application.explanation}</p><div className="admin-review-columns"><div><b>확인된 강점</b>{detail.application.strengths.map((item) => <p key={item}><CheckCircle2 /> {item}</p>)}</div><div><b>확인·보완 항목</b>{detail.application.improvements.map((item) => <p key={item}><AlertTriangle /> {item}</p>)}</div></div></section>
       {/* 증거 원장. 운영자가 "왜 이 값인가"를 파일·행 단위로 확인할 수 있어야 최종 승인 판단이 가능하다. */}
       {detailData?.evidenceLedger && <section className="admin-review-section">
         <h3>값의 근거와 자료 일치도 <small>지표를 누르면 어느 파일 몇 행에서 나온 값인지 펼칩니다</small></h3>
         <EvidencePanel ledger={detailData.evidenceLedger} title="이 신청의 값별 근거" />
       </section>}
-      <footer className="admin-review-footer"><div><b>최종 결정은 운영자가 원본과 위 근거를 확인한 뒤 선택합니다.</b><span>AI 판독과 예비평가는 자동 승인·자동 거절을 하지 않습니다.</span></div><select disabled={busy === detail.application.id} value={detail.application.status} onChange={async (event) => { await mutate(detail.application.id, `/api/admin/applications/${detail.application.id}`, { status: event.target.value }, '최종 심사 상태를 변경했어요.'); setDetail(null) }}><option value="manual_review">최종 검토 대기</option><option value="approved">최종 승인</option><option value="conditional">조건부 승인</option><option value="rejected">보완 요청</option></select></footer>
+      <footer className="admin-review-footer"><div><b>최종 결정은 운영자가 제출 자료와 위 근거를 확인한 뒤 선택합니다.</b><span>먹투 성장성 예비평가는 자동 승인·자동 거절을 하지 않습니다.</span></div><select disabled={busy === detail.application.id} value={detail.application.status} onChange={async (event) => { await mutate(detail.application.id, `/api/admin/applications/${detail.application.id}`, { status: event.target.value }, '최종 심사 상태를 변경했어요.'); setDetail(null) }}><option value="manual_review">최종 검토 대기</option><option value="approved">최종 승인</option><option value="conditional">조건부 승인</option><option value="rejected">보완 요청</option></select></footer>
     </article></div>}
     {openedDocumentData && <DocumentModal
       title={sourceLabel[openedDocument] || openedDocument}
@@ -184,10 +182,7 @@ export default function AdminCenter({ me, onLogin, onLogout, notify }: { me: MeS
       meta={`${detail?.application.restaurantName || ''} · ${fileSizeLabel(openedDocumentData.size)} · ${openedDocumentData.type || '형식 미확인'}`}
       onClose={() => setOpenedDocument('')}
     >
-      <SubmittedDocumentViewer
-        document={openedDocumentData}
-        ocr={detail?.ocrAnalyses.find((item) => item.sourceId === openedDocument)}
-      />
+      <SubmittedDocumentViewer document={openedDocumentData} />
     </DocumentModal>}
   </div>
 }

@@ -151,7 +151,7 @@ export default function OwnerMyPage({ me, refresh, notify }: { me: MeState; refr
   const rounds = active?.applications || []
   const showFund = (groupKey: string) => { setSelectedRestaurantId(groupKey); setSelectedId('') }
   const auditEvents = owner?.auditEvents || []
-  const visibleAuditEvents = auditEvents.filter((event) => event.action !== 'coupon.dividend_issued').slice(0, 8)
+  const visibleAuditEvents = auditEvents.filter((event) => event.action !== 'coupon.dividend_issued' && event.action !== 'ocr.analyzed' && event.action !== 'application.financial_orchestrated').slice(0, 8)
 
   const loadId = useRef(0)
   const load = useCallback(async () => {
@@ -287,8 +287,8 @@ export default function OwnerMyPage({ me, refresh, notify }: { me: MeState; refr
           {selected.data?.creditAssessment && <CreditGradePanel credit={selected.data.creditAssessment} combined={selected.data.combinedAssessment} />}
         </div>
 
-        {(selected.data?.businessVerification || selected.data?.financialVerification || selected.data?.evidenceLedger) && <div className="owner-report-section">
-          <div className="owner-report-section-title"><span>03</span><div><small>VERIFICATION</small><h3>제출 자료 검증 결과</h3><p>사업자 정보와 재무자료가 서로 일치하는지 단계별로 보여줍니다.</p></div></div>
+        {(selected.data?.businessVerification || selected.data?.evidenceLedger) && <div className="owner-report-section">
+          <div className="owner-report-section-title"><span>03</span><div><small>EVIDENCE</small><h3>제출 자료와 평가 근거</h3><p>사업자 확인 결과와 예비평가에 사용한 자료 근거를 확인하세요.</p></div></div>
           {/* 이 심사에 쓰인 값마다 근거를 남겨둔다. 결과 화면에서 한 번 보고 끝나면 안 되는 정보다. */}
           <ApplicationExtrasSummary
             fundUsePlan={selected.data?.fundUsePlan}
@@ -297,7 +297,7 @@ export default function OwnerMyPage({ me, refresh, notify }: { me: MeState; refr
             salesBasis={selected.data?.salesBasis}
           />
           <EvidencePanel ledger={selected.data?.evidenceLedger} title="이 심사에서 쓴 숫자의 근거" />
-          <VerificationReport business={selected.data?.businessVerification} financial={selected.data?.financialVerification} />
+          <VerificationReport business={selected.data?.businessVerification} />
         </div>}
 
         <div className="owner-report-section">

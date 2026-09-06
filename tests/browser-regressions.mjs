@@ -171,7 +171,7 @@ try {
   await login('owner')
   await waitFor('Boolean(document.querySelector(".owner-dashboard"))', 'owner dashboard')
   await waitFor('Boolean(document.querySelector(".report-grid h3"))', 'owner report')
-  // 사장님 센터는 세 단계로 넘어간다. 판독값 확인은 2단계의 'AI 자료 분석 결과' 안으로 들어갔다.
+  // 사장님 센터는 세 단계로 넘어간다. 자료 업로드 화면에는 준비 안내와 자료 분류만 남긴다.
   // 단계가 실제로 전환되는지, 필수 자료가 없으면 넘어가지 못하는지,
   // 마지막 단계에서만 제출 버튼이 나오는지까지 실제 브라우저로 확인한다.
   // /owner 로 들어가면 첫 단계 주소로 넘어간다. 단계마다 주소가 실제로 바뀌어야 한다.
@@ -188,21 +188,28 @@ try {
   // 데모 채우기 버튼은 단계마다 하나씩 있고, 자기 화면의 칸만 채운다.
   // 1단계 버튼은 가게 정보와 대표자 본인인증까지 끝낸다. 예전에는 이 버튼이 2단계에만 있어서,
   // 본인인증을 손으로 마친 사람만 데모를 만날 수 있었다.
-  assert(await evaluate('document.querySelectorAll(".step-demo-fill .virtual-data-upload-btn").length === 1'), '1단계에 데모 채우기 버튼이 있어야 합니다')
-  await evaluate('document.querySelector(".step-demo-fill .virtual-data-upload-btn").click()')
+  assert(await evaluate('document.querySelectorAll(".step-demo-fill-bar .virtual-data-upload-btn").length === 1'), '1단계에 데모 채우기 버튼이 있어야 합니다')
+  await evaluate('document.querySelector(".step-demo-fill-bar .virtual-data-upload-btn").click()')
   await waitFor('Boolean(document.querySelector(".identity-action.verified"))', 'store demo fills fields and verifies identity')
   await waitFor('document.querySelector("[name=restaurantName]").value === "먹투 테스트식당" && document.querySelector("[name=ownerName]").value === "김테스트"', 'store demo fills store fields')
   // 타 페이지까지 채우지 않는다. 1단계 버튼을 눌러도 자료는 하나도 올라가 있으면 안 된다.
   assert(await evaluate('!document.querySelector(".sample-clear")'), '1단계 데모 채우기가 자료 업로드까지 건드리면 안 됩니다')
   await click('다음')
   await waitFor('location.pathname === "/owner/upload" && Boolean(document.querySelector(".wizard-step.active .intake-zone"))', 'store step advances to upload step')
+  assert(await evaluate('document.querySelector(".desktop-nav a.active")?.innerText === "사장님 센터"'), '신청 하위 경로에서도 사장님 센터가 활성화되어야 합니다')
+  assert(await evaluate('Boolean(document.querySelector(".document-preparation-guide")) && !document.querySelector(".ai-upload-feedback")'), '자료 안내는 보이고 AI 판독 펼쳐보기는 없어야 합니다')
   // 2단계 버튼은 자료 칸과 부채 신고만 채운다.
   assert(await evaluate('document.querySelectorAll(".virtual-data-upload-btn").length === 1'), '2단계 데모 버튼은 하나여야 합니다')
   await evaluate('document.querySelector(".virtual-data-upload-btn").click()')
   await waitFor('document.querySelectorAll(".document-upload-card.uploaded").length === 11', 'sample uploads')
-  await click('올린 자료 열어보기')
-  await waitFor('Boolean(document.querySelector(".doc-figure img")?.naturalWidth)', 'uploaded image preview')
-  assert(await evaluate('fetch(document.querySelector(".doc-figure img").src).then(r => r.ok)'))
+  assert(await evaluate(`(() => {
+    const card = [...document.querySelectorAll('.document-upload-card')].find(item => item.innerText.includes('사업용 계좌 내역'))
+    const button = card && [...card.querySelectorAll('button')].find(item => item.innerText.includes('올린 자료 열어보기'))
+    if (!button) return false
+    button.click()
+    return true
+  })()`), '사업용 계좌 데모 자료 열기 버튼이 있어야 합니다')
+  await waitFor('Boolean(document.querySelector(".doc-table"))', 'uploaded table preview')
   await evaluate('document.querySelector(".doc-modal-head button").click()')
   // 만능 업로드함. 어떤 자료인지 고르지 않고 던져도 알맞은 칸에 들어가야 한다.
   // 열 이름이 제각각인 CSV 와, 브라우저에서 그림으로 바꿔야 하는 PDF 를 둘 다 넣어 본다.
@@ -258,34 +265,10 @@ try {
   // 부채는 답을 해야 넘어간다. 샘플이 '대출 있음'으로 채워둔 상태여야 한다.
   await waitFor('Boolean(document.querySelector(".debt-choice button.active"))', 'debt question answered')
 
-  // 판독은 자동이다. 'AI로 읽기' 같은 버튼을 누르지 않아도 사진·PDF 가 읽혀야 한다.
-  await waitFor('document.querySelectorAll(".ai-upload-feedback .analysis-row").length === 11', 'every source has an analysis row')
-  await waitFor('[...document.querySelectorAll(".analysis-row")].filter(row => row.innerText.includes("어떻게 읽었나요?")).length >= 8', 'analysis rows are expandable')
-  await waitFor('[...document.querySelectorAll(".analysis-row .analysis-copy small")].some(item => /판독 확신|합산했어요/.test(item.innerText))', 'documents are read automatically without a button')
-  assert(await evaluate('document.body.innerText.includes("AI로 읽기") === false'), '자동 판독이므로 AI로 읽기 버튼이 없어야 합니다')
-
-  // 자료를 누르면 그 자리에서 '어떻게 읽었는지'가 펼쳐진다.
-  const tableRowIndex = await evaluate('[...document.querySelectorAll(".analysis-row")].findIndex(row => row.innerText.includes("합산했어요"))')
-  assert(tableRowIndex >= 0, '표 자료 요약이 목록에 있어야 합니다')
-  await evaluate(`document.querySelectorAll('.analysis-row')[${tableRowIndex}].querySelector('.analysis-head').click()`)
-  await waitFor('Boolean(document.querySelector(".analysis-row.open .analysis-table .analysis-headers em"))', 'table row expands to show columns')
-
-  // '다시 올리기'는 방금 고른 파일을 읽어야 한다.
-  // 예전에는 판독 함수가 selectedFiles(상태)에서 파일을 집었는데, 그 상태는 다음 렌더에나
-  // 갱신되므로 직전 파일이 잡혔다. 옛 파일을 판독 API로 보내고 결과는 버려서,
-  // 화면에는 아무 일도 일어나지 않은 것처럼 보였다. 파일 이름이 실제로 바뀌는지로 확인한다.
-  const docRowIndex = await evaluate('[...document.querySelectorAll(".analysis-row")].findIndex(row => row.innerText.includes("사업자등록 자료"))')
-  await evaluate(`document.querySelectorAll('.analysis-row')[${docRowIndex}].querySelector('.analysis-head').click()`)
-  await waitFor(`document.querySelectorAll('.analysis-row')[${docRowIndex}].classList.contains('open')`, 'document row expands')
-  await evaluate(`(async () => {
-    const blob = await fetch('/samples/09_commercial_lease_excerpt.png').then(r => r.blob())
-    const transfer = new DataTransfer()
-    transfer.items.add(new File([blob], 'reupload-check.png', { type: 'image/png' }))
-    const input = document.querySelectorAll('.analysis-row')[${docRowIndex}].querySelector('.reading-reupload input')
-    input.files = transfer.files
-    input.dispatchEvent(new Event('change', { bubbles: true }))
-  })()`)
-  await waitFor(`document.querySelectorAll('.document-upload-card')[0].innerText.includes('reupload-check.png')`, 'reupload replaces the file in its slot')
+  // 부정확했던 문서 판독 상세 UI는 자료 목록에 노출하지 않는다.
+  assert(await evaluate('document.querySelector(".ai-upload-feedback") === null'), 'AI 판독 상세 영역이 남아 있습니다')
+  assert(await evaluate('document.querySelector(".analysis-row") === null'), 'AI 판독 결과 행이 남아 있습니다')
+  assert(await evaluate('document.body.innerText.includes("어떻게 읽었나요?") === false'), '삭제한 판독 상세 문구가 남아 있습니다')
 
   // 2 → 3단계 전환. 자료가 모두 있으니 넘어가야 한다.
   await click('다음')
@@ -296,8 +279,8 @@ try {
   await evaluate('history.forward()')
   await waitFor('location.pathname === "/owner/plan"', 'browser forward returns to consent step')
   // 3단계 버튼은 자금 계획만 채운다. 필수 고지 동의는 사장님이 직접 확인해야 하므로 건드리지 않는다.
-  assert(await evaluate('document.querySelectorAll(".step-demo-fill .virtual-data-upload-btn").length === 1'), '3단계에 데모 채우기 버튼이 있어야 합니다')
-  await evaluate('document.querySelector(".step-demo-fill .virtual-data-upload-btn").click()')
+  assert(await evaluate('document.querySelectorAll(".step-demo-fill-bar .virtual-data-upload-btn").length === 1'), '3단계에 데모 채우기 버튼이 있어야 합니다')
+  await evaluate('document.querySelector(".step-demo-fill-bar .virtual-data-upload-btn").click()')
   await waitFor('document.querySelector("[name=fundPurpose]").value.includes("저온 저장고") && document.querySelectorAll(".fund-use-row").length >= 2', 'plan demo fills the funding plan')
   await evaluate('document.querySelectorAll(".consent-reader-head").forEach(button => button.click())')
   await waitFor('[...document.querySelectorAll(".consent-reader-agree input")].length === 3 && [...document.querySelectorAll(".consent-reader-agree input")].every(input => !input.disabled)', 'application consent documents')
@@ -311,8 +294,15 @@ try {
   // 자금 사용계획: 합계가 희망 펀딩액과 맞아야 제출된다.
   await waitFor('document.querySelectorAll(".fund-use-row").length >= 2', 'fund use rows')
   await waitFor('Boolean(document.querySelector(".fund-use-total.match"))', 'fund use total matches requested amount')
-  await click('먹투 자동분석 시작')
+  await click('먹투 예비평가 시작')
   await waitFor('location.pathname === "/owner/result" && (Boolean(document.querySelector(".source-review-result")) || document.body.innerText.includes("Restaurant Health Profile"))', 'application submitted on result url')
+  await waitFor('Boolean(document.querySelector(".result-score-primary"))', 'growth score is prominent')
+  assert(await evaluate(`(() => {
+    const score = document.querySelector('.result-score-primary')
+    const evidence = document.querySelector('.evidence-panel')
+    return Boolean(score && evidence && (score.compareDocumentPosition(evidence) & Node.DOCUMENT_POSITION_FOLLOWING))
+  })()`), '성장성 예비평가 점수는 자료 근거보다 먼저 보여야 합니다')
+  assert(await evaluate('document.querySelector(".financial-verify") === null'), '재무자료 AI 교차검증 6단계가 남아 있습니다')
   // 증거 원장이 결과 화면에 실제로 그려지는지. 서버가 값을 만들어도 화면에 길이 없으면 의미가 없다.
   await waitFor('Boolean(document.querySelector(".evidence-panel .quality-dial"))', 'evidence quality dial')
   // 데모 자료는 표(CSV)와 서류(PNG)를 함께 넣으므로 자료끼리 대조가 실제로 돌아야 한다.
