@@ -76,11 +76,8 @@ const uploadOptions: UploadOption[] = [
     exact: '사업자등록증명 또는 사업자등록증 사본 1부',
     columns: '확인 항목: 상호, 대표자, 개업일, 사업장 주소, 업태·종목',
     accept: '.png,.jpg,.jpeg,.pdf',
-    sampleUrl: '/samples/01_business_registration_certificate_clean.png',
-    sampleLabel: '깨끗한 원본 PNG',
-    sampleAltUrl: '/samples/01_business_registration_certificate_photo.png',
-    sampleAltLabel: '촬영본 PNG',
-    samplePdfUrl: '/samples/meoktu-business-sample.pdf',
+    sampleUrl: '/meoktu_ocr_test_documents/actual_public_examples/01a_business_registration_actual_left.png',
+    sampleLabel: '사업자등록증 PNG',
   },
   {
     id: 'license',
@@ -89,11 +86,8 @@ const uploadOptions: UploadOption[] = [
     exact: '일반·휴게음식점 영업신고증 사본 1부',
     columns: '확인 항목: 신고번호, 영업소 명칭·주소, 영업 종류, 대표자',
     accept: '.png,.jpg,.jpeg,.pdf',
-    sampleUrl: '/samples/02_food_business_license_clean.png',
-    sampleLabel: '깨끗한 원본 PNG',
-    sampleAltUrl: '/samples/02_food_business_license_photo.png',
-    sampleAltLabel: '촬영본 PNG',
-    samplePdfUrl: '/samples/meoktu-license-sample.pdf',
+    sampleUrl: '/meoktu_ocr_test_documents/actual_public_examples/02_food_business_license_actual_redacted.png',
+    sampleLabel: '영업신고증 PNG',
   },
   {
     id: 'account',
@@ -102,8 +96,8 @@ const uploadOptions: UploadOption[] = [
     exact: '최근 12개월 사업용 계좌 거래내역서 또는 엑셀',
     columns: '확인 항목: 거래일시, 입금액, 출금액, 잔액 (은행 화면 캡처 또는 내역서)',
     accept: '.png,.jpg,.jpeg,.pdf,.csv,.xlsx',
-    sampleUrl: '/samples/06_business_bank_statement_clean.png',
-    sampleLabel: '내역서 PNG',
+    sampleUrl: '/meoktu_ocr_test_documents/variable_vendor_screens/07_bank_export_actual_screen.png',
+    sampleLabel: '계좌내역 PNG',
     sampleAltUrl: '/samples/meoktu-account-sample.csv',
     sampleAltLabel: 'CSV 샘플',
     demoUrl: '/samples/meoktu-account-sample.csv',
@@ -115,7 +109,7 @@ const uploadOptions: UploadOption[] = [
     exact: '최근 12개월 POS 월별 매출 집계표 또는 주문 내역',
     columns: '확인 항목: 월별 매출액, 주문건수, 결제수단별 금액, 취소환불액',
     accept: '.png,.jpg,.jpeg,.pdf,.csv,.xlsx',
-    sampleUrl: '/samples/04_pos_sales_summary.png',
+    sampleUrl: '/meoktu_ocr_test_documents/variable_vendor_screens/06_pos_actual_screen.png',
     demoUrl: '/samples/meoktu-pos-sample.csv',
     sampleLabel: '집계표 PNG',
     sampleAltUrl: '/samples/meoktu-pos-sample.csv',
@@ -128,7 +122,7 @@ const uploadOptions: UploadOption[] = [
     exact: '최근 12개월 카드·VAN 정산 내역서',
     columns: '확인 항목: 승인건수, 승인금액, 수수료, 실입금액',
     accept: '.png,.jpg,.jpeg,.pdf,.csv,.xlsx',
-    sampleUrl: '/samples/05_card_van_settlement.png',
+    sampleUrl: '/meoktu_ocr_test_documents/variable_vendor_screens/08_card_settlement_actual_screen.png',
     demoUrl: '/samples/meoktu-card-settlement-sample.csv',
     sampleLabel: '정산표 PNG',
     sampleAltUrl: '/samples/meoktu-card-settlement-sample.csv',
@@ -141,7 +135,7 @@ const uploadOptions: UploadOption[] = [
     exact: '최근 12개월 배달앱 월별 정산 내역서',
     columns: '확인 항목: 배달 주문금액, 중개수수료, 정산입금액, 주문건수',
     accept: '.png,.jpg,.jpeg,.pdf,.csv,.xlsx',
-    sampleUrl: '/samples/07_delivery_platform_settlement.png',
+    sampleUrl: '/meoktu_ocr_test_documents/variable_vendor_screens/09_delivery_settlement_reference.png',
     demoUrl: '/samples/meoktu-delivery-sample.csv',
     sampleLabel: '정산표 PNG',
     sampleAltUrl: '/samples/meoktu-delivery-sample.csv',
@@ -154,11 +148,8 @@ const uploadOptions: UploadOption[] = [
     exact: '최근 2개 과세기간 부가세 신고서 또는 과세표준증명원',
     columns: '확인 항목: 과세기간, 과세표준(매출액), 납세 상태',
     accept: '.png,.jpg,.jpeg,.pdf',
-    sampleUrl: '/samples/03_vat_tax_base_certificate_clean.png',
+    sampleUrl: '/meoktu_ocr_test_documents/official_forms_pdf/03_vat_tax_base_official-1.png',
     sampleLabel: '과세표준증명 PNG',
-    sampleAltUrl: '/samples/03_vat_tax_base_certificate_scan.png',
-    sampleAltLabel: '스캔본 PNG',
-    samplePdfUrl: '/samples/meoktu-tax-sample.pdf',
   },
   {
     id: 'customer',
@@ -177,9 +168,8 @@ const uploadOptions: UploadOption[] = [
     exact: '상가 임대차계약서 사본 1부 또는 요약본',
     columns: '확인 항목: 보증금, 월 임차료(월세), 계약기간, 소재지 주소',
     accept: '.png,.jpg,.jpeg,.pdf,.csv',
-    sampleUrl: '/samples/09_commercial_lease_excerpt.png',
+    sampleUrl: '/meoktu_ocr_test_documents/official_forms_pdf/05_commercial_lease_official_reference-1.png',
     sampleLabel: '임대차계약서 PNG',
-    samplePdfUrl: '/samples/meoktu-lease-sample.pdf',
   },
   {
     id: 'debt',
@@ -777,7 +767,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
    * 표(CSV·엑셀)는 열 이름으로 분류하고, 사진·PDF 는 판독 결과의 문서 종류로 분류한다.
    * 열 이름 신호가 판독보다 정확하기 때문에 표는 AI를 부르지 않는다(비용·시간 절약).
    *
-   * 처리 결과를 줄줄이 나열하던 목록은 없앴다. 어느 칸에 들어갔는지는 아래 'B. 자료가 들어간 칸'이
+   * 처리 결과를 줄줄이 나열하던 목록은 없앴다. 어느 칸에 들어갔는지는 아래 'B. 자료 업로드'이
    * 이미 그대로 보여주고, 판독값은 'AI 자료 분석 결과'에서 확인한다. 같은 말을 세 번 하고 있었다.
    * 대신 진행 중인 파일 한 줄과 실패 알림만 남긴다.
    */
@@ -911,7 +901,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
     setFields((current) => ({ ...current, ...storeSampleFields }))
     setIdentityVerified(true)
     setOwnership(sampleOwnership.map((row) => ({ ...row })))
-    notify('가게 정보와 대표자 본인인증을 데모 값으로 채웠어요. 자료 업로드는 다음 화면에서 따로 채웁니다.')
+    notify('가게 정보와 대표자 본인인증을 데모 값으로 채웠어요.')
   }
 
   /**
@@ -1247,7 +1237,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
               {/* 이 화면 칸과 대표자 본인인증까지만 채운다. 자료 업로드는 다음 화면 버튼이 맡는다. */}
               <StepDemoFill
                 title="가게 정보를 데모 값으로 채워볼까요?"
-                description={<>가상 식당 <em>먹투 테스트식당</em>의 사업자 정보로 아래 칸을 채우고 <b>대표자 본인인증</b>까지 함께 끝냅니다. 자료 업로드는 다음 화면에서 따로 채워요.</>}
+                description={<>가상 식당 <em>먹투 테스트식당</em>의 사업자 정보로 아래 칸을 채우고 <b>대표자 본인인증</b>까지 함께 끝냅니다.</>}
                 label="가게 정보·대표자확인 데모로 채우기"
                 busy={Boolean(fillingSample)}
                 onFill={fillStoreDemo}
@@ -1317,7 +1307,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
                 <div className="evidence-lane partner-lane"><div className="evidence-lane-heading"><PlugZap /><div><b>A. 제휴기관·마이데이터형 연결</b><p>동의 범위·제공기관·동기화 시각이 함께 기록됩니다. ‘동의하고 연결’을 누르면 조회 범위와 보유기간이 적힌 동의서를 먼저 보여드립니다. 현재 버튼은 실제 기관 API 대신 시연 어댑터를 사용합니다.</p></div></div><div className="partner-connection-grid">{partnerOptions.map((option) => { const Icon = option.icon; const connection = activeConnections.find((item: any) => item.sourceId === option.id); return <article className={connection ? 'connected' : ''} key={option.id}><Icon /><div><b>{option.title}</b><span>{option.provider}</span><small>{option.scope}</small>{connection && <em><Check /> {connection.recordCount.toLocaleString()}건 · {new Date(connection.lastSyncedAt).toLocaleDateString('ko-KR')}</em>}</div><button type="button" disabled={Boolean(connection)} onClick={() => setConsentPartner(option.id)}>{connection ? '연결됨' : '동의하고 연결'}</button></article> })}</div></div>
 
                 <div className="evidence-lane upload-lane">
-                <div className="evidence-lane-heading"><UploadCloud /><div><b>B. 자료가 들어간 칸</b><p>위에서 올린 파일이 여기에 자동으로 들어갑니다. 비어 있는 칸은 직접 골라 넣어도 됩니다. 엑셀은 표로 바꿔서 넣습니다.</p></div></div>
+                <div className="evidence-lane-heading"><UploadCloud /><div><b>B. 자료 업로드</b><p>위에서 올린 파일이 여기에 자동으로 들어갑니다. 비어 있는 칸은 직접 골라 넣어도 됩니다. 엑셀은 표로 바꿔서 넣습니다.</p></div></div>
                 {/* 요건 묶음으로 나눠 보여준다. 무엇이 필수이고 무엇이 택1인지가 카드 옆에 그대로 붙는다. */}
                 {groupedOptions.map(({ group, options: groupOptions }) => {
                   const options = group === '추가 자료' ? [...groupOptions, ...unplacedOptions] : groupOptions
@@ -1340,6 +1330,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
                       classification={classifications[option.id]}
                       onChange={(event) => selectFile(option.id, event)}
                       onOpen={() => setOpenedDocument(option.id)}
+                      partnerConnected={connectedIds.has(option.id)}
                     />)}
                   </div>
                 </div>
@@ -1496,7 +1487,7 @@ const readAsDataUrl = (file: File) => new Promise<string>((resolve, reject) => {
  * 문서 종류를 먼저 고르게 하지 않는다. 고령 사장님에게 "부가세 신고서를 이 칸에"라고
  * 요구하는 순간 화면이 벽이 되기 때문이다. 받아놓고 뒤에서 판단한다.
  *
- * 처리 결과 목록은 없앴다. 어느 칸에 무엇이 들어갔는지는 바로 아래 'B. 자료가 들어간 칸'이
+ * 처리 결과 목록은 없앴다. 어느 칸에 무엇이 들어갔는지는 바로 아래 'B. 자료 업로드'이
  * 보여주고, 판독값은 'AI 자료 분석 결과'가 보여준다. 여기서는 진행 중인 한 줄만 남긴다.
  */
 function UniversalIntake({ dragging, busy, note, onDragState, onFiles }: {
@@ -1780,7 +1771,7 @@ function SamplePack({ busy, onLoadDemo }: { busy: boolean; onLoadDemo: () => voi
       </button>
     </div>
     <ul className="sample-pack-hint">
-      <li><Check /> 넣은 자료는 아래 <b>B. 자료가 들어간 칸</b>에서 어느 칸에 들어갔는지 바로 확인할 수 있어요.</li>
+      <li><Check /> 넣은 자료는 아래 <b>B. 자료 업로드</b>에서 어느 칸에 들어갔는지 바로 확인할 수 있어요.</li>
       <li><Check /> 각 자료 카드의 <b>샘플 다운로드</b> 버튼으로 필요한 파일만 따로 받을 수도 있어요.</li>
       <li><Check /> 자료를 올린 뒤에는 <b>올린 자료 열어보기</b>로 내려받지 않고 그 자리에서 내용을 확인할 수 있어요.</li>
       <li><Check /> 문서 자료는 <b>PNG와 PDF</b>를 함께 제공하고, 모두 ‘실제 제출 불가’ 표시가 들어간 가상 문서입니다.</li>
@@ -1869,9 +1860,10 @@ function PartnerConsentModal({ option, onCancel, onConfirm, onOpenTerms }: {
   )
 }
 
-function DocumentUploadCard({ option, guide, fileName, metadata, classification, onChange, onOpen }: { option: UploadOption; guide?: DocumentGuide; fileName?: string; metadata?: DocumentMetadata; classification?: DocumentClassification; onChange: (event: ChangeEvent<HTMLInputElement>) => void; onOpen: () => void }) {
+function DocumentUploadCard({ option, guide, fileName, metadata, classification, onChange, onOpen, partnerConnected }: { option: UploadOption; guide?: DocumentGuide; fileName?: string; metadata?: DocumentMetadata; classification?: DocumentClassification; onChange: (event: ChangeEvent<HTMLInputElement>) => void; onOpen: () => void; partnerConnected?: boolean }) {
   const Icon = option.icon
-  return <div className={`document-upload-card ${fileName ? 'uploaded' : ''}`}>
+  const govSources = new Set(['business', 'license', 'tax'])
+  return <div className={`document-upload-card ${fileName ? 'uploaded' : ''} ${partnerConnected ? 'partner-connected' : ''}`}>
     <span className="document-icon"><Icon /></span>
     <div className="document-copy">
       {/* 요건은 서버가 내려준 값을 그대로 쓴다. 화면과 AI 상담이 다른 말을 하면 안 된다. */}
@@ -1882,7 +1874,10 @@ function DocumentUploadCard({ option, guide, fileName, metadata, classification,
       {/* 자동으로 들어온 자료는 무엇을 보고 그렇게 판단했는지 밝힌다. */}
       {fileName && classification && <em className="document-classified">먹투가 자동으로 넣었어요 · {classification.reason}</em>}
       {fileName && <button type="button" className="doc-open-button" onClick={onOpen}><Eye /> 올린 자료 열어보기</button>}
-      {option.sampleUrl && <a className="sample-download" href={option.sampleUrl} download><Download /> {option.sampleLabel} 다운로드</a>}{option.samplePdfUrl && <a className="sample-download" href={option.samplePdfUrl} download><Download /> PDF 샘플 다운로드</a>}{option.sampleAltUrl && <a className="sample-download" href={option.sampleAltUrl} download><Download /> {option.sampleAltLabel} 다운로드</a>}</div>
-    <label className="document-action"><UploadCloud />{fileName ? '다시 선택' : '파일 선택'}<input type="file" name={`document-${option.id}`} accept={option.accept} onChange={onChange} /></label>
+      {partnerConnected && <p className="partner-connected-notice">제휴기관에서 동의 기반으로 전송받은 자료가 있어 직접 업로드가 필요하지 않습니다.</p>}
+      {option.sampleUrl && <a className="sample-download" href={option.sampleUrl} download><Download /> 테스트용 {option.sampleLabel} 다운로드</a>}{option.samplePdfUrl && <a className="sample-download" href={option.samplePdfUrl} download><Download /> 테스트용 PDF 샘플 다운로드</a>}{!govSources.has(option.id) && option.sampleAltUrl && <a className="sample-download" href={option.sampleAltUrl} download><Download /> 테스트용 {option.sampleAltLabel} 다운로드</a>}</div>
+    {partnerConnected
+      ? <span className="document-action partner-blocked"><PlugZap /> 기관 연결됨</span>
+      : <label className="document-action"><UploadCloud />{fileName ? '다시 선택' : '파일 선택'}<input type="file" name={`document-${option.id}`} accept={option.accept} onChange={onChange} /></label>}
   </div>
 }
