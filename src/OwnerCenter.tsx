@@ -946,15 +946,8 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
           {/* 샘플 자료 버튼은 어느 단계에서든 보이게 둔다.
               2단계 안에만 두었더니, 1단계를 채우지 못한 사장님은 1·4단계 입력까지
               함께 채워주는 이 버튼에 도달할 방법이 없었다(실제 브라우저 검사에서 걸렸다). */}
-          {owner && <div className="sample-sets">
-            {sampleSets.map((set) => <button
-              type="button" key={set.id} className={`sample-set ${set.id}`}
-              disabled={Boolean(fillingSample)} onClick={() => void fillWithSamples(set)}
-            >
-              <span>{set.id === 'clean' ? <Sparkles /> : <TriangleAlert />}</span>
-              <div><b>{fillingSample === set.id ? '샘플 자료를 불러오는 중...' : set.label}</b><p>{set.description}</p></div>
-            </button>)}
-            {uploadedCount > 0 && <button type="button" className="sample-clear" disabled={Boolean(fillingSample)} onClick={clearUploads}><Eraser /> 업로드 비우기</button>}
+          {owner && uploadedCount > 0 && <div className="sample-sets">
+            <button type="button" className="sample-clear" disabled={Boolean(fillingSample)} onClick={clearUploads}><Eraser /> 업로드 비우기</button>
           </div>}
 
           <nav className="wizard-rail" aria-label="신청 단계">
@@ -1024,11 +1017,6 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
                 onReassign={(row, sourceId) => void reassign(row, sourceId)}
               />
 
-              {lockerDocuments.length > 0 && <DocumentLocker
-                documents={lockerDocuments} stats={documentStats}
-                onRemove={(id) => void removeLockerDocument(id)}
-              />}
-
               <div className="form-section evidence-source-section">
                 <div className="form-section-title"><span>2</span><div><h3>자료가 어느 칸에 들어갔는지 확인해주세요</h3><p>기관에서 동의 기반으로 전송받은 자료와 사장님이 직접 올린 파일을 원장에 서로 다른 출처로 남깁니다.</p></div></div>
                 <div className="source-progress"><div><b>{evidenceCount}개</b><span>확보 자료</span></div><div className="progress-track"><i style={{ width: `${Math.min(100, evidenceCount / uploadOptions.length * 100)}%` }} /></div><small>필수: 사업자등록·영업신고 + POS·사업계좌(기관 연결 또는 직접 업로드)</small></div>
@@ -1065,6 +1053,42 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
                   </div>
                 </div>
                 })}
+
+                {/* AI 자료 분석 피드백 — 업로드 후 어떤 자료가 부족한지 AI가 판단해 보여준다 */}
+                {uploadedCount > 0 && <div className="ai-upload-feedback">
+                  <div className="ai-feedback-header"><Sparkles /><b>AI 자료 분석 결과</b></div>
+                  <div className="ai-feedback-list">
+                    {uploadOptions.map((option) => {
+                      const filled = Boolean(uploadedFiles[option.id]) || connectedIds.has(option.id)
+                      const isRequired = requiredSources.includes(option.id) || salesEvidenceSources.includes(option.id)
+                      return <div className={`ai-feedback-row ${filled ? 'filled' : isRequired ? 'missing-required' : 'missing-optional'}`} key={option.id}>
+                        <span className={`ai-status-dot ${filled ? 'green' : isRequired ? 'red' : 'gray'}`}>{filled ? <Check /> : <TriangleAlert />}</span>
+                        <div>
+                          <b>{option.title}</b>
+                          <small>{filled
+                            ? `✅ 자료가 정상적으로 등록되었습니다.${documentMetadata[option.id]?.rowCount ? ` (${documentMetadata[option.id].rowCount.toLocaleString('ko-KR')}행 확인)` : ''}`
+                            : isRequired
+                              ? `⚠️ 필수 자료가 누락되어 있습니다. ${option.title}을(를) 업로드하거나 기관 연결로 채워주세요.`
+                              : `선택 자료입니다. 올리면 평가 지표가 늘어나 더 정확한 심사가 가능합니다.`
+                          }</small>
+                        </div>
+                      </div>
+                    })}
+                  </div>
+                  {missingRequired.length > 0 && <p className="ai-feedback-summary"><ShieldCheck /> 현재 {uploadedCount}개 자료가 등록되었고, 필수 자료 {missingRequired.length}개가 부족합니다. 위 안내를 참고해 추가 업로드해주세요.</p>}
+                  {missingRequired.length === 0 && !salesEvidenceMissing && <p className="ai-feedback-summary complete"><Check /> 필수 자료가 모두 확보되었습니다. 다음 단계로 진행할 수 있어요!</p>}
+                </div>}
+
+                {/* 가상자료 한번에 업로드하기 버튼 */}
+                <button
+                  type="button"
+                  className="virtual-data-upload-btn"
+                  disabled={Boolean(fillingSample)}
+                  onClick={() => void fillWithSamples(sampleSets[0])}
+                >
+                  <UploadCloud />
+                  {fillingSample ? '가상 자료를 불러오는 중...' : '가상자료 한번에 업로드하기'}
+                </button>
               </div>
               {/* 부채는 자료보다 답이 먼저다. 대출이 없으면 클릭 한 번으로 끝나고,
                   있으면 적어주신 값과 증빙을 대조한다. 증빙 업로드 칸도 이 묶음 안에 둔다. */}
