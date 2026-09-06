@@ -226,6 +226,10 @@ function fromCard(rows: Record<string, string>[]) {
     cardSettledTotal: Math.round(settled),
     cardFeeRatio: approved > 0 ? round1(fee / approved * 100) : null,
     cardMonthlyAverage: months.length ? Math.round(months.reduce((sum, item) => sum + item.total, 0) / months.length) : null,
+    // POS 를 쓰지 않는 가게의 매출 대체 산정에 쓰는 값들. 카드 승인액 계열에서 그대로 계산한다.
+    cardSalesGrowth: growthRate(months, 3),
+    cardSalesVolatility: volatility(months),
+    cardMonthsObserved: months.length,
   }
   return { metrics, produced: Object.keys(metrics).filter((key) => isNum(metrics[key])) }
 }
@@ -376,6 +380,36 @@ export function deriveMetricsFromUploads(uploads: RawUpload[]) {
       sourceId: upload.sourceId, file: upload.name,
       rows: parsed.rows.length, columns: parsed.headers, produced: result.produced,
     })
+  }
+
+  /*
+   * ── 매출 대체 산정 ──────────────────────────────────────────
+   *
+   * POS 는 필수가 아니다. 포스를 안 쓰거나 자료를 뽑을 줄 모르는 사장님이 실제로 많다.
+   * 그런데 매출 지표를 POS 에서만 만들면, 카드 정산표를 낸 사장님은 매출이 통째로
+   * 미산정이 되고 등급이 임시로 남는다. 화면에서만 "POS 없어도 됩니다"라고 하고
+   * 결과는 무너지는 셈이다.
+   *
+   * 그래서 POS 가 없을 때만 카드 승인액(그다음 배달 매출) 계열에서 같은 키를 채운다.
+   * 값을 만들어내는 게 아니라 다른 원장에서 같은 것을 재는 것이고, 어디서 왔는지는
+   * salesBasis 로 남겨 화면과 근거 목록에 그대로 표시한다.
+   * POS 가 있으면 이 블록은 아무것도 하지 않으므로 기존 계산 경로는 그대로다.
+   */
+  if (!isNum(metrics.recent12MonthAverageSales)) {
+    if (isNum(metrics.cardMonthlyAverage) && metrics.cardMonthlyAverage > 0) {
+      metrics.recent12MonthAverageSales = metrics.cardMonthlyAverage
+      if (isNum(metrics.cardSalesGrowth)) metrics.recent12MonthSalesGrowth = metrics.cardSalesGrowth
+      if (isNum(metrics.cardSalesVolatility)) metrics.salesVolatility = metrics.cardSalesVolatility
+      metrics.salesBasis = '카드 승인액'
+      warnings.push('POS 자료가 없어 카드 승인액을 매출로 사용했어요. 현금·간편결제 매출은 빠져 있어 실제 매출보다 작게 잡힐 수 있습니다.')
+    } else if (isNum(metrics.deliveryMonthlyAverage) && metrics.deliveryMonthlyAverage > 0) {
+      metrics.recent12MonthAverageSales = metrics.deliveryMonthlyAverage
+      if (isNum(metrics.deliveryOrderGrowth)) metrics.recent12MonthSalesGrowth = metrics.deliveryOrderGrowth
+      metrics.salesBasis = '배달 플랫폼 매출'
+      warnings.push('POS·카드 자료가 없어 배달 매출만으로 매출을 잡았어요. 홀 매출이 빠져 있어 실제 매출보다 작게 잡힙니다.')
+    }
+  } else {
+    metrics.salesBasis = 'POS 원자료'
   }
 
   // ── 자료를 가로질러야 나오는 값 ──────────────────────────────

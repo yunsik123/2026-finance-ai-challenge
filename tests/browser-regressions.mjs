@@ -234,6 +234,19 @@ try {
   await evaluate('document.querySelector(".sample-set.clean").click()')
   await waitFor('document.querySelectorAll(".document-upload-card.uploaded").length === 11', 'sample uploads restored')
 
+  // 요건 구조: 필수/택1 배지와 발급 안내가 실제로 그려지는지.
+  await waitFor('document.querySelectorAll(".document-group").length >= 5', 'requirement groups rendered')
+  await waitFor('document.querySelectorAll(".document-upload-card").length === 11', 'every document slot is rendered')
+  await waitFor('document.querySelectorAll(".requirement-badge.req-must").length >= 3', 'required badges')
+  await waitFor('document.querySelectorAll(".requirement-badge.req-oneof").length >= 4', 'sales one-of badges')
+  await waitFor('Boolean(document.querySelector(".sales-evidence-status.ok"))', 'sales evidence satisfied')
+  await evaluate('document.querySelectorAll(".issuance-trigger")[0].click()')
+  await waitFor('Boolean(document.querySelector(".issuance-panel a[href^=\'https://\']"))', 'issuance help shows an official link')
+  await evaluate('document.querySelector(".issuance-panel header button").click()')
+  await waitFor('!document.querySelector(".issuance-panel")', 'issuance help closes')
+  // 부채는 답을 해야 넘어간다. 샘플이 '대출 있음'으로 채워둔 상태여야 한다.
+  await waitFor('Boolean(document.querySelector(".debt-choice button.active"))', 'debt question answered')
+
   // 2 → 3단계 전환. 자료가 모두 있으니 넘어가야 한다.
   await click('다음')
   await waitFor('location.pathname === "/owner/reading" && document.body.innerText.includes("AI가 읽은 값이 맞는지")', 'reading step url')
@@ -253,6 +266,9 @@ try {
   await waitFor('location.pathname === "/owner/store" && document.querySelector("[name=restaurantName]").value === "샘플식당"', 'store input survives page change')
   await evaluate('document.querySelectorAll(".wizard-rail button")[3].click()')
   await waitFor('location.pathname === "/owner/plan"', 'rail navigates by url')
+  // 자금 사용계획: 합계가 희망 펀딩액과 맞아야 제출된다.
+  await waitFor('document.querySelectorAll(".fund-use-row").length >= 2', 'fund use rows')
+  await waitFor('Boolean(document.querySelector(".fund-use-total.match"))', 'fund use total matches requested amount')
   await click('먹투 자동분석 시작')
   await waitFor('location.pathname === "/owner/result" && (Boolean(document.querySelector(".source-review-result")) || document.body.innerText.includes("Restaurant Health Profile"))', 'application submitted on result url')
   // 증거 원장이 결과 화면에 실제로 그려지는지. 서버가 값을 만들어도 화면에 길이 없으면 의미가 없다.
@@ -260,6 +276,10 @@ try {
   await waitFor('document.querySelectorAll(".evidence-panel .crosscheck").length > 0', 'cross-check cards')
   await evaluate('document.querySelector(".evidence-links li > button").click()')
   await waitFor('document.querySelectorAll(".evidence-links li.open .support").length > 0', 'metric evidence expands')
+  // 화면에서 받은 심사 자료가 결과에 다시 나오는지. 점수와 무관하다는 안내도 함께 있어야 한다.
+  await waitFor('Boolean(document.querySelector(".extras-summary"))', 'application extras summary')
+  assert(await evaluate('document.querySelector(".extras-summary").innerText.includes("자금 사용계획")'), '자금 사용계획 요약이 없습니다')
+  assert(await evaluate('document.querySelector(".extras-summary").innerText.includes("부채현황")'), '부채현황 요약이 없습니다')
   console.log('PASS: public routes, owner dashboard, AI report, per-step URL navigation, samples, document preview, evidence ledger, funding application')
   await login('admin')
   await waitFor('Boolean(document.querySelector(".admin-hub"))', 'admin dashboard')

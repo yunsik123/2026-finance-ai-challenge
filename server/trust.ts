@@ -427,6 +427,8 @@ export function questionTerms(question: string) {
  * 그래서 화면 위치를 묻는 질문이 아니면 두 개까지만 남긴다.
  */
 const NAVIGATION_TYPES = new Set(['SitePage', 'UiTask'])
+/** 제출 자료 요건·발급 창구 노드. 자료를 묻는 질문에서는 절차 노드보다 먼저 본다. */
+const DOCUMENT_TYPES = new Set(['DocumentRequirement', 'DocumentGroup'])
 /** 지금 이 사용자의 상태를 담은 노드. 질문 단어와 겹치면 정책 문서보다 먼저 본다. */
 const STATE_TYPES = new Set([
   'Restaurant', 'FundingCampaign', 'CommercialArea', 'CreditAssessment', 'VerificationRun',
@@ -438,6 +440,10 @@ export function retrieveKnowledgeSubgraph(graph: KnowledgeGraph, question: strin
   const { normalized, terms, asksRule } = questionTerms(question)
   const asksNavigation = /어디|화면|메뉴|버튼|누르|클릭|이동|위치|가야|찾/.test(normalized)
   const asksProcess = /절차|순서|어떻게|하나요|하려면|해야|신청|준비|제출/.test(normalized)
+  // "무슨 자료 내야 해요?", "POS 없으면 안 되나요?", "사업자등록증 어디서 받아요?"는
+  // 절차 설명이 아니라 제출 요건과 발급 창구로 답해야 한다.
+  // 이 가중이 없으면 절차 노드가 먼저 뽑혀서 "1단계, 2단계..."를 읊게 된다.
+  const asksDocument = /자료|서류|증빙|발급|필수|선택|제출|pos|포스|홈택스|계좌|카드|배달|임대|대출|세금/.test(normalized)
   const scored = graph.nodes.map((node, index) => {
     const haystack = `${node.label} ${JSON.stringify(node.properties)}`.toLocaleLowerCase('ko')
     const exactLabel = normalized.includes(node.label.toLocaleLowerCase('ko')) ? 5 : 0
@@ -446,7 +452,8 @@ export function retrieveKnowledgeSubgraph(graph: KnowledgeGraph, question: strin
     const ruleBoost = asksRule && node.type === 'ServiceRule' && termScore > 0 ? 3 : 0
     const stateBoost = termScore > 0 && STATE_TYPES.has(node.type) ? 2 : 0
     const processBoost = asksProcess && node.type === 'GuideStep' && termScore > 0 ? 2 : 0
-    const score = exactLabel + ruleBoost + stateBoost + processBoost + termScore
+    const documentBoost = asksDocument && DOCUMENT_TYPES.has(node.type) && termScore > 0 ? 3 : 0
+    const score = exactLabel + ruleBoost + stateBoost + processBoost + documentBoost + termScore
     return { node, index, score }
   }).sort((a, b) => b.score - a.score || a.index - b.index)
   const navigationLimit = asksNavigation ? limit : 2

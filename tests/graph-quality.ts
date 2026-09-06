@@ -25,6 +25,7 @@ import {
   matchSupportPrograms, ownerSituation, ownerSituationGraph, reviewStages, supportProgramNodes,
 } from '../server/knowledge.ts'
 import { buildEvidenceLedger, metricMeta } from '../server/evidence.ts'
+import { ALWAYS_REQUIRED_SOURCES, documentGuideGraph, documentGuides, SALES_EVIDENCE_SOURCES } from '../server/issuance.ts'
 import { classifyDocument, correctionStats, fieldsFromOcr, type OwnerDocument } from '../server/documents.ts'
 import { deriveMetricsFromUploads } from '../server/metrics.ts'
 import { detectSalesAnomalies, buildOwnerReportFacts, ownerReportFallback, insightFallback, normalizeOwnerReport, normalizeInsight } from '../server/ai-analysis.ts'
@@ -345,7 +346,7 @@ eq('허용 범위 안이면 통과', posAccount?.status, 'passed')
 check('통과한 대조는 90점 이상', (posAccount?.score ?? 0) >= 90, `점수 ${posAccount?.score}`)
 check('종합 점수가 나온다', matched.quality.score !== null)
 eq('종합 등급이 높음', matched.quality.grade, '높음')
-eq('대조 가능한 쌍 수는 고정', matched.quality.possiblePairs, 8)
+eq('대조 가능한 쌍 수는 고정', matched.quality.possiblePairs, 9)
 check('아직 대조 못한 항목을 이름으로 남긴다', matched.quality.notCompared.length > 0)
 check('매출 지표에 근거가 두 건 이상 붙는다', (() => {
   const link = matched.links.find((item) => item.metric === 'recent12MonthAverageSales')
@@ -433,6 +434,119 @@ check('공개 상권값은 public 출처로 붙는다', (() => {
 })())
 check('모든 지표 라벨이 정의돼 있다', Object.values(metricMeta).every((meta) => meta.label && meta.unit))
 check('근거 없는 지표는 목록에 넣지 않는다', matched.links.every((link) => link.supports.length > 0))
+
+// 사장님이 적은 부채 ↔ 자료에서 확인된 부채. 신고값은 점수에 안 쓰지만 대조는 반드시 한다.
+const debtDeclaredMatch = buildEvidenceLedger({
+  metrics: { totalLoanBalance: 40_000_000 },
+  evidence: [{ sourceId: 'debt', file: 'debt.csv', rows: 12, columns: ['기준월', '대출잔액'], produced: ['totalLoanBalance'] }],
+  analyses: [], uploadedSources: ['debt'], partnerSources: [],
+  declared: { debtBalance: 41_000_000, hasDebt: true },
+})
+const debtDeclaredCheck = debtDeclaredMatch.crossChecks.find((item) => item.code === 'debt-declared')
+eq('신고 부채와 자료가 비슷하면 통과', debtDeclaredCheck?.status, 'passed')
+check('신고값은 근거로만 붙고 출처가 declared 로 표시된다', (() => {
+  const link = debtDeclaredMatch.links.find((item) => item.metric === 'totalLoanBalance')
+  return link?.supports.some((support) => support.kind === 'declared') || false
+})())
+
+const debtLie = buildEvidenceLedger({
+  metrics: { totalLoanBalance: 40_000_000 },
+  evidence: [{ sourceId: 'debt', file: 'debt.csv', rows: 12, columns: ['기준월', '대출잔액'], produced: ['totalLoanBalance'] }],
+  analyses: [], uploadedSources: ['debt'], partnerSources: [],
+  declared: { debtBalance: null, hasDebt: false },
+})
+const debtLieCheck = debtLie.crossChecks.find((item) => item.code === 'debt-declared')
+eq('대출 없다고 했는데 자료에 대출이 있으면 불일치', debtLieCheck?.status, 'failed')
+check('진술 불일치를 사람 문장으로 설명한다', Boolean(debtLieCheck?.detail.includes('대출이 없다고')))
+eq('대출 없음이 사실이면 대조 자체를 만들지 않는다', buildEvidenceLedger({
+  metrics: {}, evidence: [], analyses: [], uploadedSources: [], partnerSources: [],
+  declared: { hasDebt: false },
+}).crossChecks.filter((item) => item.code === 'debt-declared').length, 0)
+
+/* ══ G2. 제출 자료 요건과 발급 안내 ═══════════════════════ */
+describe('G2. 제출 요건')
+
+eq('필수 자료는 사업자등록·영업신고·사업용 계좌 세 가지', [...ALWAYS_REQUIRED_SOURCES].sort(), ['account', 'business', 'license'])
+check('POS 는 무조건 필수가 아니다', !ALWAYS_REQUIRED_SOURCES.includes('pos'))
+eq('매출 확인 자료는 네 가지 중 택1', [...SALES_EVIDENCE_SOURCES].sort(), ['card', 'delivery', 'pos', 'tax'])
+check('모든 자료에 요건 표시가 있다', documentGuides.every((guide) => guide.requirementLabel.trim().length > 0))
+check('모든 자료에 발급 창구가 하나 이상 있다', documentGuides.every((guide) => guide.issuance.length > 0),
+  documentGuides.filter((guide) => !guide.issuance.length).map((guide) => guide.sourceId).join(', '))
+check('모든 자료에 왜 필요한지가 적혀 있다', documentGuides.every((guide) => guide.whyItMatters.length > 10))
+check('발급 안내의 주소는 https 로만 준다', documentGuides.every((guide) => guide.issuance.every((item) => !item.url || item.url.startsWith('https://'))))
+check('업로드 칸과 요건 정의가 같은 출처 id 를 쓴다', (() => {
+  const guideIds = new Set(documentGuides.map((guide) => guide.sourceId))
+  return ['business', 'license', 'pos', 'account', 'card', 'delivery', 'tax', 'customer', 'lease', 'debt', 'staff']
+    .every((sourceId) => guideIds.has(sourceId))
+})())
+const guideGraph = documentGuideGraph()
+check('요건이 그래프 노드로 올라간다', guideGraph.nodes.some((node) => node.type === 'DocumentRequirement'))
+check('요건 묶음 노드가 함께 올라간다', guideGraph.nodes.some((node) => node.type === 'DocumentGroup'))
+check('요건 노드에 매달린 엣지가 없다', (() => {
+  const ids = new Set(guideGraph.nodes.map((node) => node.id))
+  return guideGraph.edges.every((edge) => ids.has(edge.from) && ids.has(edge.to))
+})())
+check('요건 노드가 그래프에서 떠 있지 않다', (() => {
+  const connected = new Set(guideGraph.edges.flatMap((edge) => [edge.from, edge.to]))
+  return guideGraph.nodes.every((node) => connected.has(node.id))
+})())
+check('요건 노드 속성이 200자를 넘지 않는다',
+  guideGraph.nodes.every((node) => Object.values(node.properties).every((value) => typeof value !== 'string' || value.length <= 200)))
+check('발급 안내가 검색어로 걸린다', (() => {
+  const graph = buildKnowledgeGraph('owner', restaurant, fund)
+  graph.nodes.push(...guideGraph.nodes as typeof graph.nodes)
+  graph.edges.push(...guideGraph.edges)
+  const found = retrieveKnowledgeSubgraph(graph, '사업자등록증 어디서 발급받아요?')
+  return found.nodes.some((node) => node.type === 'DocumentRequirement')
+})())
+check('POS 없이도 되는지 묻는 질문에 매출 요건 묶음이 걸린다', (() => {
+  const graph = buildKnowledgeGraph('owner', restaurant, fund)
+  graph.nodes.push(...guideGraph.nodes as typeof graph.nodes)
+  graph.edges.push(...guideGraph.edges)
+  const found = retrieveKnowledgeSubgraph(graph, 'POS 자료가 없으면 신청 못 하나요?')
+  return found.nodes.some((node) => node.type === 'DocumentRequirement' || node.type === 'DocumentGroup')
+})())
+
+/* ══ H0. 매출 대체 산정 ═══════════════════════════════════ */
+describe('H0. 매출 대체 산정')
+
+const cardOnlyCsv = [
+  '승인일,승인금액,취소금액,수수료,정산일,실제입금액',
+  ...Array.from({ length: 12 }, (_, month) => `2026-${String(month + 1).padStart(2, '0')}-15,20000000,0,400000,2026-${String(month + 1).padStart(2, '0')}-20,19600000`),
+].join('\n')
+const cardOnly = deriveMetricsFromUploads([{ sourceId: 'card', name: 'card.csv', text: cardOnlyCsv }])
+eq('POS 가 없으면 카드 승인액을 매출로 쓴다', cardOnly.metrics.recent12MonthAverageSales, 20_000_000)
+eq('매출을 무엇으로 잡았는지 밝힌다', cardOnly.metrics.salesBasis, '카드 승인액')
+check('현금 매출이 빠졌다는 점을 경고한다', cardOnly.warnings.some((text) => text.includes('현금')))
+check('POS 가 있으면 카드로 덮어쓰지 않는다', (() => {
+  // POS 는 매달 300만원, 카드는 매달 2,000만원. POS 가 이기고 기준도 POS 로 남아야 한다.
+  const posRowsCsv = [
+    '영업일,주문금액,결제수단,취소환불액',
+    ...Array.from({ length: 12 }, (_, month) => Array.from({ length: 3 }, (_, day) =>
+      `2026-${String(month + 1).padStart(2, '0')}-0${day + 1},1000000,카드,0`).join('\n')),
+  ].join('\n')
+  const both = deriveMetricsFromUploads([
+    { sourceId: 'pos', name: 'pos.csv', text: posRowsCsv },
+    { sourceId: 'card', name: 'card.csv', text: cardOnlyCsv },
+  ])
+  return both.metrics.recent12MonthAverageSales === 3_000_000 && both.metrics.salesBasis === 'POS 원자료'
+})())
+check('카드만 있어도 매출·거래 지표가 산정된다', (() => {
+  const credit = assessCredit(deriveCreditInput({
+    industry: '외식', connectedSources: ['card', 'account', 'business', 'license', 'identity'],
+    derivedMetrics: cardOnly.metrics, restaurant, reviews: [],
+  }))
+  const salesFeature = credit.features.find((feature) => feature.key === 'card_sales_avg_12m')
+  return salesFeature?.measured === true
+})())
+check('매출 자료가 하나도 없으면 매출 지표는 미산정으로 남는다', (() => {
+  const credit = assessCredit(deriveCreditInput({
+    industry: '외식', connectedSources: ['account', 'business', 'license', 'identity'],
+    derivedMetrics: {}, restaurant: { openedYears: 4 } as typeof restaurant, reviews: [],
+  }))
+  const salesFeature = credit.features.find((feature) => feature.key === 'card_sales_avg_12m')
+  return salesFeature?.measured === false
+})())
 
 /* ══ G. 문서 자동 분류 ═════════════════════════════════════ */
 describe('G. 문서 분류')

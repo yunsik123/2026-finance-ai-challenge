@@ -388,8 +388,15 @@ export function deriveCreditInput(source: DeriveSource): CreditInput {
   input.number_of_lenders = num(derivedMetrics.numberOfLenders)
   input.debt_repayment_to_inflow = debtRatio // 사장님이 신고한 값이 있으면 그것만 쓴다.
 
-  // ── 매출·거래: POS 원자료 기준 ───────────────────────────────
-  if (has('pos')) {
+  // ── 매출·거래: 매출증빙 기준 ─────────────────────────────────
+  //
+  // 예전에는 이 블록이 has('pos') 안에 있었다. 그래서 POS 를 안 쓰는 가게가
+  // 카드 정산표를 내면 매출·거래 7개 지표가 통째로 미산정이 되고 등급이 임시로 남았다.
+  // 집계 단계(server/metrics.ts)가 POS 가 없을 때 카드·배달 계열에서 같은 키를 채우므로,
+  // 여기서는 "매출을 확인할 수 있는 자료가 하나라도 있는가"로 문을 연다.
+  // 가중치·구간·업종 프로필은 그대로다. POS 가 있으면 예전과 완전히 같은 경로를 탄다.
+  const hasSalesEvidence = has('pos') || has('card') || has('tax') || has('delivery')
+  if (hasSalesEvidence) {
     input.card_sales_avg_12m = monthlySales
     input.sales_growth_12m = salesGrowth
     input.sales_growth_3m = num(derivedMetrics.recent3MonthSalesGrowth)

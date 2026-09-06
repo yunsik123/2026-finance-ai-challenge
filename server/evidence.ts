@@ -210,8 +210,14 @@ export type EvidenceInput = {
   uploadedSources: string[]
   /** 기관 연결로 들어온 출처 id. */
   partnerSources: string[]
-  /** 사장님이 폼에 적어 넣은 값. */
-  declared?: { businessNumber?: string }
+  /** 사장님이 폼에 적어 넣은 값. 점수에는 쓰지 않고 증빙과 맞춰보는 데만 쓴다. */
+  declared?: {
+    businessNumber?: string
+    /** 부채현황에서 직접 적은 총 대출잔액. */
+    debtBalance?: number | null
+    /** 대출이 있다고 답했는지. '없다'고 답한 것과 답하지 않은 것은 다르다. */
+    hasDebt?: boolean
+  }
   /** 주소로 찾은 공개 상권 자료에서 온 값. */
   publicMetrics?: { districtSalesGrowth?: number | null }
 }
@@ -219,7 +225,7 @@ export type EvidenceInput = {
 /** 대조를 시도할 쌍의 전체 목록. coverage 분모로 쓴다. */
 const PAIR_CODES = [
   'pos-account', 'pos-card', 'pos-delivery', 'pos-tax',
-  'debt-document', 'lease-document', 'identity-document', 'payroll-sales',
+  'debt-document', 'debt-declared', 'lease-document', 'identity-document', 'payroll-sales',
 ] as const
 
 export function buildEvidenceLedger(input: EvidenceInput): EvidenceLedger {
@@ -383,7 +389,42 @@ export function buildEvidenceLedger(input: EvidenceInput): EvidenceLedger {
     })
   }
 
-  // ⑧ 인건비가 매출보다 크면 자료가 모순이다.
+  /*
+   * ⑧ 사장님이 적은 부채 ↔ 자료에서 확인된 부채.
+   *
+   * 신고값은 점수에 넣지 않는다(미검증). 대신 자료와 맞는지는 반드시 본다.
+   * "대출 없다"고 했는데 계좌·증빙에서 대출이 잡히면 그건 숫자 차이가 아니라 진술 불일치라
+   * 운영자가 반드시 봐야 한다.
+   */
+  const declaredBalance = isNum(input.declared?.debtBalance) ? input.declared!.debtBalance! : null
+  const observedBalance = loanBalance ?? (debtDocument?.total ?? null)
+  if (input.declared?.hasDebt === false && observedBalance !== null && observedBalance > 0) {
+    crossChecks.push({
+      code: 'debt-declared', label: '부채 진술 ↔ 제출 자료',
+      left: { label: '사장님 신고(대출 없음)', value: 0, sourceId: 'declared' },
+      right: { label: '자료에서 확인된 대출잔액', value: observedBalance, sourceId: 'debt' },
+      differenceRate: 100, tolerance: 0, status: 'failed', score: 0, weight: 2,
+      detail: `대출이 없다고 하셨는데 제출 자료에서 대출잔액 ${observedBalance.toLocaleString('ko-KR')}원이 확인됩니다. 운영자가 원본을 확인해야 해요.`,
+    })
+  } else if (declaredBalance !== null && observedBalance !== null && observedBalance > 0) {
+    const difference = differenceOf(declaredBalance, observedBalance)
+    crossChecks.push({
+      code: 'debt-declared', label: '신고 부채 ↔ 제출 자료',
+      left: { label: '사장님이 적은 대출잔액', value: declaredBalance, sourceId: 'declared' },
+      right: { label: '자료에서 확인된 대출잔액', value: observedBalance, sourceId: 'debt' },
+      differenceRate: difference, tolerance: 10,
+      status: statusFor(difference, 10), score: pairScore(difference, 10), weight: 2,
+      detail: difference <= 10
+        ? `직접 적어주신 대출잔액과 제출 자료가 ${difference}% 차이로 일치합니다.`
+        : `직접 적어주신 대출잔액과 제출 자료의 차이가 ${difference}%입니다. 최근 상환분이 빠졌거나 다른 계좌의 대출일 수 있어요.`,
+    })
+    addSupport('totalLoanBalance', {
+      kind: 'declared', sourceId: 'declared', sourceLabel: '사장님 신고값',
+      value: declaredBalance, confidence: .5, note: '화면에서 직접 적은 값 · 점수에는 쓰지 않음',
+    })
+  }
+
+  // ⑨ 인건비가 매출보다 크면 자료가 모순이다.
   if (sales !== null && payroll !== null && sales > 0) {
     const share = round1(payroll / sales * 100)
     const excess = Math.max(0, round1(share - 100))
@@ -469,6 +510,7 @@ const crossCheckTitles: Record<string, string> = {
   'pos-delivery': '매출 ↔ 배달 매출',
   'pos-tax': '매출 ↔ 신고매출',
   'debt-document': '대출잔액 ↔ 부채 증빙',
+  'debt-declared': '신고 부채 ↔ 제출 자료',
   'lease-document': '월 임차료 ↔ 계약서',
   'identity-document': '사업자번호 ↔ 서류 판독값',
   'payroll-sales': '매출 ↔ 인건비',

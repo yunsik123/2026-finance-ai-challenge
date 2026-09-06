@@ -7,6 +7,7 @@ import CouponVerify from './CouponVerify.tsx'
 import VerificationReport from './VerificationReport.tsx'
 import CreditGradePanel from './CreditGradePanel.tsx'
 import EvidencePanel from './EvidencePanel.tsx'
+import { ApplicationExtrasSummary } from './ApplicationExtras.tsx'
 import type { ApplicationResult, Fund, MeState, Restaurant } from './types.ts'
 import './owner-my.css'
 
@@ -89,13 +90,19 @@ export default function OwnerMyPage({ me, refresh, notify }: { me: MeState; refr
       // 한 가게에 라운드가 여러 개면 진행 중인 것을, 없으면 가장 최근 라운드를 본다.
       fund: [...funds].filter((item) => item.restaurantId === restaurant.id)
         .sort((a, b) => Number(a.status === 'closed') - Number(b.status === 'closed') || b.round - a.round)[0],
-      applications: applications.filter((item) => restaurant.sourceApplicationId === item.id || item.restaurantName === restaurant.name),
+      // 신청이 어느 가게 것인지: 신청서에 담긴 targetRestaurantId 가 가장 정확하다.
+      // 상호명 문자열 비교만 쓰면 2호점 이름이 비슷할 때 섞인다.
+      applications: applications.filter((item) => item.data?.targetRestaurantId === restaurant.id
+        || restaurant.sourceApplicationId === item.id
+        || (!item.data?.targetRestaurantId && item.restaurantName === restaurant.name)),
     }))
   }, [owner, applications])
 
   const picked = applications.find((item) => item.id === selectedId)
   const active = picked
-    ? portfolios.find((item) => item.restaurant.sourceApplicationId === picked.id || item.restaurant.name === picked.restaurantName)
+    ? portfolios.find((item) => picked.data?.targetRestaurantId === item.restaurant.id
+      || item.restaurant.sourceApplicationId === picked.id
+      || item.restaurant.name === picked.restaurantName)
     : portfolios.find((item) => item.restaurant.id === selectedRestaurantId) || portfolios[0]
   // 가게를 고르면 그 가게의 최근 심사가 리포트 기준이 된다. 아직 가게가 없으면 최근 신청을 본다.
   const selected = picked || active?.applications[0] || (portfolios.length ? undefined : applications[0])
@@ -142,7 +149,7 @@ export default function OwnerMyPage({ me, refresh, notify }: { me: MeState; refr
 
     {portfolios.length > 1 && <section className="owner-fund-switcher">
       <div className="owner-fund-switcher-head">
-        <div><span className="eyebrow coral"><Store /> 내 펀드 {portfolios.length}개</span><h2>어느 가게를 볼까요?</h2><p>가게를 고르면 아래 운영 현황, 검증 리포트, 매출 공개 설정이 모두 그 가게 기준으로 바뀝니다.</p></div>
+        <div><span className="eyebrow coral"><Store /> 내 펀드 {portfolios.length}개</span><h2>어느 가게를 볼까요?</h2><p>가게를 고르면 아래 운영 현황, 검증 리포트, 매출 공개 설정이 모두 그 가게 기준으로 바뀝니다. 같은 가게로 회차를 더 받으면 그 가게 안에 쌓입니다.</p></div>
       </div>
       <div className="owner-fund-switcher-list">{portfolios.map((item) => {
         const isActive = item.restaurant.id === restaurant?.id
@@ -174,7 +181,7 @@ export default function OwnerMyPage({ me, refresh, notify }: { me: MeState; refr
     <section className="owner-verification-report">
       <header className="owner-report-cover">
         <div><span><FileCheck2 /> FUND VERIFICATION REPORT</span><h2>내 펀드 검증 리포트</h2><p>최종 결과부터 평가 근거와 보완 항목까지 하나의 리포트로 정리했어요.</p></div>
-        <div className="owner-report-identity"><small>검증 대상</small><b>{selected?.restaurantName || restaurant?.name}</b><span>{selected ? date(selected.submittedAt) : '현재 운영 원장 기준'}</span></div>
+        <div className="owner-report-identity"><small>검증 대상</small><b>{selected?.restaurantName || restaurant?.name}{Number(selected?.data?.applicationRound) ? ` · ${selected!.data!.applicationRound}회차` : ''}</b><span>{selected ? date(selected.submittedAt) : '현재 운영 원장 기준'}</span></div>
       </header>
 
       <div className="owner-report-section">
@@ -210,6 +217,12 @@ export default function OwnerMyPage({ me, refresh, notify }: { me: MeState; refr
         {(selected.data?.businessVerification || selected.data?.financialVerification || selected.data?.evidenceLedger) && <div className="owner-report-section">
           <div className="owner-report-section-title"><span>03</span><div><small>VERIFICATION</small><h3>제출 자료 검증 결과</h3><p>사업자 정보와 재무자료가 서로 일치하는지 단계별로 보여줍니다.</p></div></div>
           {/* 이 심사에 쓰인 값마다 근거를 남겨둔다. 결과 화면에서 한 번 보고 끝나면 안 되는 정보다. */}
+          <ApplicationExtrasSummary
+            fundUsePlan={selected.data?.fundUsePlan}
+            declaredDebt={selected.data?.declaredDebt}
+            ownership={selected.data?.ownership}
+            salesBasis={selected.data?.salesBasis}
+          />
           <EvidencePanel ledger={selected.data?.evidenceLedger} title="이 심사에서 쓴 숫자의 근거" />
           <VerificationReport business={selected.data?.businessVerification} financial={selected.data?.financialVerification} />
         </div>}
@@ -234,7 +247,24 @@ export default function OwnerMyPage({ me, refresh, notify }: { me: MeState; refr
 
       {applications.length > 0 && <div className="owner-record-section owner-application-history">
         <div className="owner-record-heading"><span><ListChecks /></span><div><small>APPLICATIONS</small><h3>심사 신청 내역</h3><p>항목을 선택하면 위 검증 리포트가 해당 신청 기준으로 바뀌어요.</p></div></div>
-        <div className="owner-application-list">{applications.map((application) => { const itemStatus = statusCopy[application.status]; return <button type="button" className={application.id === selected?.id ? 'active' : ''} key={application.id} onClick={() => setSelectedId(application.id)}><span className={`owner-history-status ${application.status}`}>{itemStatus.label}</span><div><b>{application.restaurantName}</b><small>{date(application.submittedAt)} · 예비평가 {application.score}점</small></div><span className="owner-history-limit"><small>제안 한도</small><strong>{won(application.approvedLimit)}</strong></span><ChevronRight /></button> })}</div>
+        <div className="owner-application-list">{applications.map((application) => {
+          const itemStatus = statusCopy[application.status]
+          const round = Number(application.data?.applicationRound) || undefined
+          const kind = application.data?.applicationKind
+          return <button type="button" className={application.id === selected?.id ? 'active' : ''} key={application.id} onClick={() => setSelectedId(application.id)}>
+            <span className={`owner-history-status ${application.status}`}>{itemStatus.label}</span>
+            <div>
+              <b>{application.restaurantName}{round ? <em className="owner-history-round">{round}회차</em> : null}</b>
+              <small>
+                {kind === 'additional-round' ? '기존 가게 추가 회차' : kind === 'new-store' ? '새 가게 등록' : '심사 신청'}
+                {' · '}{date(application.submittedAt)} · 예비평가 {application.score}점
+                {application.data?.salesBasis ? ` · 매출 기준 ${application.data.salesBasis}` : ''}
+              </small>
+            </div>
+            <span className="owner-history-limit"><small>제안 한도</small><strong>{won(application.approvedLimit)}</strong></span>
+            <ChevronRight />
+          </button>
+        })}</div>
       </div>}
 
       {visibleAuditEvents.length > 0 && <div className="owner-record-section owner-audit">

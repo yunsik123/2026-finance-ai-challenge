@@ -278,6 +278,20 @@ export interface ApplicationResult {
     combinedAssessment?: CombinedAssessment
     evidenceLedger?: EvidenceLedger
     metricEvidence?: Array<{ sourceId: string; file: string; rows: number; columns: string[]; produced: string[] }>
+    /** 화면에서 직접 받은 심사 자료. 예비평가 점수에는 넣지 않고 판단자료로만 쓴다. */
+    fundUsePlan?: FundUseItem[]
+    fundUseTotal?: number
+    declaredDebt?: DeclaredDebt
+    ownership?: OwnershipRow[]
+    ownershipTotal?: number
+    majorOwnerCount?: number
+    /** 매출을 확인한 자료 목록과 어떤 자료를 매출 기준으로 썼는지. */
+    salesEvidence?: string[]
+    salesBasis?: string | null
+    /** 어느 가게의 몇 회차 신청인지. */
+    targetRestaurantId?: string | null
+    applicationKind?: 'new-store' | 'additional-round'
+    applicationRound?: number
   }
 }
 
@@ -334,6 +348,47 @@ export interface EvidenceLedger {
   crossChecks: EvidenceCrossCheck[]
   quality: EvidenceQuality
 }
+
+/* ── 제출 자료 요건과 발급 안내 (server/issuance.ts) ────────── */
+
+export type DocumentRequirement = 'required' | 'sales-one-of' | 'conditional' | 'optional'
+
+export interface DocumentGuide {
+  sourceId: string
+  title: string
+  requirement: DocumentRequirement
+  requirementLabel: string
+  group: string
+  exact: string
+  whyItMatters: string
+  issuance: Array<{ channel: string; how: string; url?: string; note?: string }>
+}
+
+export interface DocumentGuideIndex {
+  version: string
+  guides: DocumentGuide[]
+  requiredSources: string[]
+  salesEvidenceSources: string[]
+  note: string
+}
+
+/* ── 화면에서 직접 받는 심사 자료 ───────────────────────────── */
+
+/** 자금 사용계획 한 줄. 합계가 희망 펀딩액과 같아야 접수된다. */
+export type FundUseItem = { category: string; amount: number; note?: string }
+
+/** 부채현황(debt schedule). '대출 없음'을 누른 것과 답하지 않은 것은 다르다. */
+export type DeclaredLoan = { lender: string; balance: number; rate: number; monthlyPayment: number; maturity: string }
+export type DeclaredDebt = {
+  hasDebt: boolean
+  loans: DeclaredLoan[]
+  totalBalance?: number
+  monthlyPayment?: number
+  answered?: boolean
+}
+
+/** 소유구조 한 줄. 지분 20% 이상은 주요 소유자로 표시한다. */
+export type OwnershipRow = { name: string; share: number; role: string }
 
 /* ── 문서 원장 (server/documents.ts) ────────────────────────── */
 

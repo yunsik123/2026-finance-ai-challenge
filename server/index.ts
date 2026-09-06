@@ -14,6 +14,7 @@ import { LEGAL_VERSION, checkConsent, legalDocument, legalSummaries, requiredDoc
 import { answerGraphProcessQuestion, assessRestaurant, buildKnowledgeGraph, normalizeOcrBoxes, questionTerms, retrieveKnowledgeSubgraph } from './trust.ts'
 import { buildEvidenceLedger, sourceLabels as evidenceSourceLabels } from './evidence.ts'
 import { classifyDocument, correctionStats, fieldsFromOcr, type DocumentField, type OwnerDocument } from './documents.ts'
+import { ALWAYS_REQUIRED_SOURCES, DOCUMENT_GUIDE_VERSION, documentGuideGraph, documentGuides, SALES_EVIDENCE_SOURCES } from './issuance.ts'
 import { answerNavigationQuestion, isNavigationQuestion, matchUiTasks, navigationBrief, pageForRoute } from './sitemap.ts'
 import { deriveMetricsFromUploads, parseCsv, type RawUpload } from './metrics.ts'
 import {
@@ -1025,6 +1026,10 @@ if (await initGraphDb()) {
     const programGraph = supportProgramGraph()
     staticGraph.nodes.push(...programGraph.nodes)
     staticGraph.edges.push(...programGraph.edges)
+    // 제출 자료 요건과 발급 창구도 올린다. "사업자등록증 어디서 받아요?"에 답할 근거다.
+    const guideGraph = documentGuideGraph()
+    staticGraph.nodes.push(...guideGraph.nodes as typeof staticGraph.nodes)
+    staticGraph.edges.push(...guideGraph.edges)
     await syncKnowledge(graphRole, staticGraph.graphVersion, staticGraph.nodes, staticGraph.edges)
   }
   console.log(`지식그래프: Neo4j 연결됨 (${graphDbStatus()})`)
@@ -1669,6 +1674,20 @@ app.get('/api/admin/graph-audit', auth('admin'), async (_req: AuthedRequest, res
     memory: memoryGraphs,
   })
 })
+
+/**
+ * 제출 자료 요건과 발급 안내.
+ *
+ * 화면 도움말과 AI 상담이 같은 값을 읽게 하려고 서버에서 내려준다.
+ * 로그인 없이도 볼 수 있어야 한다. 신청 전에 무엇을 준비해야 하는지가 가장 궁금한 정보다.
+ */
+app.get('/api/document-guide', (_req, res) => res.json({
+  version: DOCUMENT_GUIDE_VERSION,
+  guides: documentGuides,
+  requiredSources: ALWAYS_REQUIRED_SOURCES,
+  salesEvidenceSources: SALES_EVIDENCE_SOURCES,
+  note: '사업자등록·영업신고·사업용 계좌는 필수이고, 매출 자료는 POS·카드·납세·배달 중 하나만 있으면 접수됩니다.',
+}))
 
 app.get('/api/health', (_req, res) => res.json({
   ok: true,
@@ -2936,8 +2955,98 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
   }
   const has = (source: string) => connectedSources.includes(source)
   const requestedLimit = Math.max(0, round1000(data.requestedLimit))
-  const requiredDocuments = ['business','license','pos','account']
+
+  /*
+   * 이 신청이 어느 가게의 몇 회차인지.
+   *
+   * 사장님이 2호점을 내거나 같은 가게로 다음 회차를 받는 일이 실제로 생긴다.
+   * 예전에는 상호명 문자열만 저장해서, 마이페이지에서 여러 신청이 섞이면
+   * 어느 가게 것인지 구분할 방법이 없었다.
+   */
+  const targetRestaurant = typeof data.targetRestaurantId === 'string'
+    ? db.restaurants.find((item) => item.id === data.targetRestaurantId && item.ownerId === req.user!.id)
+    : undefined
+  if (typeof data.targetRestaurantId === 'string' && data.targetRestaurantId && !targetRestaurant) {
+    return res.status(400).json({ error: '사장님 가게 목록에서 찾을 수 없는 가게예요. 다시 선택해주세요.' })
+  }
+  /** 같은 가게의 몇 번째 라운드인가. 기존 펀드 수 + 진행 중 신청 수로 센다. */
+  const previousRounds = targetRestaurant
+    ? db.funds.filter((item) => item.restaurantId === targetRestaurant.id).length
+      + db.applications.filter((item) => item.userId === req.user!.id
+        && (item.data as Record<string, unknown> | undefined)?.targetRestaurantId === targetRestaurant.id).length
+    : 0
+  const applicationRound = previousRounds + 1
+
+  /*
+   * ── 사장님이 화면에서 직접 적는 심사 자료 ────────────────────
+   *
+   * Honeycomb Credit 이 정식으로 받는 축 중 먹투에 없던 세 가지다.
+   *   · 자금 사용계획(무엇에 얼마를 쓸 것인가)
+   *   · 부채현황(debt schedule)
+   *   · 소유구조(ownership breakdown)
+   * 서류를 요구하지 않고 화면에서 항목으로 받는다. 20페이지 사업계획서를 요구하면
+   * 아무도 못 낸다.
+   *
+   * 중요: 이 값들은 예비평가 점수(35지표)에 넣지 않는다. 사장님 자기신고값이고
+   * 아직 검증되지 않았기 때문이다. 운영자 판단자료로 저장하고, 부채는 증빙과
+   * 대조하는 데만 쓴다. 신고값이 점수를 올리는 경로는 만들지 않는다.
+   */
+  const FUND_USE_CATEGORIES = ['주방설비', '인테리어', '집기·비품', '운전자금', '재료·매입', '마케팅', '부채상환', '인건비', '기타']
+  const fundUsePlan = (Array.isArray(data.fundUsePlan) ? data.fundUsePlan : []).slice(0, 12)
+    .map((item: Record<string, unknown>) => ({
+      category: FUND_USE_CATEGORIES.includes(String(item?.category)) ? String(item.category) : '기타',
+      amount: Math.max(0, round1000((item as Record<string, unknown>)?.amount)),
+      note: String((item as Record<string, unknown>)?.note || '').slice(0, 120),
+    }))
+    .filter((item: { amount: number }) => item.amount > 0)
+  const fundUseTotal = fundUsePlan.reduce((sum: number, item: { amount: number }) => sum + item.amount, 0)
+
+  const debtInput = (data.declaredDebt && typeof data.declaredDebt === 'object' ? data.declaredDebt : {}) as Record<string, unknown>
+  const declaredLoans = (Array.isArray(debtInput.loans) ? debtInput.loans : []).slice(0, 10)
+    .map((item: Record<string, unknown>) => ({
+      lender: String(item?.lender || '').slice(0, 60),
+      balance: Math.max(0, round1000((item as Record<string, unknown>)?.balance)),
+      rate: Math.max(0, Math.min(30, Number((item as Record<string, unknown>)?.rate) || 0)),
+      monthlyPayment: Math.max(0, round1000((item as Record<string, unknown>)?.monthlyPayment)),
+      maturity: String((item as Record<string, unknown>)?.maturity || '').slice(0, 20),
+    }))
+    .filter((item: { lender: string; balance: number }) => item.lender || item.balance > 0)
+  const declaredDebt = {
+    hasDebt: debtInput.hasDebt === true,
+    loans: debtInput.hasDebt === true ? declaredLoans : [],
+    totalBalance: debtInput.hasDebt === true ? declaredLoans.reduce((sum: number, item: { balance: number }) => sum + item.balance, 0) : 0,
+    monthlyPayment: debtInput.hasDebt === true ? declaredLoans.reduce((sum: number, item: { monthlyPayment: number }) => sum + item.monthlyPayment, 0) : 0,
+    /** 대출 없음을 명시적으로 눌렀는지. 안 누른 것과 없다고 답한 것은 다르다. */
+    answered: debtInput.hasDebt === true || debtInput.hasDebt === false,
+  }
+
+  const ownership = (Array.isArray(data.ownership) ? data.ownership : []).slice(0, 8)
+    .map((item: Record<string, unknown>) => ({
+      name: String(item?.name || '').slice(0, 40),
+      share: Math.max(0, Math.min(100, Number((item as Record<string, unknown>)?.share) || 0)),
+      role: String((item as Record<string, unknown>)?.role || '').slice(0, 40),
+    }))
+    .filter((item: { name: string; share: number }) => item.name && item.share > 0)
+  const ownershipTotal = ownership.reduce((sum: number, item: { share: number }) => sum + item.share, 0)
+  /** 지분 20% 이상 보유자. Honeycomb 이 신용조회·배경조사 대상으로 삼는 기준을 참고했다. */
+  const majorOwners = ownership.filter((item: { share: number }) => item.share >= 20)
+
+  /*
+   * 필수 자료 구조.
+   *
+   * 예전에는 POS 를 무조건 요구했다. 그런데 POS 를 안 쓰거나 자료를 뽑을 줄 모르는
+   * 사장님이 실제로 많고, 그런 가게는 신청 자체가 막혔다.
+   * 그래서 "매출을 확인할 수 있는 자료 중 하나 이상"으로 바꾼다.
+   *   ① 사업체 확인 — 사업자등록·영업신고 (필수)
+   *   ② 매출 확인   — POS·카드정산·납세자료·배달 중 하나 이상 (택1 필수)
+   *   ③ 현금흐름    — 사업용 계좌 (필수)
+   *   ④ 부채        — 대출이 있으면 필수(아래 declaredDebt 로 확인)
+   * 나머지는 올리면 산정 지표가 늘어나는 선택 자료다.
+   */
+  // 요건 정의는 server/issuance.ts 한 곳에 있다. 화면 도움말·AI 지식과 같은 값을 쓴다.
+  const requiredDocuments = [...ALWAYS_REQUIRED_SOURCES]
   const missingDocuments = requiredDocuments.filter((source) => !has(source))
+  const salesEvidence = SALES_EVIDENCE_SOURCES.filter((source) => has(source))
   if (restaurantName.length < 2) return res.status(400).json({ error: '상호명을 입력해주세요.' })
   const applyConsent = checkConsent('owner_application', req.body, 'owner')
   if (!applyConsent.ok) return res.status(400).json({ error: applyConsent.error })
@@ -2949,8 +3058,25 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
   if (!numberCheck.checks.사업자번호_검증번호) return res.status(400).json({ error: '사업자등록번호 검증번호가 맞지 않아요. 숫자를 다시 확인해주세요.' })
   if (!numberCheck.checks.대표자명_입력) return res.status(400).json({ error: '대표자명을 입력해주세요.' })
   if (!numberCheck.checks.영업신고번호_입력) return res.status(400).json({ error: '영업신고번호를 입력해주세요.' })
-  if (missingDocuments.length) return res.status(400).json({ error: '사업자등록·영업신고·POS·사업계좌 필수 자료를 각각 업로드해주세요.' })
+  if (missingDocuments.length) {
+    const labels: Record<string, string> = { business: '사업자등록 자료', license: '영업신고 자료', account: '사업용 계좌 내역' }
+    return res.status(400).json({ error: `${missingDocuments.map((source) => labels[source] || source).join(', ')}이(가) 아직 없어요. 필수 자료라서 올리거나 기관 연결로 채워야 접수할 수 있어요.` })
+  }
+  if (!salesEvidence.length) {
+    return res.status(400).json({ error: '매출을 확인할 수 있는 자료가 하나는 필요해요. POS 정산자료·카드 매출자료·납세 자료·배달 정산자료 중 편한 것 하나만 올려주세요.' })
+  }
   if (!String(data.fundPurpose || '').trim() || !String(data.businessPlan || '').trim()) return res.status(400).json({ error: '자금 사용계획과 사업계획을 작성해주세요.' })
+  if (!fundUsePlan.length) return res.status(400).json({ error: '투자금을 어디에 쓸지 항목별로 한 줄 이상 적어주세요.' })
+  if (fundUseTotal !== requestedLimit) {
+    return res.status(400).json({ error: `자금 사용계획 합계(${fundUseTotal.toLocaleString('ko-KR')}원)가 희망 펀딩액(${requestedLimit.toLocaleString('ko-KR')}원)과 달라요. 금액을 맞춰주세요.` })
+  }
+  if (!declaredDebt.answered) return res.status(400).json({ error: '대출이 있는지 없는지 선택해주세요. 상환 부담을 함께 봐야 투자자에게 설명할 수 있어요.' })
+  if (declaredDebt.hasDebt && !declaredDebt.loans.length) {
+    return res.status(400).json({ error: '대출이 있다고 하셨어요. 금융기관과 잔액을 한 건 이상 적어주세요.' })
+  }
+  if (ownership.length && ownershipTotal > 100) {
+    return res.status(400).json({ error: `소유구조의 지분 합계가 ${ownershipTotal}%예요. 100%를 넘을 수 없어요.` })
+  }
 
   // ── 원자료 집계 ───────────────────────────────────────────────
   //
@@ -2968,6 +3094,31 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
     .filter((item): item is { source: string; text: string } => typeof item.text === 'string' && item.text.length > 0)
     .map((item) => ({ sourceId: item.source, name: String(uploadedDocuments[item.source]), text: item.text }))
   const aggregated = deriveMetricsFromUploads(rawUploads)
+  /*
+   * 세금자료만 낸 경우의 매출 대체 산정.
+   *
+   * 표 집계기(metrics.ts)는 OCR 결과를 보지 못하므로 여기서 한 번 더 채운다.
+   * 반드시 measured 를 읽기 전에 해야 한다. 뒤에서 채우면 이미 읽어간 monthlySales 가 안 바뀐다.
+   * 과세기간을 읽었을 때만 월 기준으로 환산한다. 기간을 모르면 만들지 않는다.
+   */
+  if (!Number.isFinite(Number(aggregated.metrics.recent12MonthAverageSales))) {
+    const taxReading = db.ocrAnalyses
+      .filter((item) => item.userId === req.user!.id && item.sourceId === 'tax' && item.status === 'ai_extracted')
+      .at(-1)
+    const taxResult = (taxReading?.result || {}) as Record<string, unknown>
+    const taxTotal = Number(taxResult.total)
+    const periodStart = String(taxResult.periodStart || '').match(/(\d{4})[-./](\d{1,2})/)
+    const periodEnd = String(taxResult.periodEnd || '').match(/(\d{4})[-./](\d{1,2})/)
+    if (Number.isFinite(taxTotal) && taxTotal > 0 && periodStart && periodEnd) {
+      const taxMonths = (Number(periodEnd[1]) - Number(periodStart[1])) * 12 + (Number(periodEnd[2]) - Number(periodStart[2])) + 1
+      if (taxMonths >= 1 && taxMonths <= 24) {
+        aggregated.metrics.recent12MonthAverageSales = Math.round(taxTotal / taxMonths)
+        aggregated.metrics.salesBasis = '납세 신고매출'
+        aggregated.warnings.push(`POS·카드 자료가 없어 신고매출 ${taxTotal.toLocaleString('ko-KR')}원을 ${taxMonths}개월로 나눠 월매출로 잡았어요. 확정 매출이 아니라 신고 기준값입니다.`)
+      }
+    }
+  }
+
   const measured = aggregated.metrics
   const asNumber = (value: unknown) => (typeof value === 'number' && Number.isFinite(value) ? value : null)
 
@@ -3001,7 +3152,8 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
   const sourceWeights: Record<string, number> = { business: 10, license: 8, identity: 8, pos: 15, account: 15, card: 10, delivery: 7, tax: 10, customer: 7, lease: 5, debt: 5, staff: 5 }
   const dataConfidence = Math.min(100, 18 + connectedSources.reduce((sum, source) => sum + (sourceWeights[source] || 0), 0))
   const basicVerified = has('business') && has('license') && has('identity')
-  const coreOperations = has('pos') && has('account')
+  // 핵심 원자료가 모였는지. 매출은 POS 를 강제하지 않고 매출증빙 하나로 본다.
+  const coreOperations = salesEvidence.length > 0 && has('account')
 
   // 사업자 진위확인: 번호 형식·검증번호·대표자·영업신고·본인인증
   const businessVerification = verifyBusiness({
@@ -3112,7 +3264,12 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
     analyses: myAnalyses,
     uploadedSources,
     partnerSources,
-    declared: { businessNumber: String(data.businessNumber || '') },
+    declared: {
+      businessNumber: String(data.businessNumber || ''),
+      // 화면에서 직접 적은 부채. 점수에는 넣지 않고 증빙과 맞춰보는 데만 쓴다.
+      debtBalance: declaredDebt.hasDebt ? declaredDebt.totalBalance : null,
+      hasDebt: declaredDebt.answered ? declaredDebt.hasDebt : undefined,
+    },
     publicMetrics: { districtSalesGrowth },
   })
   if (evidenceLedger.quality.score !== null) {
@@ -3121,6 +3278,17 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
     improvements.push('자료를 두 종류 이상 올리면 값이 서로 맞는지 대조해 자료 일치도를 낼 수 있어요.')
   }
   for (const mismatch of evidenceLedger.quality.mismatches) improvements.push(mismatch)
+  // 화면에서 받은 심사 자료를 결과에 문장으로 남긴다. 점수에 반영하지 않는다는 것도 함께 밝힌다.
+  if (fundUsePlan.length) {
+    strengths.push(`투자금 ${requestedLimit.toLocaleString('ko-KR')}원의 사용처를 ${fundUsePlan.length}개 항목으로 적어주셨어요. (${fundUsePlan.slice(0, 3).map((item: { category: string; amount: number }) => `${item.category} ${Math.round(item.amount / 10000).toLocaleString('ko-KR')}만원`).join(', ')}${fundUsePlan.length > 3 ? ' 등' : ''})`)
+  }
+  checks.push(declaredDebt.hasDebt
+    ? `✅ 부채현황 신고 — ${declaredDebt.loans.length}건 · 총 잔액 ${declaredDebt.totalBalance.toLocaleString('ko-KR')}원 · 월 상환 ${declaredDebt.monthlyPayment.toLocaleString('ko-KR')}원 (신고값이며 점수에는 반영하지 않고 증빙과 대조합니다)`
+    : '✅ 부채현황 신고 — 대출 없음으로 확인했습니다.')
+  if (ownership.length) {
+    checks.push(`✅ 소유구조 ${ownership.length}명 · 지분 합계 ${ownershipTotal}%${majorOwners.length ? ` · 20% 이상 보유 ${majorOwners.length}명` : ''} (운영자 확인용 정보입니다)`)
+  }
+  checks.push(`✅ 매출 확인 자료 ${salesEvidence.length}종${measured.salesBasis ? ` · 매출 기준 ${measured.salesBasis}` : ''}`)
   checks.push(evidenceLedger.quality.score === null
     ? '➖ 자료 일치도 — 대조할 자료 쌍이 없어 산정하지 않았습니다.'
     : `${evidenceLedger.quality.score >= 90 ? '✅' : evidenceLedger.quality.score >= 75 ? '⚠️' : '❌'} 자료 일치도 ${evidenceLedger.quality.score}점 — ${evidenceLedger.quality.comparedPairs}/${evidenceLedger.quality.possiblePairs}쌍 대조 (${evidenceLedger.quality.grade})`)
@@ -3213,7 +3381,10 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
   delete submittedFields.documentContents
   delete submittedFields.consent
   const application: Application = {
-    id: id('application'), userId: req.user!.id, restaurantName, submittedAt: now(), status,
+    id: id('application'), userId: req.user!.id,
+    // 기존 가게의 다음 회차면 상호명을 그 가게 이름으로 고정한다. 오타 하나로 다른 가게가 되면 안 된다.
+    restaurantName: targetRestaurant?.name || restaurantName,
+    submittedAt: now(), status,
     requestedLimit, approvedLimit, score,
     data: { ...submittedFields, uploadedDocuments, documentMetadata, connectedSources, sourceProvenance, dataConfidence,
       ocrAnalysisIds: myAnalyses.map((item) => item.id),
@@ -3221,6 +3392,14 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
       derivedMetrics: displayMetrics,
       // 신용평가가 다시 읽어야 하는 전체 집계값과, 어느 파일 몇 행에서 나왔는지의 근거.
       measuredMetrics: derivedMetrics, metricEvidence: aggregated.evidence,
+      // 화면에서 직접 받은 심사 자료. 점수에는 넣지 않고 운영자·투자자 판단자료로 남긴다.
+      // 어느 가게의 몇 회차인지. 마이페이지가 신청을 가게별로 묶는 기준이다.
+      targetRestaurantId: targetRestaurant?.id ?? null,
+      applicationKind: targetRestaurant ? 'additional-round' : 'new-store',
+      applicationRound,
+      fundUsePlan, fundUseTotal, declaredDebt, ownership, ownershipTotal,
+      majorOwnerCount: majorOwners.length,
+      salesEvidence, salesBasis: typeof measured.salesBasis === 'string' ? measured.salesBasis : null,
       evidenceLedger,
       businessVerification, financialVerification, creditAssessment, combinedAssessment: combined }, strengths, checks, improvements, explanation,
   }
@@ -4355,6 +4534,19 @@ app.post('/api/ai/chat', async (req: AuthedRequest, res) => {
     if (graphRestaurant) knowledgeGraph.edges.push({ from: `restaurant:${graphRestaurant.id}`, relation: 'EVIDENCE_CHECKED', to: 'evidence:quality' })
   }
 
+  /*
+   * 제출 자료 요건과 발급 창구.
+   *
+   * "사업자등록증 어디서 받아요?", "POS 없으면 못 하나요?", "뭐가 필수예요?"는
+   * 사장님이 가장 많이 막히는 질문이다. 이 노드가 없으면 AI 가 절차만 읊는다.
+   * 자료·서류·발급을 묻는 질문일 때만 올려서 다른 질문의 근거를 밀어내지 않는다.
+   */
+  if (/자료|서류|증빙|발급|어디서|준비|필수|선택|제출|포스|pos|홈택스|계좌|카드|배달|임대|대출/.test(normalizedQuestion)) {
+    const guideGraph = documentGuideGraph()
+    knowledgeGraph.nodes.push(...guideGraph.nodes as typeof knowledgeGraph.nodes)
+    knowledgeGraph.edges.push(...guideGraph.edges)
+  }
+
   // 제도 이름을 모른 채 "정부 지원 뭐 있어?"라고 물으면 키워드 매칭이 비는데,
   // 그대로 두면 "제공할 수 없다"고 답해버린다. 지원제도 질문이면 대표 제도라도 근거로 붙인다.
   const matchedPrograms = matchSupportPrograms(effectiveQuestion, 3)
@@ -4543,6 +4735,16 @@ app.post('/api/ai/chat', async (req: AuthedRequest, res) => {
 - 금지어: GraphRAG, 지식그래프, 그래프 검색, 노드, 엣지, 임베딩, 벡터, RAG, 프롬프트, LLM, OpenAI, GPT, OCR, 파싱, 스키마, API, 데이터셋, 모델 버전.
 - "그래프에서 검색했습니다", "노드에 따르면", "OCR 검증 결과" 같은 표현 대신 "먹투에 등록된 정보로는", "제출하신 서류를 확인해 보니"처럼 사람이 쓰는 말로 바꾼다.
 - 답변 끝에 어떤 기술로 답을 만들었는지 설명하는 문장을 붙이지 않는다.
+
+[제출 자료 요건 규칙 — 틀리게 말하면 안 되는 부분]
+- 필수는 사업자등록 자료, 영업신고 자료, 사업용 계좌 내역이다.
+- 매출 자료는 POS·카드 매출·납세(홈택스)·배달 정산 중 **하나 이상**이면 된다. POS 를 반드시 내야 한다고 말하면 안 된다.
+- 대출이 있으면 부채현황을 화면에서 직접 적어야 한다(대출이 없으면 '대출 없어요' 한 번 누르면 끝난다).
+- 자금 사용계획은 항목과 금액으로 나눠 적고, 합계가 희망 펀딩액과 같아야 접수된다.
+- 소유구조는 공동사업자가 있을 때 권장이고 혼자면 비워도 된다.
+- 나머지(임대차·직원·고객 방문)는 선택이며, 없다고 감점하지 않고 '미산정'으로 남는다.
+- 발급 창구를 물으면 아래 참고자료의 발급창구 값을 그대로 안내한다. 없는 기관이나 주소를 지어내지 않는다.
+- 사장님이 직접 적은 부채·자금계획·소유구조는 예비평가 점수에 반영하지 않는다는 점을 물어보면 밝힌다.
 
 [사장님 현황 규칙]
 - 아래 '사장님 현재 상황'이 있으면 그것이 이 사장님의 실제 지금 상태다. "심사 어떻게 돼가요", "뭐가 부족해요" 같은 질문에는 절차 설명이 아니라 이 값으로 답한다.

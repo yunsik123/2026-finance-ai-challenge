@@ -330,3 +330,174 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px;
   background: var(--surface-soft); border: 1px solid var(--line); border-radius: 7px; padding: 3px 8px;
 }
+
+/* ── 제출 요건 배지 · 발급 안내 ─────────────────────────────── */
+.document-badges { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+.requirement-badge {
+  font-size: 10.5px; font-weight: 800; border-radius: 20px; padding: 3px 9px; white-space: nowrap;
+  border: 1px solid transparent;
+}
+.requirement-badge.req-must { background: #ffe9e3; color: #b8341a; border-color: rgba(233, 79, 49, .35); }
+.requirement-badge.req-oneof { background: #fff2d6; color: #8a5f08; border-color: rgba(255, 200, 87, .6); }
+.requirement-badge.req-cond { background: #fff0e6; color: #a4560c; border-color: rgba(255, 140, 60, .4); }
+.requirement-badge.req-option { background: var(--mint); color: var(--green); border-color: rgba(22, 120, 90, .3); }
+
+.issuance-help { position: relative; }
+.issuance-trigger {
+  display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; color: var(--green);
+  background: none; border: 0; padding: 2px 0; text-decoration: underline; text-underline-offset: 2px;
+}
+.issuance-trigger svg { width: 13px; height: 13px; }
+.issuance-panel {
+  position: absolute; z-index: 40; top: calc(100% + 6px); left: 0; width: min(360px, 78vw);
+  background: var(--paper); border: 1px solid var(--line); border-radius: 14px; padding: 14px;
+  box-shadow: 0 18px 44px rgba(37, 47, 43, .18); display: grid; gap: 9px; text-align: left;
+}
+.issuance-panel header { display: grid; grid-template-columns: minmax(0, 1fr) 22px; gap: 8px; align-items: start; }
+.issuance-panel header b { font-size: 13.5px; display: block; }
+.issuance-panel header small { font-size: 11px; color: var(--muted); }
+.issuance-panel header button { border: 0; background: none; padding: 0; color: var(--muted); }
+.issuance-panel header button svg { width: 15px; height: 15px; }
+.issuance-why { margin: 0; font-size: 12px; color: var(--ink-soft); background: var(--surface-soft); border-radius: 9px; padding: 8px 10px; }
+.issuance-panel ol { margin: 0; padding-left: 18px; display: grid; gap: 8px; }
+.issuance-panel li b { font-size: 12.5px; }
+.issuance-panel li p { margin: 2px 0; font-size: 12px; color: var(--ink-soft); line-height: 1.6; }
+.issuance-panel li a { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; font-weight: 700; color: var(--green); }
+.issuance-panel li a svg { width: 11px; height: 11px; }
+.issuance-panel li em { display: block; margin-top: 2px; font-size: 11px; color: var(--muted); font-style: normal; }
+.issuance-foot { font-size: 10.5px; color: var(--muted); }
+
+/* ── 요건 묶음 ─────────────────────────────────────────────── */
+.document-group { display: grid; gap: 10px; margin-top: 16px; }
+.document-group-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.document-group-head h4 { margin: 0; font-size: 15px; }
+.document-group-head small { font-size: 12px; color: var(--muted); }
+.sales-evidence-status {
+  display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 10px; align-items: start;
+  border: 1px solid rgba(255, 200, 87, .6); background: #fffdf6; border-radius: 13px; padding: 11px 13px;
+}
+.sales-evidence-status.ok { border-color: rgba(22, 120, 90, .35); background: var(--mint); }
+.sales-evidence-status > span { font-size: 15px; font-weight: 800; }
+.sales-evidence-status b { font-size: 13px; }
+.sales-evidence-status p { margin: 3px 0 0; font-size: 12px; color: var(--ink-soft); line-height: 1.6; }
+
+/* ── 자금 사용계획 ─────────────────────────────────────────── */
+.fund-use-editor { border: 1px solid var(--line); border-radius: 16px; padding: 15px; display: grid; gap: 11px; background: var(--paper); }
+.fund-use-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: start; }
+.fund-use-head b { font-size: 14px; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.fund-use-head p { margin: 4px 0 0; font-size: 12.5px; color: var(--ink-soft); }
+.fund-use-total { text-align: right; border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; background: var(--surface-soft); }
+.fund-use-total.match { border-color: rgba(22, 120, 90, .4); background: var(--mint); }
+.fund-use-total span { display: block; font-size: 11px; color: var(--muted); }
+.fund-use-total b { display: block; font-size: 16px; font-family: 'Jua', sans-serif; }
+.fund-use-total small { font-size: 11px; color: var(--ink-soft); }
+.fund-use-rows, .debt-rows { display: grid; gap: 7px; }
+.fund-use-row { display: grid; grid-template-columns: 116px 150px minmax(0, 1fr) 34px; gap: 7px; align-items: center; }
+.fund-use-row select, .fund-use-row input, .debt-row input, .ownership-row input {
+  border: 1px solid var(--line); border-radius: 9px; padding: 9px 10px; font-size: 13px; background: var(--paper); width: 100%;
+}
+.fund-use-row > button, .debt-row > button, .ownership-row > button {
+  border: 1px solid var(--line); background: var(--paper); border-radius: 9px; padding: 8px; color: var(--muted);
+}
+.fund-use-row > button svg, .debt-row > button svg, .ownership-row > button svg { width: 15px; height: 15px; }
+.fund-use-actions, .debt-actions, .ownership-actions { display: flex; gap: 9px; align-items: center; flex-wrap: wrap; }
+.fund-use-actions button, .debt-actions button, .ownership-actions button {
+  border: 1px dashed var(--line); background: var(--surface-soft); border-radius: 10px; padding: 8px 13px;
+  font-size: 12.5px; font-weight: 700; display: inline-flex; align-items: center; gap: 5px;
+}
+.fund-use-actions button svg, .debt-actions button svg, .ownership-actions button svg { width: 14px; height: 14px; }
+.fund-use-fill { border-style: solid !important; border-color: rgba(255, 105, 72, .5) !important; color: var(--coral-dark); }
+.fund-use-bars { display: flex; gap: 3px; height: 26px; border-radius: 8px; overflow: hidden; background: var(--surface-soft); }
+.fund-use-bars > div {
+  background: var(--coral); color: #fff; display: grid; place-items: center; min-width: 0; overflow: hidden;
+}
+.fund-use-bars > div:nth-child(2n) { background: var(--green); }
+.fund-use-bars > div:nth-child(3n) { background: var(--navy); }
+.fund-use-bars span { font-size: 10.5px; font-weight: 700; white-space: nowrap; padding: 0 6px; }
+
+/* ── 부채현황 ──────────────────────────────────────────────── */
+.debt-declaration { border: 1px solid var(--line); border-radius: 16px; padding: 15px; display: grid; gap: 11px; background: var(--paper); }
+.debt-head b { font-size: 14px; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.debt-head b svg { width: 16px; height: 16px; color: var(--coral); }
+.debt-head p { margin: 4px 0 0; font-size: 12.5px; color: var(--ink-soft); }
+.debt-choice { display: flex; gap: 9px; }
+.debt-choice button {
+  flex: 1 1 0; border: 1px solid var(--line); background: var(--paper); border-radius: 12px; padding: 13px;
+  font-weight: 800; font-size: 14px;
+}
+.debt-choice button.active { border-color: var(--coral); background: #fff5f1; color: var(--coral-dark); box-shadow: inset 0 0 0 1px var(--coral); }
+.debt-row { display: grid; grid-template-columns: minmax(0, 1.3fr) 130px 92px 130px 110px 34px; gap: 6px; align-items: center; }
+.debt-sum { font-size: 12.5px; color: var(--ink-soft); }
+.debt-note { margin: 0; font-size: 11.5px; color: var(--muted); line-height: 1.7; background: var(--surface-soft); border-radius: 10px; padding: 9px 11px; }
+
+/* ── 소유구조 ──────────────────────────────────────────────── */
+.ownership-editor { border: 1px solid var(--line); border-radius: 16px; padding: 15px; display: grid; gap: 10px; background: var(--paper); margin-top: 12px; }
+.ownership-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: start; }
+.ownership-head b { font-size: 14px; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.ownership-head b svg { width: 16px; height: 16px; color: var(--navy); }
+.ownership-head p { margin: 4px 0 0; font-size: 12.5px; color: var(--ink-soft); }
+.ownership-total { text-align: right; border: 1px solid var(--line); border-radius: 11px; padding: 7px 11px; background: var(--surface-soft); }
+.ownership-total.match { border-color: rgba(22, 120, 90, .4); background: var(--mint); }
+.ownership-total span { display: block; font-size: 11px; color: var(--muted); }
+.ownership-total b { font-size: 15px; font-family: 'Jua', sans-serif; }
+.ownership-solo {
+  border: 1px dashed rgba(22, 120, 90, .45); background: #f6fbf8; color: var(--green); border-radius: 11px;
+  padding: 11px; font-weight: 800; font-size: 13px;
+}
+.ownership-row { display: grid; grid-template-columns: minmax(0, 1fr) 96px minmax(0, 1.2fr) auto 34px; gap: 7px; align-items: center; }
+.ownership-major { font-size: 10.5px; font-weight: 800; color: var(--navy); background: var(--mint); border-radius: 20px; padding: 3px 8px; font-style: normal; white-space: nowrap; }
+.ownership-warn { font-size: 12px; color: var(--coral-dark); font-weight: 700; display: inline-flex; align-items: center; gap: 5px; }
+.ownership-warn svg { width: 14px; height: 14px; }
+
+/* ── 신청 대상 고르기 ──────────────────────────────────────── */
+.target-picker { display: grid; gap: 11px; }
+.target-head b { font-size: 15px; display: flex; align-items: center; gap: 7px; }
+.target-head b svg { width: 17px; height: 17px; color: var(--coral); }
+.target-head p { margin: 4px 0 0; font-size: 12.5px; color: var(--ink-soft); }
+.target-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 9px; }
+.target-options button {
+  display: grid; grid-template-columns: 38px minmax(0, 1fr); gap: 10px; align-items: center; text-align: left;
+  border: 1px solid var(--line); border-radius: 14px; padding: 12px; background: var(--paper);
+}
+.target-options button.active { border-color: var(--coral); background: #fff8f5; box-shadow: inset 0 0 0 1px var(--coral); }
+.target-options button > span { font-size: 22px; display: grid; place-items: center; }
+.target-options button > span svg { width: 20px; height: 20px; color: var(--navy); }
+.target-options b { display: block; font-size: 13.5px; }
+.target-options small { display: block; font-size: 11.5px; color: var(--muted); }
+.target-options em { display: block; margin-top: 3px; font-size: 11px; font-style: normal; font-weight: 700; color: var(--green); }
+
+/* ── 접수된 신청의 추가 자료 요약 ─────────────────────────── */
+.extras-summary {
+  border: 1px solid var(--line); border-radius: 18px; padding: 18px; background: var(--paper);
+  display: grid; gap: 16px;
+}
+.extras-summary section { display: grid; gap: 8px; }
+.extras-summary h4 { margin: 0; font-size: 14px; display: flex; align-items: center; gap: 7px; }
+.extras-summary h4 svg { width: 16px; height: 16px; color: var(--green); }
+.extras-summary h4 small { font-weight: 700; color: var(--muted); font-size: 11.5px; }
+.extras-summary ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.extras-summary li {
+  display: grid; grid-template-columns: 120px auto minmax(0, 1fr); gap: 10px; align-items: baseline;
+  border: 1px solid var(--line); border-radius: 10px; padding: 8px 11px; font-size: 12.5px;
+}
+.extras-summary li span { font-weight: 800; }
+.extras-summary li small { color: var(--muted); font-size: 11.5px; }
+.extras-empty { margin: 0; font-size: 12.5px; color: var(--ink-soft); }
+.extras-note { font-size: 11px; color: var(--muted); }
+.extras-basis { margin: 0; font-size: 12px; color: var(--ink-soft); }
+
+@media (max-width: 900px) {
+  .fund-use-row { grid-template-columns: 1fr 1fr; }
+  .fund-use-row > button { grid-column: 2; justify-self: end; }
+  .debt-row { grid-template-columns: 1fr 1fr; }
+  .ownership-row { grid-template-columns: 1fr 1fr; }
+  .fund-use-head, .ownership-head { grid-template-columns: 1fr; }
+  .extras-summary li { grid-template-columns: 1fr auto; }
+  .extras-summary li small { grid-column: 1 / -1; }
+}
+
+/* 신청 목록에서 회차를 구분한다. 2호점·다음 회차가 섞이면 뭐가 뭔지 알 수 없다. */
+.owner-history-round {
+  margin-left: 6px; font-style: normal; font-size: 10.5px; font-weight: 800;
+  background: var(--surface-soft); border: 1px solid var(--line); border-radius: 20px; padding: 2px 8px; color: var(--ink-soft);
+}

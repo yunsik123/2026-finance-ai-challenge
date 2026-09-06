@@ -27,8 +27,13 @@ import CreditGradePanel from './CreditGradePanel.tsx'
 import EvidencePanel from './EvidencePanel.tsx'
 import { LegalConsentReader, useLegalIndex } from './LegalCenter.tsx'
 import { csvShape, hashFile, kindOf, pdfFirstPageToPng, sheetToCsv } from './lib/file-intake.ts'
+import {
+  ApplicationExtrasSummary, DebtDeclaration, FundUsePlanEditor, IssuanceHelp, OwnershipEditor,
+  RequirementBadge, SalesEvidenceStatus, TargetPicker,
+} from './ApplicationExtras.tsx'
 import type {
-  ApplicationResult, DocumentClassification, DocumentField, DocumentStats, MeState, OcrAnalysis, OwnerDocument,
+  ApplicationResult, DeclaredDebt, DocumentClassification, DocumentField, DocumentGuide, DocumentGuideIndex,
+  DocumentStats, FundUseItem, MeState, OcrAnalysis, OwnerDocument, OwnershipRow,
 } from './types.ts'
 import './evidence.css'
 
@@ -44,7 +49,7 @@ type UploadOption = {
   exact: string
   columns: string
   accept: string
-  required?: boolean
+  /** 요건(필수·택1·조건부·선택)은 서버의 /api/document-guide 가 정한다. 여기 두면 두 곳이 갈라진다. */
   sampleUrl?: string
   sampleLabel?: string
   /** 같은 문서의 PDF 판. 실제 발급 서류가 대부분 PDF라서 함께 제공한다. */
@@ -54,10 +59,10 @@ type UploadOption = {
   sampleAltLabel?: string
 }
 const uploadOptions: UploadOption[] = [
-  { id: 'business', icon: Building2, title: '사업자등록 자료', exact: '사업자등록증명 또는 사업자등록증 사본 1부', columns: '확인 항목: 상호, 대표자, 개업일, 사업장 주소, 업태·종목', accept: '.pdf,.jpg,.jpeg,.png', required: true, sampleUrl: '/samples/meoktu-business-sample.png', sampleLabel: 'PNG 샘플', samplePdfUrl: '/samples/meoktu-business-sample.pdf' },
-  { id: 'license', icon: BadgeCheck, title: '영업신고 자료', exact: '일반·휴게음식점 영업신고증 사본 1부', columns: '확인 항목: 신고번호, 영업소 명칭·주소, 영업 종류, 대표자', accept: '.pdf,.jpg,.jpeg,.png', required: true, sampleUrl: '/samples/meoktu-license-sample.png', sampleLabel: 'PNG 샘플', samplePdfUrl: '/samples/meoktu-license-sample.pdf' },
-  { id: 'pos', icon: FileSpreadsheet, title: 'POS 매출 원자료', exact: '최근 12개월 주문 단위 내역 CSV 1개', columns: '필요한 열: 영업일, 주문금액, 결제수단, 취소환불액', accept: '.csv,.xlsx', required: true, sampleUrl: '/samples/meoktu-pos-sample.csv', sampleLabel: 'CSV 샘플' },
-  { id: 'account', icon: Landmark, title: '사업용 계좌 내역', exact: '최근 12개월 입출금 거래내역 CSV 또는 엑셀 1개', columns: '필요한 열: 거래일시, 입금액, 출금액, 잔액 (은행 화면의 “맡기신금액·찾으신금액·거래후잔액”도 그대로 읽습니다)', accept: '.csv,.xlsx', required: true, sampleUrl: '/samples/meoktu-account-sample.csv', sampleLabel: 'CSV 샘플', sampleAltUrl: '/samples/meoktu-account-sample.xlsx', sampleAltLabel: '엑셀 샘플' },
+  { id: 'business', icon: Building2, title: '사업자등록 자료', exact: '사업자등록증명 또는 사업자등록증 사본 1부', columns: '확인 항목: 상호, 대표자, 개업일, 사업장 주소, 업태·종목', accept: '.pdf,.jpg,.jpeg,.png', sampleUrl: '/samples/meoktu-business-sample.png', sampleLabel: 'PNG 샘플', samplePdfUrl: '/samples/meoktu-business-sample.pdf' },
+  { id: 'license', icon: BadgeCheck, title: '영업신고 자료', exact: '일반·휴게음식점 영업신고증 사본 1부', columns: '확인 항목: 신고번호, 영업소 명칭·주소, 영업 종류, 대표자', accept: '.pdf,.jpg,.jpeg,.png', sampleUrl: '/samples/meoktu-license-sample.png', sampleLabel: 'PNG 샘플', samplePdfUrl: '/samples/meoktu-license-sample.pdf' },
+  { id: 'pos', icon: FileSpreadsheet, title: 'POS 매출 원자료', exact: '최근 12개월 주문 단위 내역 CSV 1개', columns: '필요한 열: 영업일, 주문금액, 결제수단, 취소환불액', accept: '.csv,.xlsx', sampleUrl: '/samples/meoktu-pos-sample.csv', sampleLabel: 'CSV 샘플' },
+  { id: 'account', icon: Landmark, title: '사업용 계좌 내역', exact: '최근 12개월 입출금 거래내역 CSV 또는 엑셀 1개', columns: '필요한 열: 거래일시, 입금액, 출금액, 잔액 (은행 화면의 “맡기신금액·찾으신금액·거래후잔액”도 그대로 읽습니다)', accept: '.csv,.xlsx', sampleUrl: '/samples/meoktu-account-sample.csv', sampleLabel: 'CSV 샘플', sampleAltUrl: '/samples/meoktu-account-sample.xlsx', sampleAltLabel: '엑셀 샘플' },
   { id: 'card', icon: ReceiptText, title: '카드 매출·정산', exact: '최근 12개월 카드 승인·정산 내역 CSV 1개', columns: '필요한 열: 승인일, 승인금액, 취소금액, 수수료, 실제입금액', accept: '.csv,.xlsx', sampleUrl: '/samples/meoktu-card-settlement-sample.csv', sampleLabel: 'CSV 샘플' },
   { id: 'delivery', icon: Link2, title: '배달 플랫폼 정산', exact: '최근 12개월 배달앱 정산 내역 CSV 1개', columns: '필요한 열: 주문일, 주문금액, 주문건수, 재주문건수', accept: '.csv,.xlsx', sampleUrl: '/samples/meoktu-delivery-sample.csv', sampleLabel: 'CSV 샘플' },
   { id: 'tax', icon: Database, title: '납세 자료', exact: '최근 2개 과세기간 부가세 신고서 또는 납세증명 1부', columns: '확인 항목: 과세기간, 신고 매출액, 납세 상태', accept: '.pdf,.jpg,.jpeg,.png', sampleUrl: '/samples/meoktu-tax-sample.png', sampleLabel: 'PNG 샘플', samplePdfUrl: '/samples/meoktu-tax-sample.pdf' },
@@ -228,6 +233,12 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
   /** 지금 열어 본 업로드 자료의 출처 id. 파일은 브라우저 안에만 있고 서버로 보내지 않는다. */
   const [openedDocument, setOpenedDocument] = useState('')
   const [fields, setFields] = useState<ApplicationFields>(emptyFields)
+  /** 제출 자료 요건·발급 안내. 서버에서 내려받아 화면과 AI 상담이 같은 값을 쓴다. */
+  const [guide, setGuide] = useState<DocumentGuideIndex | null>(null)
+  const [targetRestaurantId, setTargetRestaurantId] = useState('')
+  const [fundUsePlan, setFundUsePlan] = useState<FundUseItem[]>([{ category: '주방설비', amount: 0, note: '' }])
+  const [declaredDebt, setDeclaredDebt] = useState<DeclaredDebt>({ hasDebt: false, loans: [], answered: false })
+  const [ownership, setOwnership] = useState<OwnershipRow[]>([])
   const legal = useLegalIndex()
   const [agreedDocuments, setAgreedDocuments] = useState<string[]>([])
 
@@ -248,6 +259,12 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
   const allConsentsAgreed = consentDocuments.length > 0 && consentDocuments.every((document) => agreedDocuments.includes(document.id))
   const toggleConsent = (documentId: string) => setAgreedDocuments((current) => current.includes(documentId)
     ? current.filter((item) => item !== documentId) : [...current, documentId])
+
+  useEffect(() => {
+    let live = true
+    api<DocumentGuideIndex>('/api/document-guide').then((result) => { if (live) setGuide(result) }).catch(() => undefined)
+    return () => { live = false }
+  }, [])
 
   useEffect(() => {
     if (!owner) { setOwnerData(null); return }
@@ -281,8 +298,33 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
   const documentStats: DocumentStats | undefined = ownerData?.documentStats
 
   /** 필수 자료가 업로드 또는 기관연결로 채워졌는지. */
-  const requiredSources = ['business', 'license', 'pos', 'account']
-  const missingRequired = requiredSources.filter((source) => !uploadedFiles[source] && !connectedIds.has(source))
+  /*
+   * 필수 자료는 세 갈래다.
+   *   · 무조건 필수 — 사업자등록·영업신고·사업용 계좌
+   *   · 매출 확인 택1 — POS·카드·납세·배달 중 하나 이상
+   *   · 대출 있으면 필수 — 부채현황(화면에서 직접 신고)
+   * 요건 목록은 서버(/api/document-guide)에서 받고, 못 받았을 때만 같은 값을 기본으로 쓴다.
+   */
+  const requiredSources = guide?.requiredSources ?? ['business', 'license', 'account']
+  const salesEvidenceSources = guide?.salesEvidenceSources ?? ['pos', 'card', 'tax', 'delivery']
+  const hasSource = (source: string) => Boolean(uploadedFiles[source]) || connectedIds.has(source)
+  const missingRequired = requiredSources.filter((source) => !hasSource(source))
+  const satisfiedSalesEvidence = salesEvidenceSources.filter(hasSource)
+  /** 매출 자료가 하나도 없으면 접수되지 않는다. */
+  const salesEvidenceMissing = satisfiedSalesEvidence.length === 0
+  const guideFor = (sourceId: string): DocumentGuide | undefined => guide?.guides.find((item) => item.sourceId === sourceId)
+  /** 자료를 요건 묶음으로 나눈다. 화면도 이 순서로 보여준다. */
+  const groupOrder = ['사업체 확인', '매출 확인', '현금흐름 확인', '추가 자료']
+  const groupedOptions = groupOrder.map((group) => ({
+    group,
+    options: uploadOptions.filter((option) => (guideFor(option.id)?.group ?? '추가 자료') === group),
+  })).filter((entry) => entry.options.length > 0)
+  /** 부채 묶음의 업로드 칸. 부채는 답(신고) 아래에 증빙 칸을 붙여 보여준다. */
+  const debtOptions = uploadOptions.filter((option) => guideFor(option.id)?.group === '부채 확인')
+  /** groupOrder·부채 묶음 어디에도 안 들어간 칸이 있으면 화면에서 사라진다. 남은 것은 추가 자료로 보낸다. */
+  const placedIds = new Set([...groupedOptions.flatMap((entry) => entry.options.map((option) => option.id)), ...debtOptions.map((option) => option.id)])
+  const unplacedOptions = uploadOptions.filter((option) => !placedIds.has(option.id))
+  const fundUseTotal = fundUsePlan.reduce((sum, item) => sum + (Number(item.amount) || 0), 0)
   /** 판독 결과가 있는 자료. 3단계에서 확인받을 대상이다. */
   const readingSources = useMemo(() => Object.keys(ocrResults), [ocrResults])
   const unreviewedReadings = readingSources.filter((source) => {
@@ -305,6 +347,10 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
     setIdentityVerified(false)
     setAgreedDocuments([])
     setFields(emptyFields())
+    setTargetRestaurantId('')
+    setFundUsePlan([{ category: '주방설비', amount: 0, note: '' }])
+    setDeclaredDebt({ hasDebt: false, loans: [], answered: false })
+    setOwnership([])
     setResult(null)
     navigate('/owner/store')
   }
@@ -326,11 +372,16 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
    */
   const stepComplete = (index: number) => {
     if (index === 0) return storeFieldRules.every(([name]) => fields[name]?.trim()) && identityVerified
-    if (index === 1) return missingRequired.length === 0
+    if (index === 1) {
+      return missingRequired.length === 0 && !salesEvidenceMissing && declaredDebt.answered
+        && (!declaredDebt.hasDebt || declaredDebt.loans.some((loan) => loan.lender.trim() || loan.balance > 0))
+    }
     if (index === 2) return unreviewedReadings.length === 0
     if (index === 3) {
       return planFieldRules.every(([name]) => fields[name]?.trim())
         && Number(fields.requestedLimit) >= 5000000
+        && fundUseTotal === Number(fields.requestedLimit)
+        && fundUsePlan.some((item) => item.amount > 0)
         && allConsentsAgreed
     }
     return true
@@ -358,7 +409,19 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
     if (index === 1) {
       if (missingRequired.length) {
         const labels = missingRequired.map((source) => uploadOptions.find((option) => option.id === source)?.title || source)
-        notify(`${labels.join(', ')}이(가) 아직 없어요. 파일을 올리거나 기관 연결로 채워주세요.`)
+        notify(`${labels.join(', ')}이(가) 아직 없어요. 필수 자료라서 올리거나 기관 연결로 채워주세요.`)
+        return false
+      }
+      if (salesEvidenceMissing) {
+        notify('매출을 확인할 수 있는 자료가 하나는 필요해요. POS·카드 매출·납세 자료·배달 정산 중 편한 것 하나만 올려주세요.')
+        return false
+      }
+      if (!declaredDebt.answered) {
+        notify('대출이 있는지 없는지 선택해주세요. 상환 부담을 함께 봐야 투자자에게 설명할 수 있어요.')
+        return false
+      }
+      if (declaredDebt.hasDebt && !declaredDebt.loans.some((loan) => loan.lender.trim() || loan.balance > 0)) {
+        notify('대출이 있다고 하셨어요. 금융기관과 잔액을 한 건 이상 적어주세요.')
         return false
       }
       return true
@@ -377,6 +440,14 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
       if (!(Number(fields.requestedLimit) >= 5000000)) {
         notify('희망 펀딩액은 500만원 이상으로 입력해주세요.')
         focusField('requestedLimit')
+        return false
+      }
+      if (!fundUsePlan.some((item) => item.amount > 0)) {
+        notify('투자금을 어디에 쓸지 항목별로 한 줄 이상 적어주세요.')
+        return false
+      }
+      if (fundUseTotal !== Number(fields.requestedLimit)) {
+        notify(`자금 사용계획 합계(${fundUseTotal.toLocaleString('ko-KR')}원)를 희망 펀딩액(${Number(fields.requestedLimit).toLocaleString('ko-KR')}원)과 맞춰주세요.`)
         return false
       }
       if (!allConsentsAgreed) { notify('필수 고지사항을 모두 확인하고 동의해주세요.'); return false }
@@ -411,7 +482,8 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
   }, [owner, slug, showingResult, Boolean(result), step, routeStep,
     fields.restaurantName, fields.ownerName, fields.signature, fields.businessNumber, fields.licenseNumber, fields.address,
     fields.fundPurpose, fields.businessPlan, fields.expectedEffect, fields.requestedLimit,
-    identityVerified, missingRequired.length, unreviewedReadings.length, allConsentsAgreed])
+    identityVerified, missingRequired.length, salesEvidenceMissing, declaredDebt.answered, declaredDebt.hasDebt,
+    fundUseTotal, unreviewedReadings.length, allConsentsAgreed])
 
   /* ── 파일 받기 ───────────────────────────────────────────── */
 
@@ -647,6 +719,16 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
       })))
       setFields((current) => ({ ...current, ...sampleProfile }))
       setIdentityVerified(true)
+      // 샘플은 새로 추가된 항목까지 채운다. 안 채우면 샘플로 끝까지 가볼 수 없다.
+      setFundUsePlan([
+        { category: '주방설비', amount: 18000000, note: '저온 저장고 1대 교체' },
+        { category: '인테리어', amount: 12000000, note: '주방 동선 개선 공사' },
+      ])
+      setDeclaredDebt({
+        hasDebt: true, answered: true,
+        loans: [{ lender: '○○은행', balance: 40000000, rate: 5.4, monthlyPayment: 900000, maturity: '2028-06' }],
+      })
+      setOwnership([{ name: '김소담', share: 100, role: '대표자' }])
       const rows = metadataList.reduce((sum, item) => sum + item.rowCount, 0)
       goToStep(1)
       notify(set.id === 'rough'
@@ -768,6 +850,14 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
       // 입력값은 폼(DOM)이 아니라 상태에서 모은다. 단계가 넘어가면 앞 단계의 칸은 화면에 없다.
       const payload: Record<string, unknown> = {
         ...fields,
+        // 화면에서 직접 받은 심사 자료. 서버가 다시 검증하고, 점수에는 넣지 않는다.
+        targetRestaurantId,
+        fundUsePlan: fundUsePlan.filter((item) => item.amount > 0),
+        declaredDebt: {
+          hasDebt: declaredDebt.hasDebt,
+          loans: declaredDebt.hasDebt ? declaredDebt.loans.filter((loan) => loan.lender.trim() || loan.balance > 0) : [],
+        },
+        ownership: ownership.filter((row) => row.name.trim() && row.share > 0),
         connectedSources,
         uploadedDocuments: uploadedFiles,
         documentContents,
@@ -820,6 +910,14 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
         </div>
         <div className="result-metrics">{Object.entries(metrics).map(([key, value]) => <div key={key}><span>{metricLabels[key] || key}</span><b>{value === null || value === undefined ? '미산정' : moneyMetrics.has(key) ? won(Number(value)) : percentMetrics.has(key) ? `${value}%` : String(value)}</b></div>)}</div>
         {result.data?.sourceProvenance && <div className="source-provenance-result"><div><b>사장님 직접 업로드</b><span>{result.data.sourceProvenance.ownerUploaded?.join(', ') || '없음'}</span></div><div><b>제휴기관 연결</b><span>{result.data.sourceProvenance.partnerConnected?.join(', ') || '없음'}</span></div></div>}
+
+        {/* 사장님이 화면에서 직접 적은 심사 자료. 점수와 무관하다는 것도 함께 밝힌다. */}
+        <ApplicationExtrasSummary
+          fundUsePlan={result.data?.fundUsePlan}
+          declaredDebt={result.data?.declaredDebt}
+          ownership={result.data?.ownership}
+          salesBasis={result.data?.salesBasis}
+        />
 
         {/* 이번 라운드의 핵심 화면. 숫자마다 근거를 붙이고 자료끼리 맞춰본 결과를 보여준다. */}
         <EvidencePanel ledger={result.data?.evidenceLedger} />
@@ -879,6 +977,27 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
           <div className="wizard-stage">
             {/* ── 1단계 · 가게 정보 ─────────────────────────── */}
             {step === 0 && <section className={`wizard-step active ${direction === 'back' ? 'back' : ''}`}>
+              {/* 새 가게인가, 이미 등록한 가게의 다음 회차인가. 처음에 정해야 회차가 꼬이지 않는다. */}
+              {(ownerData?.restaurants || []).length > 0 && <div className="form-section">
+                <TargetPicker
+                  restaurants={ownerData.restaurants}
+                  value={targetRestaurantId}
+                  onChange={(restaurantId) => {
+                    setTargetRestaurantId(restaurantId)
+                    const picked = (ownerData?.restaurants || []).find((item: any) => item.id === restaurantId)
+                    if (picked) {
+                      setFields((current) => ({
+                        ...current,
+                        restaurantName: picked.name,
+                        category: picked.category || current.category,
+                        signature: picked.signature || current.signature,
+                        avgPrice: String(picked.avgPrice || current.avgPrice),
+                      }))
+                    }
+                  }}
+                />
+              </div>}
+
               <div className="form-section">
                 <div className="form-section-title"><span>1</span><div><h3>사업체 기본정보와 대표자 확인</h3><p>상권 자료는 주소를 기준으로 먹투가 직접 수집합니다.</p></div></div>
                 <div className="field-grid">
@@ -892,6 +1011,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
                   <label className="field full-field"><span>사업장 주소</span><input name="address" placeholder="상권·경쟁·생활인구 분석에 사용됩니다." value={fields.address} onChange={setField('address')} /></label>
                 </div>
                 <button type="button" className={`identity-action ${identityVerified ? 'verified' : ''}`} onClick={() => setIdentityVerified(true)}><UserCheck />{identityVerified ? '대표자 본인인증 완료' : '휴대전화로 대표자 본인인증'}<span>{identityVerified ? '신청자와 대표자 일치 여부를 확인했습니다.' : 'MVP에서는 버튼을 누르면 시연용 인증이 완료됩니다.'}</span></button>
+                <OwnershipEditor rows={ownership} ownerName={fields.ownerName} onChange={setOwnership} />
               </div>
             </section>}
 
@@ -916,7 +1036,51 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
 
                 <div className="evidence-lane partner-lane"><div className="evidence-lane-heading"><PlugZap /><div><b>A. 제휴기관·마이데이터형 연결</b><p>동의 범위·제공기관·동기화 시각이 함께 기록됩니다. 현재 버튼은 실제 기관 API 대신 시연 어댑터를 사용합니다.</p></div></div><div className="partner-connection-grid">{partnerOptions.map((option) => { const Icon = option.icon; const connection = activeConnections.find((item: any) => item.sourceId === option.id); return <article className={connection ? 'connected' : ''} key={option.id}><Icon /><div><b>{option.title}</b><span>{option.provider}</span><small>{option.scope}</small>{connection && <em><Check /> {connection.recordCount.toLocaleString()}건 · {new Date(connection.lastSyncedAt).toLocaleDateString('ko-KR')}</em>}</div><button type="button" disabled={Boolean(connection)} onClick={() => connectPartner(option.id)}>{connection ? '연결됨' : '동의하고 연결'}</button></article> })}</div></div>
 
-                <div className="evidence-lane upload-lane"><div className="evidence-lane-heading"><UploadCloud /><div><b>B. 자료가 들어간 칸</b><p>위에서 올린 파일이 여기에 자동으로 들어갑니다. 비어 있는 칸은 직접 골라 넣어도 됩니다. 엑셀은 표로 바꿔서 넣습니다.</p></div></div><SamplePack /><div className="document-upload-grid">{uploadOptions.map((option) => <DocumentUploadCard key={option.id} option={option} fileName={uploadedFiles[option.id]} metadata={documentMetadata[option.id]} classification={classifications[option.id]} required={Boolean(option.required && !connectedIds.has(option.id))} onChange={(event) => selectFile(option.id, event)} onOpen={() => setOpenedDocument(option.id)} />)}</div></div>
+                <div className="evidence-lane upload-lane">
+                <div className="evidence-lane-heading"><UploadCloud /><div><b>B. 자료가 들어간 칸</b><p>위에서 올린 파일이 여기에 자동으로 들어갑니다. 비어 있는 칸은 직접 골라 넣어도 됩니다. 엑셀은 표로 바꿔서 넣습니다.</p></div></div>
+                <SamplePack />
+                {/* 요건 묶음으로 나눠 보여준다. 무엇이 필수이고 무엇이 택1인지가 카드 옆에 그대로 붙는다. */}
+                {groupedOptions.map(({ group, options: groupOptions }) => {
+                  const options = group === '추가 자료' ? [...groupOptions, ...unplacedOptions] : groupOptions
+                  return <div className="document-group" key={group}>
+                  <div className="document-group-head">
+                    <h4>{group}</h4>
+                    <small>{group === '사업체 확인' ? '두 가지 모두 필요해요'
+                      : group === '매출 확인' ? '아래 중 하나 이상만 있으면 됩니다'
+                        : group === '현금흐름 확인' ? '반드시 필요해요'
+                          : '없어도 접수되지만, 올리면 산정되는 평가 지표가 늘어나요'}</small>
+                  </div>
+                  {group === '매출 확인' && <SalesEvidenceStatus
+                    satisfied={satisfiedSalesEvidence}
+                    options={options.map((option) => ({ id: option.id, title: option.title }))}
+                  />}
+                  <div className="document-upload-grid">
+                    {options.map((option) => <DocumentUploadCard
+                      key={option.id} option={option} guide={guideFor(option.id)}
+                      fileName={uploadedFiles[option.id]} metadata={documentMetadata[option.id]}
+                      classification={classifications[option.id]}
+                      onChange={(event) => selectFile(option.id, event)}
+                      onOpen={() => setOpenedDocument(option.id)}
+                    />)}
+                  </div>
+                </div>
+                })}
+              </div>
+              {/* 부채는 자료보다 답이 먼저다. 대출이 없으면 클릭 한 번으로 끝나고,
+                  있으면 적어주신 값과 증빙을 대조한다. 증빙 업로드 칸도 이 묶음 안에 둔다. */}
+              <div className="document-group">
+                <div className="document-group-head"><h4>부채 확인</h4><small>대출이 있으면 필수예요</small></div>
+                <DebtDeclaration value={declaredDebt} onChange={setDeclaredDebt} />
+                {debtOptions.length > 0 && <div className="document-upload-grid">
+                  {debtOptions.map((option) => <DocumentUploadCard
+                    key={option.id} option={option} guide={guideFor(option.id)}
+                    fileName={uploadedFiles[option.id]} metadata={documentMetadata[option.id]}
+                    classification={classifications[option.id]}
+                    onChange={(event) => selectFile(option.id, event)}
+                    onOpen={() => setOpenedDocument(option.id)}
+                  />)}
+                </div>}
+              </div>
                 <p className="mvp-source-note">MVP는 직접 업로드 파일의 이름·크기·형식과 CSV 열·행 수를 검증해 심사 출처로 기록합니다. 사진·PDF 는 브라우저에서 그림으로 바꿔 판독 요청만 서버로 보내며 원본 이미지는 저장하지 않습니다. 실제 기관 연결은 현재 모의 어댑터이고, 운영 전 기관 OAuth·전자서명·암호화 보관으로 교체해야 합니다.</p>
               </div>
             </section>}
@@ -960,7 +1124,8 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
                   <label className="field"><span>사장 자기자금</span><div className="number-field"><input type="number" name="ownCapital" min={0} step={1000000} value={fields.ownCapital} onChange={setField('ownCapital')} /><span>원</span></div></label>
                   <label className="field"><span>최대 쿠폰 할인율</span><select name="maxDiscount" value={fields.maxDiscount} onChange={setField('maxDiscount')}><option value="30">30%</option><option value="35">35%</option><option value="40">40%</option><option value="45">45%</option><option value="50">50%</option></select></label>
                 </div>
-                <label className="field"><span>자금 사용계획</span><textarea name="fundPurpose" rows={3} placeholder="예: 저온 저장고 1,800만원 / 주방 동선 개선 1,200만원" value={fields.fundPurpose} onChange={setField('fundPurpose')} /></label>
+                <FundUsePlanEditor items={fundUsePlan} requestedLimit={Number(fields.requestedLimit) || 0} onChange={setFundUsePlan} />
+                <label className="field"><span>자금 사용계획 설명</span><textarea name="fundPurpose" rows={3} placeholder="예: 저온 저장고를 바꿔 품절을 줄이고, 주방 동선을 고쳐 점심 회전율을 올립니다." value={fields.fundPurpose} onChange={setField('fundPurpose')} /></label>
                 <label className="field"><span>사업계획과 차별성</span><textarea name="businessPlan" rows={4} placeholder="왜 고객이 다시 찾는지, 자금을 어떻게 성장으로 연결할지 설명해주세요." value={fields.businessPlan} onChange={setField('businessPlan')} /></label>
                 <label className="field"><span>예상 효과</span><textarea name="expectedEffect" rows={3} placeholder="예: 좌석 24→38석, 점심 회전율 개선, 품절 감소" value={fields.expectedEffect} onChange={setField('expectedEffect')} /></label>
               </div>
@@ -1254,11 +1419,16 @@ function SamplePack() {
   </div>
 }
 
-function DocumentUploadCard({ option, fileName, metadata, classification, required, onChange, onOpen }: { option: UploadOption; fileName?: string; metadata?: DocumentMetadata; classification?: DocumentClassification; required: boolean; onChange: (event: ChangeEvent<HTMLInputElement>) => void; onOpen: () => void }) {
+function DocumentUploadCard({ option, guide, fileName, metadata, classification, onChange, onOpen }: { option: UploadOption; guide?: DocumentGuide; fileName?: string; metadata?: DocumentMetadata; classification?: DocumentClassification; onChange: (event: ChangeEvent<HTMLInputElement>) => void; onOpen: () => void }) {
   const Icon = option.icon
   return <div className={`document-upload-card ${fileName ? 'uploaded' : ''}`}>
     <span className="document-icon"><Icon /></span>
-    <div className="document-copy"><span className={required ? 'required' : 'optional'}>{required ? '필수 제출' : option.required ? '기관연동 대체 가능' : '선택 제출'}</span><b>{option.title}</b><p>{option.exact}</p><small>{option.columns}</small>{fileName && <strong><Check /> {fileName}{metadata?.rowCount ? ` · ${metadata.headers.length}열 ${metadata.rowCount}행` : ''}</strong>}
+    <div className="document-copy">
+      {/* 요건은 서버가 내려준 값을 그대로 쓴다. 화면과 AI 상담이 다른 말을 하면 안 된다. */}
+      {guide
+        ? <div className="document-badges"><RequirementBadge requirement={guide.requirement} label={guide.requirementLabel} /><IssuanceHelp guide={guide} /></div>
+        : <span className="optional">선택 제출</span>}
+      <b>{option.title}</b><p>{guide?.exact || option.exact}</p><small>{option.columns}</small>{fileName && <strong><Check /> {fileName}{metadata?.rowCount ? ` · ${metadata.headers.length}열 ${metadata.rowCount}행` : ''}</strong>}
       {/* 자동으로 들어온 자료는 무엇을 보고 그렇게 판단했는지 밝힌다. */}
       {fileName && classification && <em className="document-classified">먹투가 자동으로 넣었어요 · {classification.reason}</em>}
       {fileName && <button type="button" className="doc-open-button" onClick={onOpen}><Eye /> 올린 자료 열어보기</button>}

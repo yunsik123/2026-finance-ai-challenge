@@ -34,6 +34,10 @@ const submitted = await call('/api/applications', { method: 'POST', body: JSON.s
   identityVerified: true, privacyConsent: true, creditConsent: true,
   consent: { version: legal.version, documentIds: legal.required.owner_application },
   requestedLimit: 30000000, fundingPeriodMonths: 18, maxDiscount: 40,
+  // 자금 사용계획은 항목 합계가 희망 펀딩액과 같아야 접수된다(server/index.ts 검증).
+  fundUsePlan: [{ category: '주방설비', amount: 18000000, note: '저온 저장고 교체' }, { category: '운전자금', amount: 12000000 }],
+  // 대출 유무는 반드시 답해야 한다. '없다'와 '답하지 않음'은 다르게 처리된다.
+  declaredDebt: { hasDebt: false, loans: [] },
   fundPurpose: '저온 저장고와 주방 설비 교체', businessPlan: '재방문 고객을 위한 좌석과 조리 설비를 확장합니다.', expectedEffect: '대기시간 단축과 좌석 회전율 개선',
 }) }, owner.token)
 

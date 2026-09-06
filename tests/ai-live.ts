@@ -110,6 +110,22 @@ if (adminToken) {
   skip('그래프 점검 (운영자 전용)', 'MEOKTU_ADMIN_EMAIL / MEOKTU_ADMIN_PASSWORD 미설정')
 }
 
+/* ── 2b. 제출 자료 요건과 발급 안내 ───────────────────────── */
+console.log('\n2b. 제출 자료 요건')
+const guide = await call('/api/document-guide')
+check('요건·발급 안내가 로그인 없이 열린다', guide.ok, guide.body.error)
+check('필수는 사업자등록·영업신고·사업용 계좌 세 가지',
+  JSON.stringify([...(guide.body.requiredSources || [])].sort()) === JSON.stringify(['account', 'business', 'license']),
+  JSON.stringify(guide.body.requiredSources))
+check('POS 는 무조건 필수가 아니다', !(guide.body.requiredSources || []).includes('pos'))
+check('매출 자료는 네 가지 중 택1',
+  JSON.stringify([...(guide.body.salesEvidenceSources || [])].sort()) === JSON.stringify(['card', 'delivery', 'pos', 'tax']),
+  JSON.stringify(guide.body.salesEvidenceSources))
+check('모든 자료에 발급 창구가 있다', (guide.body.guides || []).every((item: any) => (item.issuance || []).length > 0))
+check('발급 안내 주소는 https 로만 준다',
+  (guide.body.guides || []).every((item: any) => (item.issuance || []).every((entry: any) => !entry.url || String(entry.url).startsWith('https://'))))
+check('요건 표시가 모든 자료에 붙어 있다', (guide.body.guides || []).every((item: any) => String(item.requirementLabel || '').trim().length > 0))
+
 /* ── 3. 역할별 AI 상담 ────────────────────────────────────── */
 console.log('\n3. AI 상담 — 사장님 / 투자자')
 const ownerSession = await call('/api/auth/demo', { method: 'POST', body: JSON.stringify({ role: 'owner' }) })
@@ -157,6 +173,24 @@ const liveCases: LiveCase[] = [
   {
     name: '사장님: 정부 지원제도', question: '소상공인이 받을 수 있는 정책자금 뭐가 있어요?', token: ownerToken, role: 'owner',
     expectAny: ['기관', '공고', '상담', '자금'], generative: true,
+  },
+  {
+    name: '사장님: 필수 자료', question: '필수로 내야 하는 자료가 뭐예요?', token: ownerToken, role: 'owner',
+    expectAny: ['사업자등록', '영업신고', '계좌'],
+    // POS 를 필수라고 말하면 안 된다. 요건을 잘못 안내하는 것이 가장 나쁜 오답이다.
+    expectNone: ['POS는 필수', 'POS 자료는 필수', 'POS를 반드시'], generative: true,
+  },
+  {
+    name: '사장님: POS 없이 신청', question: 'POS 자료가 없으면 신청 못 하나요?', token: ownerToken, role: 'owner',
+    expectAny: ['카드', '납세', '홈택스', '배달', '하나'], generative: true,
+  },
+  {
+    name: '사장님: 발급 창구', question: '사업자등록증명 어디서 받아요?', token: ownerToken, role: 'owner',
+    expectAny: ['홈택스', '정부24', '세무서'], generative: true,
+  },
+  {
+    name: '사장님: 부채 신고', question: '대출이 있으면 뭘 적어야 해요?', token: ownerToken, role: 'owner',
+    expectAny: ['잔액', '상환', '금리'], generative: true,
   },
   {
     name: '사장님: 자료 일치도', question: '제가 낸 자료가 서로 맞는지 어떻게 확인해요?', token: ownerToken, role: 'owner',
