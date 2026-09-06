@@ -276,74 +276,375 @@
 /* 단계 밖에서 쓰는 압축판. 2단계 맨 위의 큰 버튼과 같은 일을 한다. */
 .virtual-data-upload-btn.compact { margin: 0; padding: 12px 18px; font-size: 13px; }
 
-/* ── 결과 페이지 폰트 통일 ────────────────────────────────── */
+/* ── 결과 페이지 폰트 통일 및 디자인 고도화 ────────────────────── */
 /*
- * /owner/result 화면에서 EvidencePanel·CreditGradePanel·VerificationReport 등
- * 하위 컴포넌트마다 'Jua' 폰트가 제각각 적용되어 다른 페이지와 서체 톤이 달랐다.
- * 본문은 'Noto Sans KR'로 통일하고, 브랜드 성격이 필요한 최상위 h2만 'Jua'를 유지한다.
+ * /owner/result 화면에서 Noto Sans KR 폰트로 통일하고,
+ * 파생 지표 그리드, 검증 절차 카드, 강점/보완점, 심사 설명 카드 등의 디자인을 대폭 개선한다.
  */
 .source-review-result,
 .source-review-result * {
-  font-family: 'Noto Sans KR', sans-serif;
+  font-family: 'Noto Sans KR', sans-serif !important;
 }
 
-/* 결과 헤딩만 브랜드 폰트 유지 */
-.source-review-result > .result-heading h2 {
-  font: 400 25px 'Jua', sans-serif;
+/* ── 상단 헤딩 & 뱃지 ────────────────────────── */
+.source-review-result .result-heading {
+  padding-bottom: 22px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 24px;
 }
 
-/* 파생 지표 그리드 */
+.source-review-result .result-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 99px;
+  font-size: 12.5px;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+
+.source-review-result .result-badge.approved {
+  background: #eaf7ef;
+  color: var(--green);
+  border: 1px solid #c3e6cb;
+}
+
+.source-review-result .result-badge.conditional {
+  background: #fff8e6;
+  color: #b45309;
+  border: 1px solid #fed7aa;
+}
+
+.source-review-result .result-badge.manual_review {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+
+.source-review-result .result-badge.rejected {
+  background: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+}
+
+.source-review-result .result-heading h2 {
+  font-size: 26px !important;
+  font-weight: 800 !important;
+  color: var(--ink) !important;
+  margin: 6px 0 8px !important;
+  letter-spacing: -0.02em !important;
+}
+
+.source-review-result .result-heading p {
+  font-size: 14px !important;
+  color: var(--muted) !important;
+  font-weight: 500 !important;
+  margin: 0 !important;
+}
+
+/* ── 파생 지표 그리드 ────────────────────────── */
 .source-review-result .result-metrics {
-  font-family: 'Noto Sans KR', sans-serif;
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)) !important;
+  gap: 12px !important;
+  margin: 20px 0 28px !important;
 }
+
+.source-review-result .result-metrics > div {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+  background: #faf9f6 !important;
+  border: 1px solid #ede8de !important;
+  border-radius: 14px !important;
+  padding: 14px 16px !important;
+  transition: all .2s ease !important;
+}
+
+.source-review-result .result-metrics > div:hover {
+  background: #ffffff !important;
+  border-color: #d6cebf !important;
+  box-shadow: 0 4px 12px rgba(24, 32, 29, .06) !important;
+  transform: translateY(-1px) !important;
+}
+
 .source-review-result .result-metrics span {
-  font-size: 11px;
-  color: var(--muted);
+  font-size: 12px !important;
+  color: #6b7280 !important;
+  font-weight: 500 !important;
+  line-height: 1.3 !important;
 }
+
 .source-review-result .result-metrics b {
-  font-family: 'Noto Sans KR', sans-serif;
+  font-size: 17px !important;
+  font-weight: 700 !important;
+  color: #111827 !important;
+  letter-spacing: -0.01em !important;
+}
+
+/* ── 자료 출처 내역 ──────────────────────────── */
+.source-review-result .source-provenance-result {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 14px 18px;
+  margin-bottom: 24px;
+}
+
+.source-review-result .source-provenance-result > div {
+  display: flex;
+  gap: 8px;
+  align-items: center;
   font-size: 13px;
 }
 
-/* 본문 단락 일괄 통일 */
-.source-review-result .result-heading p,
-.source-review-result .result-columns p,
-.source-review-result .result-explanation p,
-.source-review-result .result-why p {
-  font-family: 'Noto Sans KR', sans-serif;
-  font-size: 13px;
-  line-height: 1.7;
-}
-
-/* 검증 절차·심사 설명·탈락 사유·액션 */
-.source-review-result .result-checks,
-.source-review-result .result-explanation,
-.source-review-result .result-why,
-.source-review-result .owner-result-actions {
-  font-family: 'Noto Sans KR', sans-serif;
-}
-.source-review-result .result-checks b,
-.source-review-result .result-explanation b,
-.source-review-result .result-why b {
-  font-family: 'Noto Sans KR', sans-serif;
+.source-review-result .source-provenance-result b {
+  color: #334155;
   font-weight: 700;
-  font-size: 13px;
 }
 
-/* 강점·보완점 컬럼 */
+.source-review-result .source-provenance-result span {
+  color: #64748b;
+}
+
+/* ── 검증 절차 카드 그리드 ──────────────────── */
+.source-review-result .result-checks {
+  background: #ffffff !important;
+  border: 1px solid var(--line) !important;
+  border-radius: 20px !important;
+  padding: 24px !important;
+  margin: 24px 0 !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, .03) !important;
+}
+
+.source-review-result .result-checks-head {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  padding-bottom: 16px !important;
+  margin-bottom: 18px !important;
+  border-bottom: 1px solid var(--line) !important;
+}
+
+.source-review-result .result-checks-head svg {
+  width: 22px !important;
+  height: 22px !important;
+  color: var(--green) !important;
+}
+
+.source-review-result .result-checks-head b {
+  font-size: 17px !important;
+  font-weight: 800 !important;
+  color: var(--ink) !important;
+}
+
+.source-review-result .result-checks-head span {
+  margin-left: auto !important;
+  font-size: 12px !important;
+  color: var(--muted) !important;
+  background: #f1f5f9 !important;
+  padding: 4px 10px !important;
+  border-radius: 99px !important;
+  font-weight: 600 !important;
+}
+
+.source-review-result .result-checks-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)) !important;
+  gap: 10px !important;
+}
+
+.source-review-result .result-check-card {
+  border-radius: 12px !important;
+  padding: 12px 14px !important;
+  font-size: 12.5px !important;
+  line-height: 1.55 !important;
+  border: 1px solid transparent !important;
+  transition: all .15s ease !important;
+}
+
+.source-review-result .result-check-card p {
+  margin: 0 !important;
+  font-size: 12.5px !important;
+  line-height: 1.55 !important;
+}
+
+.source-review-result .result-check-card.pass {
+  background: #f0fdf4 !important;
+  border-color: #bbf7d0 !important;
+  color: #14532d !important;
+}
+
+.source-review-result .result-check-card.warn {
+  background: #fffbeb !important;
+  border-color: #fde68a !important;
+  color: #78350f !important;
+}
+
+.source-review-result .result-check-card.neutral {
+  background: #f8fafc !important;
+  border-color: #e2e8f0 !important;
+  color: #334155 !important;
+}
+
+.source-review-result .result-check-card.info {
+  background: #f0f9ff !important;
+  border-color: #bae6fd !important;
+  color: #0369a1 !important;
+  grid-column: 1 / -1 !important;
+  font-weight: 600 !important;
+}
+
+/* ── 강점 & 보완점 컬럼 ──────────────────────── */
+.source-review-result .result-columns {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  gap: 16px !important;
+  margin: 24px 0 !important;
+}
+
+@media (max-width: 720px) {
+  .source-review-result .result-columns {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+.source-review-result .result-columns section {
+  border-radius: 18px !important;
+  padding: 20px !important;
+  border: 1px solid transparent !important;
+}
+
+.source-review-result .result-columns section:first-child {
+  background: #f0fdf4 !important;
+  border-color: #bbf7d0 !important;
+}
+
+.source-review-result .result-columns section:last-child {
+  background: #fffbeb !important;
+  border-color: #fde68a !important;
+}
+
 .source-review-result .result-columns h3 {
-  font-family: 'Noto Sans KR', sans-serif;
-  font-weight: 700;
-  font-size: 14px;
+  font-size: 15px !important;
+  font-weight: 800 !important;
+  margin: 0 0 12px !important;
 }
 
-/* 하위 패널(EvidencePanel, CreditGradePanel 등)의 숫자 강조만 Jua 유지 */
-.source-review-result .quality-score b,
-.source-review-result .crosscheck header strong,
-.source-review-result .link-value,
-.source-review-result .credit-grade b,
-.source-review-result .credit-meters b {
-  font-family: 'Jua', sans-serif;
+.source-review-result .result-columns section:first-child h3 { color: #166534 !important; }
+.source-review-result .result-columns section:last-child h3 { color: #92400e !important; }
+
+.source-review-result .result-columns p {
+  display: flex !important;
+  align-items: flex-start !important;
+  gap: 8px !important;
+  font-size: 13px !important;
+  line-height: 1.6 !important;
+  margin: 6px 0 !important;
+}
+
+.source-review-result .result-columns section:first-child p { color: #14532d !important; }
+.source-review-result .result-columns section:last-child p { color: #78350f !important; }
+
+.source-review-result .result-columns svg {
+  flex-shrink: 0 !important;
+  width: 16px !important;
+  height: 16px !important;
+  margin-top: 2px !important;
+  color: var(--green) !important;
+}
+
+/* ── 심사 설명 & 탈락 사유 ───────────────────── */
+.source-review-result .result-explanation {
+  background: #f8fafc !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 18px !important;
+  padding: 20px 24px !important;
+  margin: 20px 0 !important;
+}
+
+.source-review-result .result-explanation b {
+  display: block !important;
+  font-size: 15px !important;
+  font-weight: 800 !important;
+  color: #1e293b !important;
+  margin-bottom: 8px !important;
+}
+
+.source-review-result .result-explanation p {
+  font-size: 13.5px !important;
+  line-height: 1.7 !important;
+  color: #334155 !important;
+  margin-bottom: 12px !important;
+}
+
+.source-review-result .result-explanation span {
+  display: inline-block !important;
+  background: #e0f2fe !important;
+  color: #0369a1 !important;
+  padding: 6px 14px !important;
+  border-radius: 99px !important;
+  font-size: 12.5px !important;
+  font-weight: 700 !important;
+}
+
+.source-review-result .result-why {
+  background: #faf5ff !important;
+  border: 1px solid #e9d5ff !important;
+  border-radius: 18px !important;
+  padding: 20px 24px !important;
+  margin: 20px 0 !important;
+}
+
+.source-review-result .result-why b {
+  display: block !important;
+  font-size: 14.5px !important;
+  font-weight: 800 !important;
+  color: #6b21a8 !important;
+  margin-bottom: 6px !important;
+}
+
+.source-review-result .result-why p {
+  font-size: 13px !important;
+  line-height: 1.7 !important;
+  color: #581c87 !important;
+  margin: 0 !important;
+}
+
+/* ── 하단 액션 버튼 ────────────────────────── */
+.source-review-result .owner-result-actions {
+  display: flex !important;
+  justify-content: center !important;
+  gap: 14px !important;
+  margin-top: 36px !important;
+  padding-top: 24px !important;
+  border-top: 1px solid var(--line) !important;
+}
+
+.source-review-result .owner-result-actions .button {
+  padding: 14px 28px !important;
+  font-size: 14.5px !important;
+  font-weight: 700 !important;
+  border-radius: 14px !important;
+}
+
+/* ── 단계별 데모 채우기 바 (1단계, 3단계 간소화) ── */
+.step-demo-fill-bar {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 0 16px;
+}
+
+.step-demo-fill-bar .virtual-data-upload-btn.compact {
+  width: auto;
+  margin: 0;
+  padding: 10px 18px;
+  font-size: 13px;
+  border-radius: 12px;
 }
 
 /* ── 제휴기관 연결된 자료 카드 ─────────────────────────────── */
@@ -374,3 +675,4 @@
 .document-action.partner-blocked svg {
   width: 16px;
 }
+

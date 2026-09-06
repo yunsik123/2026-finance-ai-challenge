@@ -1190,7 +1190,22 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
         <VerificationReport business={result.data?.businessVerification} financial={result.data?.financialVerification} />
         {result.data?.creditAssessment && <CreditGradePanel credit={result.data.creditAssessment} combined={result.data.combinedAssessment} />}
         <div className="result-columns"><section><h3>확인된 강점</h3>{result.strengths.map((item) => <p key={item}><Check /> {item}</p>)}</section><section><h3>보강하면 좋은 자료</h3>{result.improvements.map((item) => <p key={item}>{item}</p>)}</section></div>
-        <div className="result-checks"><b>검증 절차</b>{result.checks.map((item) => <p key={item}>{item}</p>)}</div>
+        <div className="result-checks">
+          <div className="result-checks-head">
+            <ShieldCheck />
+            <b>검증 절차 및 데이터 일치도</b>
+            <span>{result.checks.length}개 항목 점검</span>
+          </div>
+          <div className="result-checks-grid">
+            {result.checks.map((item) => {
+              const isPass = item.includes('✅') || item.includes('통과')
+              const isWarn = item.includes('⚠️')
+              const isNeutral = item.includes('➖')
+              const tone = isPass ? 'pass' : isWarn ? 'warn' : isNeutral ? 'neutral' : 'info'
+              return <div key={item} className={`result-check-card ${tone}`}><p>{item}</p></div>
+            })}
+          </div>
+        </div>
         <div className="result-explanation"><b>심사 설명</b><p>{result.explanation}</p><span>AI 제안 한도 {won(result.approvedLimit)}{result.requestedLimit ? ` · 희망 ${won(result.requestedLimit)}` : ''} · 운영자 확정 전 참고값</span></div>
         <div className="result-why"><b>왜 바로 탈락시키지 않았나요?</b><p>먹투는 기존 신용점수만으로 판단하지 않습니다. 실제 고객의 재방문과 최근 성장 흐름이 보이면 조건부 승인이나 사람의 추가 검토 기회를 드려요. 자료가 부족하다는 이유만으로 자동 거절하지 않습니다.</p></div>
         <div className="owner-result-actions"><NavLink className="button" to="/owner/my">마이페이지에서 결과 확인</NavLink><button className="button secondary" onClick={goBack}>새 펀딩 신청서 작성</button></div>
@@ -1236,8 +1251,6 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
             {step === 0 && <section className={`wizard-step active ${direction === 'back' ? 'back' : ''}`}>
               {/* 이 화면 칸과 대표자 본인인증까지만 채운다. 자료 업로드는 다음 화면 버튼이 맡는다. */}
               <StepDemoFill
-                title="가게 정보를 데모 값으로 채워볼까요?"
-                description={<>가상 식당 <em>먹투 테스트식당</em>의 사업자 정보로 아래 칸을 채우고 <b>대표자 본인인증</b>까지 함께 끝냅니다.</>}
                 label="가게 정보·대표자확인 데모로 채우기"
                 busy={Boolean(fillingSample)}
                 onFill={fillStoreDemo}
@@ -1395,9 +1408,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
             {step === 2 && <section className={`wizard-step active ${direction === 'back' ? 'back' : ''}`}>
               {/* 자금 계획 칸만 채운다. 필수 고지 동의는 전문을 펼쳐 직접 확인해야 해서 건드리지 않는다. */}
               <StepDemoFill
-                title="자금 계획을 데모 값으로 채워볼까요?"
-                description={<>희망 펀딩액 3,000만원과 <b>자금 사용계획·사업계획·예상 효과</b>를 아래 칸에 채웁니다. 필수 고지 동의는 전문을 펼쳐 직접 확인해주세요.</>}
-                label="자금 계획 데모로 채우기"
+                label="자금계획 데모로 채우기"
                 busy={Boolean(fillingSample)}
                 onFill={fillPlanDemo}
               />
@@ -1733,21 +1744,17 @@ function DocumentLocker({ documents, stats, onRemove }: { documents: OwnerDocume
  *
  * 2단계(자료 올리기)는 넣는 것이 파일이라 안내할 내용이 따로 있어서 SamplePack 이 맡는다.
  */
-function StepDemoFill({ title, description, label, busy, onFill }: {
-  title: string
-  description: ReactNode
+function StepDemoFill({ label, busy, onFill }: {
+  title?: string
+  description?: ReactNode
   label: string
   busy: boolean
   onFill: () => void
 }) {
-  return <div className="sample-pack sample-pack-top step-demo-fill">
-    <div className="sample-pack-head">
-      <span><Sparkles /></span>
-      <div><b>{title}</b><p>{description}</p></div>
-      <button type="button" className="virtual-data-upload-btn compact" disabled={busy} onClick={onFill}>
-        <FolderDown /> {label}
-      </button>
-    </div>
+  return <div className="step-demo-fill-bar">
+    <button type="button" className="virtual-data-upload-btn compact" disabled={busy} onClick={onFill}>
+      <FolderDown /> {label}
+    </button>
   </div>
 }
 
