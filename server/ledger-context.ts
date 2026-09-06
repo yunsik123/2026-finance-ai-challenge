@@ -49,6 +49,12 @@ export class LedgerContext {
     if (this.store.kind === 'file') return
     const context = this.#contexts.getStore()
     if (force) {
+      /* 버전이 그대로면 다시 읽지 않는다. 이 인스턴스가 마지막으로 쓴 원장이라
+       * 읽어봐야 같고, 아직 저장 스키마에 자리가 없는 항목(사장님 문서함 등)만
+       * 메모리에서 사라진다. */
+      const version = await this.store.version()
+      this.#checkedAt = Date.now()
+      if (version === this.#cached.version) return
       const snapshot = await this.store.read()
       if (!snapshot) throw new Error('저장된 원장을 읽지 못했어요.')
       if (context) Object.assign(context, snapshot)

@@ -36,6 +36,7 @@ import {
 } from './ai-analysis.ts'
 import { orchestrateFinancialVerification, verifyBusiness } from './verification.ts'
 import { checkSwap, couponUsable, daysLeft, EXCHANGE_RULES, normalizePreferences, sweepExpired } from './exchange.ts'
+import { LedgerContext } from './ledger-context.ts'
 import { FileStateStore, PostgresStateStore, SupabaseStateStore, TableStateStore, textArray, type StateStore } from './store.ts'
 import { aiChatModel, aiCredentialSource, aiEndpoint, aiJsonExtras, aiOcrModel, aiProviderLabel, aiReady, aiToken, aiTokenBudget, initAiProvider, setAiProvider } from './ai-provider.ts'
 import { eligibilityFromSituation, graphDbAudit, graphDbEnabled, graphDbStatus, initGraphDb, ownerEligibility, retrieveSubgraph, syncKnowledge, syncOwnerSituation } from './graph-db.ts'
@@ -69,7 +70,6 @@ const supabaseAuthConfigured = Boolean(supabaseUrl && supabasePublishableKey) &&
 
 type SessionUser = User & { sessionMode: 'account' | 'demo' }
 type AuthedRequest = Request & { user?: SessionUser }
-let db!: Database
 
 // 실제 계정은 원장 객체 참조를 유지해야 충전·투자 등 변경이 저장된다.
 // sessionMode는 JSON 직렬화에서 제외되는 비영구 속성으로만 붙인다.
@@ -108,9 +108,8 @@ const store: StateStore = stateStoreMode === 'postgres'
           ? new TableStateStore(supabaseUrl, supabaseServiceKey)
           : new SupabaseStateStore(supabaseUrl, supabaseServiceKey, process.env.STATE_ROW_ID || 'meoktu'))
       : new FileStateStore(dbPath))
-let stateVersion = 0
-let lockOwner: string | undefined
-let lastVersionCheck = 0
+/** 원장은 요청마다 자기 사본을 본다. 전역 하나를 공유하면 await 사이에 갈아끼워진다. */
+const ledger = new LedgerContext(store)
 
 const id = (prefix: string) => `${prefix}-${crypto.randomUUID()}`
 const now = () => new Date().toISOString()
@@ -166,7 +165,7 @@ function userFromToken(value?: string) {
         role: parsed.role, passwordHash: 'demo-session', cash: 0, createdAt: now(), sessionMode: 'demo',
       } satisfies SessionUser
     }
-    const user = db.users.find((item) => item.id === parsed.sub)
+    const user = ledger.data.users.find((item) => item.id === parsed.sub)
     return user && accountSession(user)
   } catch {
     return undefined
@@ -198,7 +197,7 @@ async function supabaseUserFromAuthorization(value?: string) {
   const cacheKey = crypto.createHash('sha256').update(token).digest('base64url')
   const cached = supabaseUserCache.get(cacheKey)
     if (cached && cached.at > Date.now() - SUPABASE_USER_TTL) {
-      const known = db.users.find((item) => item.id === cached.userId)
+      const known = ledger.data.users.find((item) => item.id === cached.userId)
     if (known) return accountSession(known)
     supabaseUserCache.delete(cacheKey)
   }
@@ -211,7 +210,7 @@ async function supabaseUserFromAuthorization(value?: string) {
     const authUser = await response.json() as SupabaseAuthUser
     const email = String(authUser.email || '').toLowerCase()
     if (!authUser.id || !email) return undefined
-    let user = db.users.find((item) => item.id === authUser.id || item.email === email)
+    let user = ledger.data.users.find((item) => item.id === authUser.id || item.email === email)
     if (!user) {
       const requestedRole = authUser.user_metadata?.role
       const role: Role = requestedRole === 'owner' ? 'owner' : 'investor'
@@ -224,7 +223,7 @@ async function supabaseUserFromAuthorization(value?: string) {
         cash: role === 'investor' ? INVESTOR_STARTING_CASH : 0,
         createdAt: now(),
       }
-      db.users.push(user)
+      ledger.data.users.push(user)
       audit(user.id, 'auth.supabase_profile_created', 'user', user.id, 'Supabase Auth 사용자 로컬 서비스 프로필 생성')
       // Supabase 가입은 로컬 프로필이 이때 처음 생긴다. 가입 축하 쿠폰도 같이 넣어준다.
       grantWelcomeCoupons(user)
@@ -290,80 +289,69 @@ function migrateDatabase(current: Database, template: Database) {
 
 /** 어느 저장소에서 읽어왔든 빠진 컬렉션을 채워 둔다. */
 function normalizeDatabase() {
-  db.reviews ??= []
-  db.couponOffers ??= []
-  db.couponTrades ??= []
-  db.notifications ??= []
-  db.dataConnections ??= []
-  for (const listing of db.couponListings ?? []) migrateListing(listing)
-  db.visitVerifications ??= []
-  db.walletTransactions ??= []
-  db.favorites ??= []
-  db.auditEvents ??= []
-  db.ocrAnalyses ??= []
-  db.documents ??= []
-  db.supportRequests ??= []
-  db.legalConsents ??= []
-  const sharedDemoHash = db.users.find((user) => user.id === 'u-owner')?.passwordHash
-    || db.users.find((user) => user.id === 'u-investor')?.passwordHash
-  if (sharedDemoHash && !db.users.some((user) => user.id === 'u-admin' || user.email === 'admin@meoktu.demo')) {
-    db.users.unshift({
+  ledger.data.reviews ??= []
+  ledger.data.couponOffers ??= []
+  ledger.data.couponTrades ??= []
+  ledger.data.notifications ??= []
+  ledger.data.dataConnections ??= []
+  for (const listing of ledger.data.couponListings ?? []) migrateListing(listing)
+  ledger.data.visitVerifications ??= []
+  ledger.data.walletTransactions ??= []
+  ledger.data.favorites ??= []
+  ledger.data.auditEvents ??= []
+  ledger.data.ocrAnalyses ??= []
+  ledger.data.documents ??= []
+  ledger.data.supportRequests ??= []
+  ledger.data.legalConsents ??= []
+  const sharedDemoHash = ledger.data.users.find((user) => user.id === 'u-owner')?.passwordHash
+    || ledger.data.users.find((user) => user.id === 'u-investor')?.passwordHash
+  if (sharedDemoHash && !ledger.data.users.some((user) => user.id === 'u-admin' || user.email === 'admin@meoktu.demo')) {
+    ledger.data.users.unshift({
       id: 'u-admin', email: 'admin@meoktu.demo', name: '먹투 운영팀', role: 'admin',
       passwordHash: sharedDemoHash, cash: 0, accountStatus: 'active', createdAt: now(),
     })
   }
-  for (const user of db.users) user.accountStatus ??= 'active'
+  for (const user of ledger.data.users) user.accountStatus ??= 'active'
 }
 
 async function loadDatabase() {
   if (store instanceof FileStateStore) await fs.mkdir(dataDir, { recursive: true })
   const snapshot = await store.read()
   if (snapshot) {
-    db = snapshot.data
-    stateVersion = snapshot.version
-    if ((db.schemaVersion || 0) < 5) {
-      const ownerHash = db.users?.find((user) => user.id === 'u-owner')?.passwordHash || await hashPassword('demo1234!')
-      const investorHash = db.users?.find((user) => user.id === 'u-investor')?.passwordHash || await hashPassword('demo1234!')
-      db = migrateDatabase(db, createSeed(ownerHash, investorHash))
+    ledger.data = snapshot.data
+    ledger.version = snapshot.version
+    if ((ledger.data.schemaVersion || 0) < 5) {
+      const ownerHash = ledger.data.users?.find((user) => user.id === 'u-owner')?.passwordHash || await hashPassword('demo1234!')
+      const investorHash = ledger.data.users?.find((user) => user.id === 'u-investor')?.passwordHash || await hashPassword('demo1234!')
+      ledger.data = migrateDatabase(ledger.data, createSeed(ownerHash, investorHash))
       normalizeDatabase()
-      const next = await store.write(db, stateVersion)
-      if (next !== undefined) stateVersion = next
+      const next = await store.write(ledger.data, ledger.version)
+      if (next !== undefined) ledger.version = next
     }
   } else {
     const ownerHash = await hashPassword('demo1234!')
     const investorHash = await hashPassword('demo1234!')
-    db = createSeed(ownerHash, investorHash)
+    ledger.data = createSeed(ownerHash, investorHash)
     normalizeDatabase()
     if (store instanceof SupabaseStateStore || store instanceof TableStateStore || store instanceof PostgresStateStore) {
       // 첫 기동에서만 심는다. 다른 인스턴스가 이미 심었으면 그쪽 값을 그대로 쓴다.
-      const seeded = await store.seed(db)
-      if (seeded) { db = seeded.data; stateVersion = seeded.version }
+      const seeded = await store.seed(ledger.data)
+      if (seeded) { ledger.data = seeded.data; ledger.version = seeded.version }
     } else {
-      stateVersion = await store.write(db, stateVersion) ?? 0
+      ledger.version = await store.write(ledger.data, ledger.version) ?? 0
     }
   }
   normalizeDatabase()
-  console.log(`원장 저장소: ${store.kind}${store.kind === 'file' ? '' : ` (version ${stateVersion})`}`)
+  console.log(`원장 저장소: ${store.kind}${store.kind === 'file' ? '' : ` (version ${ledger.version})`}`)
 }
 
 async function saveDatabase() {
   // 감사기록은 원장과 따로 나간다. 잠금이 없어 원장 저장을 건너뛰는 경로에서도
-  // 기록은 남아야 하므로 아래 잠금 검사보다 먼저 내보낸다.
+  // 기록은 남아야 하므로 원장 저장보다 먼저 내보낸다.
   await flushAuditEvents()
-  if (store.kind === 'file') {
-    await store.write(db, stateVersion)
-    return
-  }
-  // 공유 원장은 쓰기 잠금을 쥔 요청만 저장한다.
-  // 잠금 없는 경로(조회 중 파생 상태 갱신 등)는 다음 쓰기 때 함께 반영되므로 건너뛴다.
-  if (!lockOwner) return
-  const next = await store.write(db, stateVersion)
-  if (next !== undefined) { stateVersion = next; return }
-  // 잠금 안에서는 사실상 일어나지 않지만, 밀렸다면 최신 버전으로 한 번 더 시도한다.
-  const current = await store.version()
-  const retried = await store.write(db, current)
-  if (retried === undefined) throw new Error('원장 저장이 다른 요청과 충돌했어요. 다시 시도해주세요.')
-  stateVersion = retried
+  // 쓰기 잠금을 쥔 요청만 저장하고, 잠금 없는 경로(조회 중 파생 상태 갱신 등)는
+  // 다음 쓰기 때 함께 반영되므로 건너뛴다. 판단은 원장 컨텍스트가 한다.
+  await ledger.save()
 }
 
 /**
@@ -382,8 +370,8 @@ async function runLedgerRpc<T>(fn: string, args: Record<string, unknown>): Promi
   // 버전 비교를 건너뛰고 무조건 다시 읽는다. RPC 직후에는 반드시 달라져 있다.
   const snapshot = await store.read()
   if (snapshot) {
-    db = snapshot.data
-    stateVersion = snapshot.version
+    ledger.data = snapshot.data
+    ledger.version = snapshot.version
     normalizeDatabase()
   }
   return result
@@ -399,15 +387,7 @@ function rpcMessage(error: unknown) {
 
 /** 공유 원장에서 최신 상태를 따라잡는다. 버전만 먼저 확인해 불필요한 전체 조회를 줄인다. */
 async function refreshState(force = false) {
-  if (store.kind === 'file') return
-  if (!force && Date.now() - lastVersionCheck < 1500) return
-  lastVersionCheck = Date.now()
-  const remote = await store.version()
-  if (remote < 0 || remote === stateVersion) return
-  const snapshot = await store.read()
-  if (!snapshot) return
-  db = snapshot.data
-  stateVersion = snapshot.version
+  await ledger.refresh(force)
   normalizeDatabase()
 }
 
@@ -443,7 +423,7 @@ const pendingAuditEvents: AuditEvent[] = []
 function audit(actorId: string | undefined, action: string, resourceType: string, resourceId: string, summary: string) {
   const event: AuditEvent = { id: id('audit'), actorId, action, resourceType, resourceId, summary: summary.slice(0, 300), createdAt: now() }
   // 파일·단일행 저장소는 원장 한 덩어리가 전부라 따로 보낼 곳이 없다. 예전처럼 원장에 둔다.
-  if (!ledgerRpcEnabled) { db.auditEvents.push(event); return }
+  if (!ledgerRpcEnabled) { ledger.data.auditEvents.push(event); return }
   pendingAuditEvents.push(event)
 }
 
@@ -468,7 +448,7 @@ async function flushAuditEvents() {
 async function recentAuditEvents(actorId: string, limit = 30): Promise<AuditEvent[]> {
   const byNewest = (a: AuditEvent, b: AuditEvent) => b.createdAt.localeCompare(a.createdAt)
   if (!ledgerRpcEnabled) {
-    return db.auditEvents.filter((event) => event.actorId === actorId).sort(byNewest).slice(0, limit)
+    return ledger.data.auditEvents.filter((event) => event.actorId === actorId).sort(byNewest).slice(0, limit)
   }
   /*
    * 함수가 아직 없을 수 있다.
@@ -498,12 +478,12 @@ function recordConsent(
   extra: { resourceType?: string; resourceId?: string; amount?: number; riskAcknowledged?: boolean } = {},
 ) {
   if (!documentIds.length) return undefined
-  db.legalConsents ??= []
+  ledger.data.legalConsents ??= []
   const consent: LegalConsent = {
     id: id('consent'), userId, context, documentIds, version: LEGAL_VERSION,
     ...extra, agreedAt: now(),
   }
-  db.legalConsents.push(consent)
+  ledger.data.legalConsents.push(consent)
   return consent
 }
 
@@ -547,19 +527,19 @@ function withExchangeLock<T>(task: () => Promise<T> | T): Promise<T> {
 
 function pushNotification(userId: string, type: string, title: string, body: string, link?: string) {
   const item: Notification = { id: id('noti'), userId, type, title: title.slice(0, 120), body: body.slice(0, 300), link, read: false, createdAt: now() }
-  db.notifications.push(item)
-  if (db.notifications.length > 2000) db.notifications.splice(0, db.notifications.length - 2000)
+  ledger.data.notifications.push(item)
+  if (ledger.data.notifications.length > 2000) ledger.data.notifications.splice(0, ledger.data.notifications.length - 2000)
   return item
 }
 
 /** 만료 정리. 교환장을 읽거나 쓰기 전에 항상 한 번 돌린다. */
 function sweepExchange() {
-  const touched = sweepExpired(db)
+  const touched = sweepExpired(ledger.data)
   return touched.length
 }
 
-const restaurantOf = (coupon?: Coupon) => coupon && db.restaurants.find((item) => item.id === coupon.restaurantId)
-const userName = (userId: string) => db.users.find((item) => item.id === userId)?.name || '알 수 없음'
+const restaurantOf = (coupon?: Coupon) => coupon && ledger.data.restaurants.find((item) => item.id === coupon.restaurantId)
+const userName = (userId: string) => ledger.data.users.find((item) => item.id === userId)?.name || '알 수 없음'
 
 function couponView(coupon: Coupon) {
   const restaurant = restaurantOf(coupon)
@@ -573,12 +553,12 @@ function couponView(coupon: Coupon) {
 }
 
 function listingView(listing: CouponListing, viewerId?: string) {
-  const coupon = db.coupons.find((item) => item.id === listing.couponId)
+  const coupon = ledger.data.coupons.find((item) => item.id === listing.couponId)
   const restaurant = restaurantOf(coupon)
-  const offers = db.couponOffers.filter((item) => item.listingId === listing.id && item.status === 'pending')
+  const offers = ledger.data.couponOffers.filter((item) => item.listingId === listing.id && item.status === 'pending')
   const myOffer = viewerId ? offers.find((item) => item.offerUserId === viewerId) : undefined
   // 뷰어가 지금 이 매물과 바꿀 수 있는 내 쿠폰들
-  const candidates = !viewerId || viewerId === listing.userId || !coupon ? [] : db.coupons
+  const candidates = !viewerId || viewerId === listing.userId || !coupon ? [] : ledger.data.coupons
     .filter((item) => item.userId === viewerId && item.status === 'available')
     .map((item) => ({ coupon: item, check: checkSwap({ listing, wanted: coupon, offered: item, offeredRestaurant: restaurantOf(item), offerUserId: viewerId }) }))
     .filter((item) => item.check.ok)
@@ -619,11 +599,11 @@ function settleSwap(listing: CouponListing, wanted: Coupon, offered: Coupon, tak
   if (offer) { offer.status = 'accepted'; offer.resolvedAt = at }
 
   // 같은 매물에 걸려 있던 다른 제안은 자동 반려하고 걸어둔 쿠폰을 돌려준다.
-  for (const other of db.couponOffers) {
+  for (const other of ledger.data.couponOffers) {
     if (other.listingId !== listing.id || other.status !== 'pending' || other.id === offer?.id) continue
     other.status = 'declined'
     other.resolvedAt = at
-    const held = db.coupons.find((item) => item.id === other.offerCouponId)
+    const held = ledger.data.coupons.find((item) => item.id === other.offerCouponId)
     if (held && held.status === 'offered') held.status = 'available'
     pushNotification(other.offerUserId, 'offer_declined', '교환이 다른 분과 성사됐어요',
       `${wanted.title} 매물이 마감되어 걸어둔 쿠폰을 지갑으로 돌려드렸어요.`, '/market')
@@ -635,7 +615,7 @@ function settleSwap(listing: CouponListing, wanted: Coupon, offered: Coupon, tak
     takerUserId: takerId, takerCouponId: offered.id, takerGaveDiscount: offered.discount, takerGaveValueWon: offered.maxDiscountWon,
     createdAt: at,
   }
-  db.couponTrades.push(trade)
+  ledger.data.couponTrades.push(trade)
   audit(takerId, 'coupon.swap', 'listing', listing.id, `${wanted.title} ↔ ${offered.title} 교환 체결 (${mode})`)
   pushNotification(listerId, 'trade_done', '쿠폰 교환이 완료됐어요',
     `${userName(takerId)}님과 ${wanted.title} ↔ ${offered.title} 교환이 끝났어요.`, '/my')
@@ -741,7 +721,7 @@ function jsonObject(text: string) {
 }
 
 function accrue(position: Position) {
-  const fund = db.funds.find((item) => item.id === position.fundId)
+  const fund = ledger.data.funds.find((item) => item.id === position.fundId)
   if (!fund || position.amount <= 0) return
   const elapsedDays = Math.max(0, (Date.now() - new Date(position.updatedAt).getTime()) / 86400000)
   const effectiveSalesBonus = fund.salesBonus * (position.early ? 1 + fund.earlyBonus / 100 : 1)
@@ -751,15 +731,15 @@ function accrue(position: Position) {
 }
 
 /**
- * 쿠폰 장부의 단일 출처는 db.coupons다.
+ * 쿠폰 장부의 단일 출처는 ledger.data.coupons다.
  * 펀드에 누적 발급·사용액을 따로 더해두면 실제 쿠폰 레코드와 조금씩 어긋나서
  * 사장님 화면의 "발급 − 사용"과 "아직 사용되지 않은 부담"이 서로 맞지 않게 된다.
  * 그래서 집계는 저장하지 않고 쿠폰 레코드에서 매번 다시 만든다.
  */
 function syncCouponLedger(fundId?: string) {
-  for (const fund of db.funds) {
+  for (const fund of ledger.data.funds) {
     if (fundId && fund.id !== fundId) continue
-    const issued = db.coupons.filter((coupon) => coupon.fundId === fund.id)
+    const issued = ledger.data.coupons.filter((coupon) => coupon.fundId === fund.id)
     fund.totalCouponIssued = issued.reduce((sum, coupon) => sum + coupon.maxDiscountWon, 0)
     fund.totalCouponUsed = issued.filter((coupon) => coupon.status === 'used').reduce((sum, coupon) => sum + coupon.maxDiscountWon, 0)
   }
@@ -767,8 +747,8 @@ function syncCouponLedger(fundId?: string) {
 
 function issueCoupon(position: Position) {
   accrue(position)
-  const fund = db.funds.find((item) => item.id === position.fundId)
-  const restaurant = fund && db.restaurants.find((item) => item.id === fund.restaurantId)
+  const fund = ledger.data.funds.find((item) => item.id === position.fundId)
+  const restaurant = fund && ledger.data.restaurants.find((item) => item.id === fund.restaurantId)
   if (!fund || !restaurant) return undefined
   // 발급 기준에 못 미치면 아무 일도 일어나지 않는다. 예전에는 여기서 진행률을 0으로
   // 지웠는데, 그러면 쿠폰도 못 받고 그동안 쌓인 혜택만 사라졌다.
@@ -780,7 +760,7 @@ function issueCoupon(position: Position) {
     maxDiscountWon: Math.floor(restaurant.maxMenuPrice * discount / 100), type: 'fund', status: 'available',
     createdAt: now(), expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 90).toISOString(),
   }
-  db.coupons.push(coupon)
+  ledger.data.coupons.push(coupon)
   syncCouponLedger(fund.id)
   position.couponProgress = 0
   position.updatedAt = now()
@@ -812,7 +792,7 @@ const WELCOME_COUPON_DAYS = 60
 function buildWelcomeCoupons(userId: string, makeId: (prefix: string) => string, occasion = '가입 축하'): Coupon[] {
   const expiresAt = new Date(Date.now() + WELCOME_COUPON_DAYS * 86400000).toISOString()
   return WELCOME_COUPONS.flatMap(({ restaurantId, discount }) => {
-    const restaurant = db.restaurants.find((item) => item.id === restaurantId)
+    const restaurant = ledger.data.restaurants.find((item) => item.id === restaurantId)
     if (!restaurant) return []
     return [{
       id: makeId('coupon'), userId, restaurantId: restaurant.id,
@@ -830,38 +810,38 @@ const welcomeCouponMessage = (coupons: Coupon[]) =>
 function grantWelcomeCoupons(user: User) {
   // 사장님·관리자 계정은 쿠폰 지갑과 교환장 화면 자체가 없다. 받아도 볼 곳이 없으니 주지 않는다.
   if (user.role !== 'investor') return []
-  if (db.coupons.some((coupon) => coupon.userId === user.id)) return []
+  if (ledger.data.coupons.some((coupon) => coupon.userId === user.id)) return []
   const coupons = buildWelcomeCoupons(user.id, id)
   if (!coupons.length) return []
-  db.coupons.push(...coupons)
+  ledger.data.coupons.push(...coupons)
   pushNotification(user.id, 'coupon', `가입 축하 쿠폰 ${coupons.length}장이 도착했어요`, welcomeCouponMessage(coupons), '/market')
   return coupons
 }
 
 function getPosition(userId: string, fundId: string) {
-  let position = db.positions.find((item) => item.userId === userId && item.fundId === fundId)
+  let position = ledger.data.positions.find((item) => item.userId === userId && item.fundId === fundId)
   if (!position) {
     position = { id: id('position'), userId, fundId, amount: 0, early: false, couponProgress: 0, updatedAt: now() }
-    db.positions.push(position)
+    ledger.data.positions.push(position)
   }
   accrue(position)
   return position
 }
 
 function refreshOrderTotals(fundId: string) {
-  const fund = db.funds.find((item) => item.id === fundId)
+  const fund = ledger.data.funds.find((item) => item.id === fundId)
   if (!fund) return
-  const open = db.orders.filter((order) => order.fundId === fundId && ['open', 'partial'].includes(order.status))
+  const open = ledger.data.orders.filter((order) => order.fundId === fundId && ['open', 'partial'].includes(order.status))
   fund.openBuyAmount = open.filter((o) => o.type === 'buy').reduce((sum, o) => sum + o.remaining, 0)
   fund.openSellAmount = open.filter((o) => o.type === 'sell').reduce((sum, o) => sum + o.remaining, 0)
 }
 
 function matchOrders(fundId: string) {
-  const fund = db.funds.find((item) => item.id === fundId)
-  const buys = db.orders
+  const fund = ledger.data.funds.find((item) => item.id === fundId)
+  const buys = ledger.data.orders
     .filter((o) => o.fundId === fundId && o.type === 'buy' && o.remaining > 0)
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-  const sells = db.orders
+  const sells = ledger.data.orders
     .filter((o) => o.fundId === fundId && o.type === 'sell' && o.remaining > 0)
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
   const matches: Array<{ amount: number; buyerId: string; sellerId: string }> = []
@@ -894,7 +874,7 @@ function matchOrders(fundId: string) {
       if (buyerWasNew) fund.investorCount += 1
       if (sellerPosition.amount <= 0) fund.investorCount = Math.max(0, fund.investorCount - 1)
     }
-    const seller = db.users.find((u) => u.id === sell.userId)
+    const seller = ledger.data.users.find((u) => u.id === sell.userId)
     if (seller) seller.cash += matched
     buy.remaining -= matched
     sell.remaining -= matched
@@ -955,7 +935,7 @@ const businessKey = (value: unknown) => String(value ?? '').replace(/\D/g, '')
 function conflictingRestaurant(application: Application) {
   const key = businessKey((application.data as Record<string, unknown>)?.businessNumber)
   if (!key) return undefined
-  return db.restaurants.find((item) => item.ownerId && item.ownerId !== application.userId
+  return ledger.data.restaurants.find((item) => item.ownerId && item.ownerId !== application.userId
     && businessKey(item.businessNumber) === key
     && item.verificationStatus !== 'rejected')
 }
@@ -981,7 +961,7 @@ function publishApprovedApplication(application: Application) {
   // 사장님 계정은 영원히 펀드를 하나만 가질 수 있었다.
   // 사업자등록번호가 있으면 그것이 가장 정확하다. 상호를 바꿔 다시 낸 신청도 같은 가게로 이어진다.
   const ownKey = businessKey(data.businessNumber)
-  let restaurant = db.restaurants.find((item) => item.ownerId === application.userId
+  let restaurant = ledger.data.restaurants.find((item) => item.ownerId === application.userId
     && (item.sourceApplicationId === application.id
       || (ownKey && businessKey(item.businessNumber) === ownKey)
       || item.name === application.restaurantName))
@@ -1006,7 +986,7 @@ function publishApprovedApplication(application: Application) {
       strengths: application.strengths.slice(0, 3), diningNotes: String(data.diningNotes || '방문 전 영업시간을 확인해주세요.'),
       salesDisclosure: false,
     }
-    db.restaurants.push(restaurant)
+    ledger.data.restaurants.push(restaurant)
   } else {
     Object.assign(restaurant, {
       sourceApplicationId: application.id, verificationStatus: 'verified', name: application.restaurantName,
@@ -1017,11 +997,11 @@ function publishApprovedApplication(application: Application) {
       strengths: application.strengths.slice(0, 3), tags: ['AI 검증 통과', `${application.score}점`, category],
     })
   }
-  let fund = db.funds.find((item) => item.restaurantId === restaurant!.id && item.status !== 'closed')
+  let fund = ledger.data.funds.find((item) => item.restaurantId === restaurant!.id && item.status !== 'closed')
   if (!fund) {
     const months = Math.max(1, Math.min(36, Number(data.fundingPeriodMonths) || 12))
     fund = {
-      id: id('fund'), restaurantId: restaurant.id, round: db.funds.filter((item) => item.restaurantId === restaurant!.id).length + 1,
+      id: id('fund'), restaurantId: restaurant.id, round: ledger.data.funds.filter((item) => item.restaurantId === restaurant!.id).length + 1,
       status: 'funding', goal: application.approvedLimit || application.requestedLimit, raised: 0,
       maxDiscount: Math.max(10, Math.min(50, Number(data.maxDiscount) || 30)), minIssueDiscount: 10,
       dailyRatePer100k: .5, salesBonus: Math.max(0, Math.min(20, growth)), earlyBonus: 15,
@@ -1030,7 +1010,7 @@ function publishApprovedApplication(application: Application) {
       totalCouponIssued: 0, totalCouponUsed: 0, openBuyAmount: 0, openSellAmount: 0,
       riskLevel: application.score >= 85 ? '낮음' : application.score >= 75 ? '보통' : '주의',
     }
-    db.funds.push(fund)
+    ledger.data.funds.push(fund)
   }
   return { restaurant, fund }
 }
@@ -1042,11 +1022,11 @@ function publishApprovedApplication(application: Application) {
  * "서로 다른 자료 몇 쌍을 맞춰봤고 몇 점이었나"만 공개한다.
  */
 function evidenceQualityOf(restaurant: Restaurant) {
-  const application = [...db.applications]
+  const application = [...ledger.data.applications]
     .filter((item) => item.userId === restaurant.ownerId || item.id === restaurant.sourceApplicationId)
     .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))[0]
-  const ledger = application?.data?.evidenceLedger as { quality?: Record<string, unknown> } | undefined
-  const quality = ledger?.quality
+  const evidenceLedger = application?.data?.evidenceLedger as { quality?: Record<string, unknown> } | undefined
+  const quality = evidenceLedger?.quality
   if (!quality || quality.score === null || quality.score === undefined) return undefined
   return {
     score: Number(quality.score),
@@ -1060,10 +1040,10 @@ function evidenceQualityOf(restaurant: Restaurant) {
 }
 
 function restaurantView() {
-  return db.restaurants.filter((restaurant) => !restaurant.verificationStatus || restaurant.verificationStatus === 'verified').map((restaurant) => {
-    const fund = db.funds.find((item) => item.restaurantId === restaurant.id)
+  return ledger.data.restaurants.filter((restaurant) => !restaurant.verificationStatus || restaurant.verificationStatus === 'verified').map((restaurant) => {
+    const fund = ledger.data.funds.find((item) => item.restaurantId === restaurant.id)
     const opportunityScore = Math.round(restaurant.salesGrowth * 1.1 + restaurant.repeatRate * 0.32 + restaurant.communityScore * 0.22 + restaurant.stabilityScore * 0.2 - restaurant.closingRate * 0.35)
-    const reviews = db.reviews.filter((review) => review.restaurantId === restaurant.id && review.status !== 'hidden').sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 8)
+    const reviews = ledger.data.reviews.filter((review) => review.restaurantId === restaurant.id && review.status !== 'hidden').sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 8)
     // 이 식당이 심사에 낸 자료들이 서로 얼마나 맞았는지. 투자자가 "AI가 점수를 지어낸 게 아니다"를
     // 확인할 수 있는 유일한 값이라 공개한다. 개별 금액이나 파일 이름은 내보내지 않는다.
     const evidenceQuality = evidenceQualityOf(restaurant)
@@ -1076,23 +1056,23 @@ function publicState(viewerId?: string) {
   const views = restaurantView()
   return {
     restaurants: views,
-    funds: db.funds.filter((fund) => views.some((restaurant) => restaurant.id === fund.restaurantId)),
-    etfs: db.etfs,
-    articles: db.articles,
-    listings: db.couponListings.filter((l) => l.status === 'open').map((listing) => listingView(listing, viewerId)),
+    funds: ledger.data.funds.filter((fund) => views.some((restaurant) => restaurant.id === fund.restaurantId)),
+    etfs: ledger.data.etfs,
+    articles: ledger.data.articles,
+    listings: ledger.data.couponListings.filter((l) => l.status === 'open').map((listing) => listingView(listing, viewerId)),
     exchange: {
       rules: EXCHANGE_RULES,
       categories: [...new Set(views.map((item) => item.category))].sort(),
       regions: [...new Set(views.map((item) => item.region))].sort(),
-      openListings: db.couponListings.filter((item) => item.status === 'open').length,
-      completedTrades: db.couponTrades.length,
-      pendingOffers: db.couponOffers.filter((item) => item.status === 'pending').length,
+      openListings: ledger.data.couponListings.filter((item) => item.status === 'open').length,
+      completedTrades: ledger.data.couponTrades.length,
+      pendingOffers: ledger.data.couponOffers.filter((item) => item.status === 'pending').length,
     },
     stats: {
-      funded: db.funds.reduce((sum, f) => sum + f.raised, 0),
+      funded: ledger.data.funds.reduce((sum, f) => sum + f.raised, 0),
       restaurants: views.length,
       supporters: views.reduce((sum, r) => sum + r.supporters, 0),
-      couponUsed: db.funds.reduce((sum, f) => sum + f.totalCouponUsed, 0),
+      couponUsed: ledger.data.funds.reduce((sum, f) => sum + f.totalCouponUsed, 0),
     },
   }
 }
@@ -1125,7 +1105,7 @@ if (await initGraphDb()) {
   console.log(`지식그래프: 서버 내장 그래프 사용 — ${graphDbStatus()}`)
 }
 syncCouponLedger()
-for (const fund of db.funds) {
+for (const fund of ledger.data.funds) {
   matchOrders(fund.id)
   refreshOrderTotals(fund.id)
 }
@@ -1174,34 +1154,26 @@ app.use('/api', async (req, res, next) => {
   // 잠금을 잡지 않는 경로에서 남긴 감사기록도 흘리지 않고 내보낸다.
   // 원장 저장(saveDatabase)이 없는 요청에는 그것 말고 내보낼 자리가 없다.
   res.on('finish', () => { flushAuditEvents().catch(() => undefined) })
+  const writable = req.method !== 'GET' && !UNLOCKED_AI_PATHS.has(req.originalUrl.split('?')[0])
   try {
-    if (req.method === 'GET' || UNLOCKED_AI_PATHS.has(req.originalUrl.split('?')[0])) {
-      await refreshState()
-      return next()
-    }
-    const owner = crypto.randomUUID()
-    const deadline = Date.now() + 9000
-    let acquired = false
-    while (Date.now() < deadline) {
-      if (await store.acquire(owner)) { acquired = true; break }
-      await new Promise((resolve) => setTimeout(resolve, 120 + Math.random() * 200))
-    }
-    if (!acquired) return res.status(503).json({ error: '지금 다른 요청을 처리하고 있어요. 잠시 후 다시 시도해주세요.' })
-
-    lockOwner = owner
-    let released = false
-    const release = () => {
-      if (released) return
-      released = true
-      if (lockOwner === owner) lockOwner = undefined
-      store.release(owner).catch(() => undefined)
-    }
-    res.on('finish', release)
-    res.on('close', release)
-
-    await refreshState(true)
-    next()
+    /*
+     * 응답이 끝날 때까지 컨텍스트를 열어둔다.
+     * 핸들러가 DB·생성형 호출을 기다리는 동안 다른 요청이 들어와도
+     * 이 요청이 들고 있는 사용자·주문 객체가 다른 사본으로 바뀌지 않는다.
+     */
+    await ledger.run(writable, () => new Promise<void>((resolve) => {
+      let settled = false
+      const done = () => { if (settled) return; settled = true; resolve() }
+      res.on('finish', done)
+      res.on('close', done)
+      normalizeDatabase()
+      next()
+    }))
   } catch (error) {
+    if (res.headersSent) return
+    if ((error as { status?: number }).status === 503) {
+      return res.status(503).json({ error: (error as Error).message })
+    }
     next(error)
   }
 })
@@ -1217,33 +1189,18 @@ app.use('/api', async (req, res, next) => {
  * 사장님이 받아야 할 판독 결과나 리포트를 통째로 실패시키지는 않는다.
  */
 async function withWriteLock<T>(run: () => T | Promise<T>): Promise<T | undefined> {
-  if (store.kind === 'file') {
-    const value = await run()
-    await saveDatabase()
-    return value
-  }
-  const owner = crypto.randomUUID()
-  const deadline = Date.now() + 9000
-  let acquired = false
-  while (Date.now() < deadline) {
-    if (await store.acquire(owner)) { acquired = true; break }
-    await new Promise((resolve) => setTimeout(resolve, 120 + Math.random() * 200))
-  }
-  if (!acquired) {
+  try {
+    return await ledger.run(true, async () => {
+      const value = await run()
+      await saveDatabase()
+      return value
+    })
+  } catch (error) {
+    // 잠금을 못 잡은 경우만 삼킨다. 감사 로그 한 줄 때문에 사장님이 받아야 할
+    // 판독 결과나 리포트를 통째로 실패시키지는 않는다.
+    if ((error as { status?: number }).status !== 503) throw error
     console.warn('withWriteLock: 잠금을 잡지 못해 기록을 건너뜁니다.')
     return undefined
-  }
-  const previous = lockOwner
-  lockOwner = owner
-  try {
-    // 잠금 안에서 최신 상태를 다시 읽어야 다른 인스턴스가 쓴 내용을 덮어쓰지 않는다.
-    await refreshState(true)
-    const value = await run()
-    await saveDatabase()
-    return value
-  } finally {
-    lockOwner = previous
-    await store.release(owner).catch(() => undefined)
   }
 }
 
@@ -1263,7 +1220,7 @@ const DEMO_PARTNER_PROVIDERS: Record<string, { title: string; provider: string; 
   debt: { title: '대출·상환정보', provider: '금융기관 대출정보 중계(체험)', scope: '잔액·금리·만기·월 상환액', records: 24 },
 }
 
-const demoRestaurantOf = (restaurantId?: string) => db.restaurants.find((item) => item.id === restaurantId)
+const demoRestaurantOf = (restaurantId?: string) => ledger.data.restaurants.find((item) => item.id === restaurantId)
 
 /**
  * 체험 투자자가 처음부터 들고 있는 응원 내역.
@@ -1288,7 +1245,7 @@ const demoSeedPositions = [
  */
 function seedDemoPositions(sandbox: DemoSandbox) {
   for (const seed of demoSeedPositions) {
-    const fund = db.funds.find((item) => item.id === seed.fundId)
+    const fund = ledger.data.funds.find((item) => item.id === seed.fundId)
     // 시드가 바뀌어 펀드가 없어졌으면 조용히 건너뛴다. 체험 진입 자체를 막을 일은 아니다.
     if (!fund) continue
     // 한 식당 투자 한도(목표액의 1%)는 체험 시작분에도 똑같이 적용한다.
@@ -1372,7 +1329,7 @@ async function handleDemoMutation(req: AuthedRequest, res: Response, user: Sessi
   /* 투자 / 회수 */
   const fundAction = match(/^\/api\/funds\/([^/]+)\/(invest|withdraw)$/)
   if (fundAction && method === 'POST') {
-    const fund = db.funds.find((item) => item.id === fundAction[1])
+    const fund = ledger.data.funds.find((item) => item.id === fundAction[1])
     if (!fund) { res.status(404).json({ error: '펀드를 찾을 수 없어요.' }); return }
     const restaurant = demoRestaurantOf(fund.restaurantId)
     const amount = round1000(body.amount)
@@ -1413,7 +1370,7 @@ async function handleDemoMutation(req: AuthedRequest, res: Response, user: Sessi
   if (couponIssue && method === 'POST') {
     const position = sandbox.positions.find((item) => item.id === couponIssue[1])
     if (!position) { res.status(404).json({ error: '투자 내역을 찾을 수 없어요.' }); return }
-    const fund = db.funds.find((item) => item.id === position.fundId)
+    const fund = ledger.data.funds.find((item) => item.id === position.fundId)
     const restaurant = fund && demoRestaurantOf(fund.restaurantId)
     if (!fund || !restaurant) { res.status(404).json({ error: '식당 정보를 찾을 수 없어요.' }); return }
     // 체험자는 며칠을 기다릴 수 없으니 투자금 비례로 즉시 할인율을 만든다.
@@ -1499,8 +1456,8 @@ async function handleDemoMutation(req: AuthedRequest, res: Response, user: Sessi
      기다릴 수 없으니 두 경로 모두 그 자리에서 체결하고, 승인 매물이면 그렇게 말해준다. */
   const swap = match(/^\/api\/listings\/([^/]+)\/(swap|offers)$/)
   if (swap && method === 'POST') {
-    const listing = db.couponListings.find((item) => item.id === swap[1] && item.status === 'open')
-    const wanted = listing && db.coupons.find((item) => item.id === listing.couponId)
+    const listing = ledger.data.couponListings.find((item) => item.id === swap[1] && item.status === 'open')
+    const wanted = listing && ledger.data.coupons.find((item) => item.id === listing.couponId)
     const mine = sandbox.coupons.find((item) => item.id === String(body.couponId) && item.status === 'available')
     if (!listing || !wanted) { res.status(404).json({ error: '교환할 매물을 찾을 수 없어요.' }); return }
     if (!mine) { res.status(400).json({ error: '내놓을 체험 쿠폰을 먼저 골라주세요. MY 먹투 쿠폰 지갑에서 확인할 수 있어요.' }); return }
@@ -1637,12 +1594,12 @@ app.use('/api', async (req: AuthedRequest, res, next) => {
 function demoMeState(user: SessionUser) {
   const sandbox = demoSandbox(user.id, user.role)
   const positions = sandbox.positions.filter((item) => item.amount > 0).map((position) => {
-    const fund = db.funds.find((item) => item.id === position.fundId)
-    const restaurant = fund && db.restaurants.find((item) => item.id === fund.restaurantId)
+    const fund = ledger.data.funds.find((item) => item.id === position.fundId)
+    const restaurant = fund && ledger.data.restaurants.find((item) => item.id === fund.restaurantId)
     return { ...position, fund, restaurant, availableAmount: position.amount }
   })
   const coupons = sandbox.coupons.map((coupon) => {
-    const restaurant = db.restaurants.find((item) => item.id === coupon.restaurantId)
+    const restaurant = ledger.data.restaurants.find((item) => item.id === coupon.restaurantId)
     return {
       ...coupon, restaurant,
       daysLeft: Math.max(0, Math.floor((new Date(coupon.expiresAt).getTime() - Date.now()) / 86400000)),
@@ -1694,7 +1651,7 @@ function withDemoOverlay(state: ReturnType<typeof publicState>, user: SessionUse
   // 필드 모양은 listingView() 와 정확히 같아야 한다. 다르면 교환장 화면이 깨진다.
   const myListings = sandbox.listings.filter((item) => item.status === 'open').map((listing) => {
     const coupon = sandbox.coupons.find((item) => item.id === listing.couponId)
-    const restaurant = coupon && db.restaurants.find((item) => item.id === coupon.restaurantId)
+    const restaurant = coupon && ledger.data.restaurants.find((item) => item.id === coupon.restaurantId)
     return {
       ...listing, coupon, restaurant, userName: user.name,
       offerCount: 0, myOfferId: undefined, matchableCouponIds: [] as string[], mine: true,
@@ -1728,7 +1685,7 @@ function withDemoOverlay(state: ReturnType<typeof publicState>, user: SessionUse
  */
 app.get('/api/version', async (_req, res) => {
   await refreshState().catch(() => undefined)
-  res.json({ version: stateVersion, at: now() })
+  res.json({ version: ledger.version, at: now() })
 })
 
 /**
@@ -1739,8 +1696,8 @@ app.get('/api/version', async (_req, res) => {
  */
 app.get('/api/admin/graph-audit', auth('admin'), async (_req: AuthedRequest, res) => {
   const memoryGraphs = (['investor', 'owner'] as const).map((role) => {
-    const sample = db.restaurants[0]
-    const graph = buildKnowledgeGraph(role, sample, db.funds.find((item) => item.restaurantId === sample?.id))
+    const sample = ledger.data.restaurants[0]
+    const graph = buildKnowledgeGraph(role, sample, ledger.data.funds.find((item) => item.restaurantId === sample?.id))
     const ids = new Set(graph.nodes.map((node) => node.id))
     const connected = new Set(graph.edges.flatMap((edge) => [edge.from, edge.to]))
     return {
@@ -1780,7 +1737,7 @@ app.get('/api/health', (_req, res) => res.json({
   time: now(),
   authProvider: supabaseAuthConfigured ? 'supabase-with-local-demo-fallback' : 'local-demo',
   stateStore: store.kind,
-  stateVersion: store.kind === 'file' ? undefined : stateVersion,
+  stateVersion: store.kind === 'file' ? undefined : ledger.version,
   // 키 자체는 절대 노출하지 않고 '생성형이 붙어 있는지'만 알린다.
   // 이게 있어야 배포본이 조용히 규칙 폴백으로만 도는 상황을 밖에서 잡아낼 수 있다.
   ai: aiReady() ? 'configured' : 'off',
@@ -1800,11 +1757,11 @@ app.get('/api/public', async (req: AuthedRequest, res) => {
   res.json(state)
 })
 app.get('/api/trust/:restaurantId', (req, res) => {
-  const restaurant = db.restaurants.find((item) => item.id === req.params.restaurantId)
+  const restaurant = ledger.data.restaurants.find((item) => item.id === req.params.restaurantId)
   if (!restaurant) return res.status(404).json({ error: '검증할 식당을 찾을 수 없어요.' })
-  const fund = db.funds.find((item) => item.restaurantId === restaurant.id)
+  const fund = ledger.data.funds.find((item) => item.restaurantId === restaurant.id)
   const assessment = assessRestaurant(restaurant, fund)
-  const application = db.applications.find((item) => item.restaurantName === restaurant.name)
+  const application = ledger.data.applications.find((item) => item.restaurantName === restaurant.name)
   const financialRun = (application?.data as Record<string, any> | undefined)?.financialVerification as Record<string, any> | undefined
   res.json({
     assessment,
@@ -1824,13 +1781,13 @@ app.get('/api/trust/:restaurantId', (req, res) => {
 
 app.get('/api/knowledge-graph', async (req: AuthedRequest, res) => {
   const role: Role = req.query.role === 'owner' ? 'owner' : 'investor'
-  const restaurant = typeof req.query.restaurantId === 'string' ? db.restaurants.find((item) => item.id === req.query.restaurantId) : undefined
-  const fund = restaurant ? db.funds.find((item) => item.restaurantId === restaurant.id) : undefined
+  const restaurant = typeof req.query.restaurantId === 'string' ? ledger.data.restaurants.find((item) => item.id === req.query.restaurantId) : undefined
+  const fund = restaurant ? ledger.data.funds.find((item) => item.restaurantId === restaurant.id) : undefined
   const viewer = await userFromAuthorization(req.headers.authorization).catch(() => undefined)
-  const position = viewer && fund ? db.positions.find((item) => item.userId === viewer.id && item.fundId === fund.id && item.amount > 0) : undefined
+  const position = viewer && fund ? ledger.data.positions.find((item) => item.userId === viewer.id && item.fundId === fund.id && item.amount > 0) : undefined
   const application = restaurant
-    ? [...db.applications].reverse().find((item) => item.restaurantName === restaurant.name || (viewer?.role === 'owner' && item.userId === viewer.id))
-    : viewer?.role === 'owner' ? [...db.applications].reverse().find((item) => item.userId === viewer.id) : undefined
+    ? [...ledger.data.applications].reverse().find((item) => item.restaurantName === restaurant.name || (viewer?.role === 'owner' && item.userId === viewer.id))
+    : viewer?.role === 'owner' ? [...ledger.data.applications].reverse().find((item) => item.userId === viewer.id) : undefined
   const financialRun = application?.data?.financialVerification as Record<string, any> | undefined
   res.json(buildKnowledgeGraph(role, restaurant, fund, {
     assessment: restaurant ? assessRestaurant(restaurant, fund) : undefined,
@@ -1869,7 +1826,7 @@ app.post('/api/auth/signup', async (req, res) => {
   if (role !== 'owner' && role !== 'investor') return res.status(400).json({ error: '가입 유형을 선택해주세요.' })
   const signupConsent = checkConsent('signup', req.body, role)
   if (!signupConsent.ok) return res.status(400).json({ error: signupConsent.error })
-  if (db.users.some((u) => u.email.toLowerCase() === email.toLowerCase())) return res.status(409).json({ error: '이미 가입된 이메일이에요.' })
+  if (ledger.data.users.some((u) => u.email.toLowerCase() === email.toLowerCase())) return res.status(409).json({ error: '이미 가입된 이메일이에요.' })
   if (supabaseAuthConfigured) {
     try {
       if (supabaseServiceKey) {
@@ -1892,7 +1849,7 @@ app.post('/api/auth/signup', async (req, res) => {
     }
   }
   const user: User = { id: id('user'), email: email.toLowerCase(), name: name.trim(), role, passwordHash: await hashPassword(password), cash: role === 'investor' ? INVESTOR_STARTING_CASH : 0, createdAt: now() }
-  db.users.push(user)
+  ledger.data.users.push(user)
   recordConsent(user.id, 'signup', signupConsent.documentIds)
   const welcomeCoupons = grantWelcomeCoupons(user)
   await saveDatabase()
@@ -1907,7 +1864,7 @@ app.post('/api/auth/demo', (req, res) => {
   // 승인해도 펀드가 생기지 않고 정지해도 그 계정이 계속 로그인되는, 절반만 도는 화면이 된다.
   // 그래서 운영자는 실제 운영 계정으로 붙이고, 누른 결정은 실제 원장에 그대로 남긴다.
   if (role === 'admin') {
-    const admin = db.users.find((item) => item.role === 'admin')
+    const admin = ledger.data.users.find((item) => item.role === 'admin')
     if (!admin) return res.status(503).json({ error: '운영 계정을 준비하지 못했어요. 잠시 뒤 다시 시도해주세요.' })
     return res.json({
       token: tokenFor(admin), user: publicUser(accountSession(admin)), provider: 'operator',
@@ -1934,7 +1891,7 @@ app.post('/api/auth/login', async (req, res) => {
   const tooManyFailures = !rateLimitPeek(ipKey, 30, 60_000) || !rateLimitPeek(accountKey, 8, 60_000)
   if (tooManyFailures) return res.status(429).json({ error: '로그인 시도가 너무 많아요. 1분 뒤에 다시 시도해주세요.' })
   if (role && role !== 'owner' && role !== 'investor') return res.status(400).json({ error: '로그인 유형을 다시 선택해주세요.' })
-  const user = db.users.find((u) => u.email.toLowerCase() === String(email).toLowerCase())
+  const user = ledger.data.users.find((u) => u.email.toLowerCase() === String(email).toLowerCase())
   if (user?.accountStatus === 'suspended') return res.status(403).json({ error: '이용이 일시 정지된 계정이에요.' })
   if (user && password && !user.passwordHash.startsWith('supabase:') && await verifyPassword(password, user.passwordHash)) {
     if (role && user.role !== role) return res.status(403).json({ error: `이 계정은 ${user.role === 'owner' ? '사장님' : user.role === 'investor' ? '투자자' : '관리자'} 유형으로 가입되어 있어요. 로그인 유형을 바꿔주세요.` })
@@ -1943,7 +1900,7 @@ app.post('/api/auth/login', async (req, res) => {
   if (supabaseAuthConfigured && email && password) {
     try {
       const session = await supabaseRequest('token?grant_type=password', { method: 'POST', body: JSON.stringify({ email: String(email).toLowerCase(), password }) })
-      const profileRole = db.users.find((item) => item.email === String(email).toLowerCase())?.role || session.user?.user_metadata?.role
+      const profileRole = ledger.data.users.find((item) => item.email === String(email).toLowerCase())?.role || session.user?.user_metadata?.role
       if (role && profileRole && profileRole !== role) return res.status(403).json({ error: `이 계정은 ${profileRole === 'owner' ? '사장님' : profileRole === 'investor' ? '투자자' : '관리자'} 유형으로 가입되어 있어요. 로그인 유형을 바꿔주세요.` })
       return res.json({ token: session.access_token, user: session.user, provider: 'supabase' })
     } catch { /* return the common authentication error below */ }
@@ -1957,48 +1914,48 @@ app.get('/api/me', auth(), async (req: AuthedRequest, res) => {
   const user = req.user!
   // 체험 세션은 공유 원장이 아니라 자기 샌드박스를 본다.
   if (user.sessionMode === 'demo') return res.json(demoMeState(user))
-  const positions = db.positions.filter((p) => p.userId === user.id && p.amount > 0).map((position) => {
+  const positions = ledger.data.positions.filter((p) => p.userId === user.id && p.amount > 0).map((position) => {
     accrue(position)
-    const fund = db.funds.find((f) => f.id === position.fundId)
-    const restaurant = fund && db.restaurants.find((r) => r.id === fund.restaurantId)
-    const reservedSell = db.orders.filter((o) => o.userId === user.id && o.fundId === position.fundId && o.type === 'sell' && o.remaining > 0).reduce((sum, o) => sum + o.remaining, 0)
+    const fund = ledger.data.funds.find((f) => f.id === position.fundId)
+    const restaurant = fund && ledger.data.restaurants.find((r) => r.id === fund.restaurantId)
+    const reservedSell = ledger.data.orders.filter((o) => o.userId === user.id && o.fundId === position.fundId && o.type === 'sell' && o.remaining > 0).reduce((sum, o) => sum + o.remaining, 0)
     return { ...position, fund, restaurant, availableAmount: Math.max(0, position.amount - reservedSell) }
   })
-  const orders = db.orders.filter((o) => o.userId === user.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  const orders = ledger.data.orders.filter((o) => o.userId === user.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   sweepExchange()
-  const coupons = db.coupons.filter((c) => c.userId === user.id).map(couponView)
-  const applications = db.applications.filter((a) => a.userId === user.id)
+  const coupons = ledger.data.coupons.filter((c) => c.userId === user.id).map(couponView)
+  const applications = ledger.data.applications.filter((a) => a.userId === user.id)
   await saveDatabase()
-  const visitVerifications = db.visitVerifications.filter((item) => item.userId === user.id)
-  const walletTransactions = db.walletTransactions.filter((item) => item.userId === user.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 20)
-  const favoriteRestaurantIds = db.favorites.filter((item) => item.userId === user.id).map((item) => item.restaurantId)
-  const ocrAnalyses = db.ocrAnalyses.filter((item) => item.userId === user.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 20)
-  const notifications = db.notifications.filter((item) => item.userId === user.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 30)
+  const visitVerifications = ledger.data.visitVerifications.filter((item) => item.userId === user.id)
+  const walletTransactions = ledger.data.walletTransactions.filter((item) => item.userId === user.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 20)
+  const favoriteRestaurantIds = ledger.data.favorites.filter((item) => item.userId === user.id).map((item) => item.restaurantId)
+  const ocrAnalyses = ledger.data.ocrAnalyses.filter((item) => item.userId === user.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 20)
+  const notifications = ledger.data.notifications.filter((item) => item.userId === user.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 30)
   const exchange = {
-    openListings: db.couponListings.filter((item) => item.userId === user.id && item.status === 'open').length,
-    offersReceived: db.couponOffers.filter((offer) => offer.status === 'pending' && db.couponListings.some((listing) => listing.id === offer.listingId && listing.userId === user.id)).length,
-    offersSent: db.couponOffers.filter((offer) => offer.offerUserId === user.id && offer.status === 'pending').length,
-    trades: db.couponTrades.filter((trade) => trade.listerUserId === user.id || trade.takerUserId === user.id).length,
+    openListings: ledger.data.couponListings.filter((item) => item.userId === user.id && item.status === 'open').length,
+    offersReceived: ledger.data.couponOffers.filter((offer) => offer.status === 'pending' && ledger.data.couponListings.some((listing) => listing.id === offer.listingId && listing.userId === user.id)).length,
+    offersSent: ledger.data.couponOffers.filter((offer) => offer.offerUserId === user.id && offer.status === 'pending').length,
+    trades: ledger.data.couponTrades.filter((trade) => trade.listerUserId === user.id || trade.takerUserId === user.id).length,
   }
-  const dataConnections = db.dataConnections.filter((item) => item.userId === user.id && item.status === 'active')
+  const dataConnections = ledger.data.dataConnections.filter((item) => item.userId === user.id && item.status === 'active')
     .map(({ userId: _, ...item }) => item)
-  const legalConsents = (db.legalConsents || []).filter((item) => item.userId === user.id)
+  const legalConsents = (ledger.data.legalConsents || []).filter((item) => item.userId === user.id)
     .sort((a, b) => b.agreedAt.localeCompare(a.agreedAt)).slice(0, 30)
   const myDocuments = user.role === 'owner'
-    ? (db.documents ?? []).filter((item) => item.userId === user.id).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 60)
+    ? (ledger.data.documents ?? []).filter((item) => item.userId === user.id).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 60)
     : []
   res.json({ user: publicUser(user), positions, orders, coupons, applications, visitVerifications, walletTransactions, favoriteRestaurantIds, ocrAnalyses, documents: myDocuments, dataConnections, notifications, unreadNotifications: notifications.filter((item) => !item.read).length, exchange, rules: EXCHANGE_RULES, legalConsents, legalVersion: LEGAL_VERSION })
 })
 
 app.get('/api/admin/dashboard', auth('admin'), (_req: AuthedRequest, res) => {
   // 운영센터는 공유 원장을 그대로 읽는다. 여기 보이는 값이 곧 투자자·사장님이 보는 값이다.
-  const applications = [...db.applications].sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))
-  const users = db.users.filter((user) => user.role !== 'admin')
-  const restaurants = db.restaurants
-  const funds = db.funds
-  const reviews = db.reviews
-  const coupons = db.coupons
-  const support = [...(db.supportRequests || [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  const applications = [...ledger.data.applications].sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))
+  const users = ledger.data.users.filter((user) => user.role !== 'admin')
+  const restaurants = ledger.data.restaurants
+  const funds = ledger.data.funds
+  const reviews = ledger.data.reviews
+  const coupons = ledger.data.coupons
+  const support = [...(ledger.data.supportRequests || [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   res.json({
     stats: {
       users: users.length,
@@ -2011,11 +1968,11 @@ app.get('/api/admin/dashboard', auth('admin'), (_req: AuthedRequest, res) => {
     },
     users: users.map((user) => ({
       ...publicUser(user),
-      positions: db.positions.filter((position) => position.userId === user.id && position.amount > 0).length,
-      applications: db.applications.filter((application) => application.userId === user.id).length,
+      positions: ledger.data.positions.filter((position) => position.userId === user.id && position.amount > 0).length,
+      applications: ledger.data.applications.filter((application) => application.userId === user.id).length,
     })),
     applications: applications.map((application) => {
-      const owner = db.users.find((user) => user.id === application.userId)
+      const owner = ledger.data.users.find((user) => user.id === application.userId)
       return { ...safeApplication(application), owner: owner ? publicUser(owner) : undefined }
     }),
     restaurants, funds, reviews, support, coupons,
@@ -2023,7 +1980,7 @@ app.get('/api/admin/dashboard', auth('admin'), (_req: AuthedRequest, res) => {
 })
 
 app.patch('/api/admin/users/:id', auth('admin'), async (req: AuthedRequest, res) => {
-  const user = db.users.find((item) => item.id === req.params.id)
+  const user = ledger.data.users.find((item) => item.id === req.params.id)
   if (!user) return res.status(404).json({ error: '회원을 찾지 못했어요.' })
   if (user.role === 'admin') return res.status(400).json({ error: '관리자 계정은 변경할 수 없어요.' })
   if (req.body.accountStatus === 'active' || req.body.accountStatus === 'suspended') user.accountStatus = req.body.accountStatus
@@ -2032,14 +1989,14 @@ app.patch('/api/admin/users/:id', auth('admin'), async (req: AuthedRequest, res)
 })
 
 app.patch('/api/admin/restaurants/:id', auth('admin'), async (req: AuthedRequest, res) => {
-  const restaurant = db.restaurants.find((item) => item.id === req.params.id)
+  const restaurant = ledger.data.restaurants.find((item) => item.id === req.params.id)
   if (!restaurant) return res.status(404).json({ error: '식당을 찾지 못했어요.' })
   if (typeof req.body.salesDisclosure === 'boolean') restaurant.salesDisclosure = req.body.salesDisclosure
   await saveDatabase(); changed(); res.json(restaurant)
 })
 
 app.patch('/api/admin/funds/:id', auth('admin'), async (req: AuthedRequest, res) => {
-  const fund = db.funds.find((item) => item.id === req.params.id)
+  const fund = ledger.data.funds.find((item) => item.id === req.params.id)
   if (!fund) return res.status(404).json({ error: '펀드룰 찾지 못했어요.' })
   if (!['funding', 'trading', 'closed'].includes(req.body.status)) return res.status(400).json({ error: '펀드 상태를 다시 선택해주세요.' })
   fund.status = req.body.status
@@ -2047,15 +2004,15 @@ app.patch('/api/admin/funds/:id', auth('admin'), async (req: AuthedRequest, res)
 })
 
 app.get('/api/admin/applications/:id', auth('admin'), (req: AuthedRequest, res) => {
-  const application = db.applications.find((item) => item.id === req.params.id)
+  const application = ledger.data.applications.find((item) => item.id === req.params.id)
   if (!application) return res.status(404).json({ error: '심사를 찾지 못했어요.' })
-  const owner = db.users.find((item) => item.id === application.userId)
-  const restaurant = db.restaurants.find((item) => item.sourceApplicationId === application.id)
-  const fund = restaurant && db.funds.find((item) => item.restaurantId === restaurant.id)
+  const owner = ledger.data.users.find((item) => item.id === application.userId)
+  const restaurant = ledger.data.restaurants.find((item) => item.sourceApplicationId === application.id)
+  const fund = restaurant && ledger.data.funds.find((item) => item.restaurantId === restaurant.id)
   const data = application.data || {}
   const analysisIds = Array.isArray(data.ocrAnalysisIds) ? data.ocrAnalysisIds.map(String) : []
   const submittedAt = new Date(application.submittedAt).getTime()
-  const ocrAnalyses = db.ocrAnalyses
+  const ocrAnalyses = ledger.data.ocrAnalyses
     .filter((item) => item.userId === application.userId)
     .filter((item) => analysisIds.length
       ? analysisIds.includes(item.id)
@@ -2067,13 +2024,13 @@ app.get('/api/admin/applications/:id', auth('admin'), (req: AuthedRequest, res) 
   // 새 신청은 제출 시점 스냅샷을 사용하고, 이전 신청만 현재 문서함에서 안전하게 대체 조회한다.
   const documents = Array.isArray(data.documentReviewSnapshot)
     ? data.documentReviewSnapshot
-    : (db.documents ?? []).filter((item) => item.userId === application.userId && documentIds.includes(item.id))
-  const consent = (db.legalConsents || []).find((item) => item.resourceType === 'application' && item.resourceId === application.id)
+    : (ledger.data.documents ?? []).filter((item) => item.userId === application.userId && documentIds.includes(item.id))
+  const consent = (ledger.data.legalConsents || []).find((item) => item.resourceType === 'application' && item.resourceId === application.id)
   res.json({ application: safeApplication(application), owner: owner ? publicUser(owner) : undefined, restaurant, fund, ocrAnalyses, documents, consent })
 })
 
 app.patch('/api/admin/applications/:id', auth('admin'), async (req: AuthedRequest, res) => {
-  const application = db.applications.find((item) => item.id === req.params.id)
+  const application = ledger.data.applications.find((item) => item.id === req.params.id)
   if (!application) return res.status(404).json({ error: '심사를 찾지 못했어요.' })
   // 보완해서 다시 낸 건이 이미 있으면 지난 건을 다시 판정하지 않는다.
   // 그러지 않으면 낡은 자료로 승인이 나서 최신 신청과 결과가 엇갈린다.
@@ -2088,7 +2045,7 @@ app.patch('/api/admin/applications/:id', auth('admin'), async (req: AuthedReques
       // 승인해 버리면 투자자 목록에 같은 가게가 두 번 뜨고 펀드도 두 개가 된다.
       const conflict = conflictingRestaurant(application)
       if (conflict) {
-        const holder = db.users.find((item) => item.id === conflict.ownerId)
+        const holder = ledger.data.users.find((item) => item.id === conflict.ownerId)
         return res.status(409).json({
           error: `같은 사업자등록번호(${(application.data as Record<string, unknown>)?.businessNumber})로 이미 등록된 가게가 있어요. `
             + `'${conflict.name}'${holder ? ` (${holder.email})` : ''} 와 같은 사업체라 펀드를 새로 만들지 않았어요. `
@@ -2104,7 +2061,7 @@ app.patch('/api/admin/applications/:id', auth('admin'), async (req: AuthedReques
       published = publishApprovedApplication(application)
       pushNotification(application.userId, 'application', '펀딩 검증이 통과됐어요', `${application.restaurantName}이 투자자 식당 목록에 공개됐어요.`, '/owner/my')
     } else {
-      const existing = db.restaurants.find((item) => item.sourceApplicationId === application.id)
+      const existing = ledger.data.restaurants.find((item) => item.sourceApplicationId === application.id)
       if (existing) existing.verificationStatus = application.status === 'rejected' ? 'rejected' : 'submitted'
       // 보완 요청은 사장님이 알아채지 못하면 아무 일도 일어나지 않는다.
       // 무엇을 고쳐야 하는지까지 알림에 담아 보낸다.
@@ -2124,14 +2081,14 @@ app.patch('/api/admin/applications/:id', auth('admin'), async (req: AuthedReques
 })
 
 app.patch('/api/admin/reviews/:id', auth('admin'), async (req: AuthedRequest, res) => {
-  const review = db.reviews.find((item) => item.id === req.params.id)
+  const review = ledger.data.reviews.find((item) => item.id === req.params.id)
   if (!review) return res.status(404).json({ error: '리뷰를 찾지 못했어요.' })
   review.status = req.body.status === 'hidden' ? 'hidden' : 'published'
   await saveDatabase(); changed(); res.json(review)
 })
 
 app.patch('/api/admin/support/:id', auth('admin'), async (req: AuthedRequest, res) => {
-  const request = (db.supportRequests || []).find((item) => item.id === req.params.id)
+  const request = (ledger.data.supportRequests || []).find((item) => item.id === req.params.id)
   if (!request) return res.status(404).json({ error: '문의를 찾지 못했어요.' })
   const answer = String(req.body.answer || '').trim()
   request.status = answer ? 'answered' : req.body.status === 'closed' ? 'closed' : 'in_review'
@@ -2140,31 +2097,31 @@ app.patch('/api/admin/support/:id', auth('admin'), async (req: AuthedRequest, re
 })
 
 app.patch('/api/admin/coupons/:id', auth('admin'), async (req: AuthedRequest, res) => {
-  const coupon = db.coupons.find((item) => item.id === req.params.id)
+  const coupon = ledger.data.coupons.find((item) => item.id === req.params.id)
   if (!coupon) return res.status(404).json({ error: '쿠폰을 찾지 못했어요.' })
   if (['available', 'used', 'expired'].includes(req.body.status)) coupon.status = req.body.status
   await saveDatabase(); changed(); res.json(coupon)
 })
 
 app.put('/api/favorites/:restaurantId', auth(), async (req: AuthedRequest, res) => {
-  const restaurant = db.restaurants.find((item) => item.id === req.params.restaurantId)
+  const restaurant = ledger.data.restaurants.find((item) => item.id === req.params.restaurantId)
   if (!restaurant) return res.status(404).json({ error: '찜할 식당을 찾을 수 없어요.' })
-  if (!db.favorites.some((item) => item.userId === req.user!.id && item.restaurantId === restaurant.id)) {
-    db.favorites.push({ userId: req.user!.id, restaurantId: restaurant.id, createdAt: now() })
+  if (!ledger.data.favorites.some((item) => item.userId === req.user!.id && item.restaurantId === restaurant.id)) {
+    ledger.data.favorites.push({ userId: req.user!.id, restaurantId: restaurant.id, createdAt: now() })
     audit(req.user!.id, 'favorite.created', 'restaurant', restaurant.id, `${restaurant.name} 관심 식당 등록`)
     await saveDatabase(); changed()
   }
-  res.json({ message: `${restaurant.name}을 관심 식당에 저장했어요.`, favoriteRestaurantIds: db.favorites.filter((item) => item.userId === req.user!.id).map((item) => item.restaurantId) })
+  res.json({ message: `${restaurant.name}을 관심 식당에 저장했어요.`, favoriteRestaurantIds: ledger.data.favorites.filter((item) => item.userId === req.user!.id).map((item) => item.restaurantId) })
 })
 
 app.delete('/api/favorites/:restaurantId', auth(), async (req: AuthedRequest, res) => {
-  const index = db.favorites.findIndex((item) => item.userId === req.user!.id && item.restaurantId === req.params.restaurantId)
+  const index = ledger.data.favorites.findIndex((item) => item.userId === req.user!.id && item.restaurantId === req.params.restaurantId)
   if (index >= 0) {
-    db.favorites.splice(index, 1)
+    ledger.data.favorites.splice(index, 1)
     audit(req.user!.id, 'favorite.deleted', 'restaurant', String(req.params.restaurantId), '관심 식당 해제')
     await saveDatabase(); changed()
   }
-  res.json({ message: '관심 식당에서 해제했어요.', favoriteRestaurantIds: db.favorites.filter((item) => item.userId === req.user!.id).map((item) => item.restaurantId) })
+  res.json({ message: '관심 식당에서 해제했어요.', favoriteRestaurantIds: ledger.data.favorites.filter((item) => item.userId === req.user!.id).map((item) => item.restaurantId) })
 })
 
 app.post('/api/wallet/topup', auth('investor'), async (req: AuthedRequest, res) => {
@@ -2172,26 +2129,26 @@ app.post('/api/wallet/topup', auth('investor'), async (req: AuthedRequest, res) 
   if (amount < 1000 || amount > 5000000) return res.status(400).json({ error: '시연용 충전은 1,000원부터 한 번에 500만원까지 가능해요.' })
   req.user!.cash += amount
   const transaction = { id: id('wallet'), userId: req.user!.id, type: 'demo_topup' as const, amount, createdAt: now() }
-  db.walletTransactions.push(transaction)
+  ledger.data.walletTransactions.push(transaction)
   await saveDatabase(); changed()
   res.json({ message: `${amount.toLocaleString()} 먹투머니를 충전했어요. (시연용)`, balance: req.user!.cash, transaction })
 })
 
 app.post('/api/restaurants/:restaurantId/visit/verify', auth('investor'), async (req: AuthedRequest, res) => {
-  const restaurant = db.restaurants.find((item) => item.id === req.params.restaurantId)
+  const restaurant = ledger.data.restaurants.find((item) => item.id === req.params.restaurantId)
   if (!restaurant) return res.status(404).json({ error: '식당을 찾을 수 없어요.' })
-  let verification = db.visitVerifications.find((item) => item.userId === req.user!.id && item.restaurantId === restaurant.id && !item.usedForReview)
+  let verification = ledger.data.visitVerifications.find((item) => item.userId === req.user!.id && item.restaurantId === restaurant.id && !item.usedForReview)
   if (!verification) {
     verification = { id: id('visit'), restaurantId: restaurant.id, userId: req.user!.id, verifiedAt: now(), usedForReview: false }
-    db.visitVerifications.push(verification)
+    ledger.data.visitVerifications.push(verification)
   }
   await saveDatabase(); changed()
   res.json({ message: `${restaurant.name} 방문이 시연용으로 인증됐어요. 이제 리뷰를 쓸 수 있어요.`, verification })
 })
 
 app.post('/api/restaurants/:restaurantId/reviews', auth('investor'), async (req: AuthedRequest, res) => {
-  const restaurant = db.restaurants.find((item) => item.id === req.params.restaurantId)
-  const verification = db.visitVerifications.find((item) => item.userId === req.user!.id && item.restaurantId === req.params.restaurantId && !item.usedForReview)
+  const restaurant = ledger.data.restaurants.find((item) => item.id === req.params.restaurantId)
+  const verification = ledger.data.visitVerifications.find((item) => item.userId === req.user!.id && item.restaurantId === req.params.restaurantId && !item.usedForReview)
   const rating = Math.round(Number(req.body.rating))
   const content = String(req.body.content || '').trim().slice(0, 500)
   if (!restaurant) return res.status(404).json({ error: '식당을 찾을 수 없어요.' })
@@ -2203,13 +2160,13 @@ app.post('/api/restaurants/:restaurantId/reviews', auth('investor'), async (req:
   restaurant.rating = Number(((restaurant.rating * oldCount + rating) / (oldCount + 1)).toFixed(2))
   restaurant.reviewCount += 1
   verification.usedForReview = true
-  db.reviews.push(review)
+  ledger.data.reviews.push(review)
   await saveDatabase(); changed()
   res.status(201).json({ message: '방문 인증 리뷰를 등록했어요.', review })
 })
 
 app.delete('/api/orders/:orderId', auth('investor'), async (req: AuthedRequest, res) => {
-  const order = db.orders.find((item) => item.id === req.params.orderId && item.userId === req.user!.id && item.remaining > 0 && ['open', 'partial'].includes(item.status))
+  const order = ledger.data.orders.find((item) => item.id === req.params.orderId && item.userId === req.user!.id && item.remaining > 0 && ['open', 'partial'].includes(item.status))
   if (!order) return res.status(404).json({ error: '취소할 수 있는 대기 주문이 없어요.' })
   if (ledgerRpcEnabled) {
     // 주문 마감·현금 환불·호가 재계산을 한 트랜잭션에서 처리한다.
@@ -2229,7 +2186,7 @@ app.delete('/api/orders/:orderId', auth('investor'), async (req: AuthedRequest, 
 })
 app.post('/api/funds/:fundId/invest', auth('investor'), async (req: AuthedRequest, res) => {
   const user = req.user!
-  const fund = db.funds.find((f) => f.id === req.params.fundId)
+  const fund = ledger.data.funds.find((f) => f.id === req.params.fundId)
   const amount = round1000(req.body.amount)
   if (!fund || fund.status === 'closed') return res.status(404).json({ error: '투자 가능한 펀드를 찾을 수 없어요.' })
   if (amount < 1000) return res.status(400).json({ error: '투자는 1,000원 단위로 가능해요.' })
@@ -2252,9 +2209,9 @@ app.post('/api/funds/:fundId/invest', auth('investor'), async (req: AuthedReques
     } catch (error) { return res.status(400).json({ error: rpcMessage(error) }) }
   }
   if (user.cash < amount) return res.status(400).json({ error: '보유 머니가 부족해요.' })
-  if (fund.status === 'trading' && db.orders.some((order) => order.userId === user.id && order.fundId === fund.id && order.type === 'sell' && order.remaining > 0)) return res.status(400).json({ error: '이 펀드의 회수 대기 주문을 먼저 취소하거나 체결해주세요.' })
+  if (fund.status === 'trading' && ledger.data.orders.some((order) => order.userId === user.id && order.fundId === fund.id && order.type === 'sell' && order.remaining > 0)) return res.status(400).json({ error: '이 펀드의 회수 대기 주문을 먼저 취소하거나 체결해주세요.' })
   const position = getPosition(user.id, fund.id)
-  const pending = db.orders.filter((o) => o.userId === user.id && o.fundId === fund.id && o.type === 'buy' && o.remaining > 0).reduce((sum, o) => sum + o.remaining, 0)
+  const pending = ledger.data.orders.filter((o) => o.userId === user.id && o.fundId === fund.id && o.type === 'buy' && o.remaining > 0).reduce((sum, o) => sum + o.remaining, 0)
   const personalLimit = Math.floor(fund.goal * 0.01 / 1000) * 1000
   if (position.amount + pending + amount > personalLimit) return res.status(400).json({ error: `한 식당에는 목표액의 1%인 ${personalLimit.toLocaleString()}원까지 투자할 수 있어요. 이는 먹투 자체 투기 방지 규칙이며 법정 투자한도는 별도로 적용됩니다.` })
   user.cash -= amount
@@ -2273,7 +2230,7 @@ app.post('/api/funds/:fundId/invest', auth('investor'), async (req: AuthedReques
     return res.json({ message: `${accepted.toLocaleString()}원이 바로 투자됐어요.`, matched: accepted, queued: 0 })
   }
   const order: Order = { id: id('order'), userId: user.id, fundId: fund.id, type: 'buy', originalAmount: amount, remaining: amount, status: 'open', createdAt: now() }
-  db.orders.push(order)
+  ledger.data.orders.push(order)
   const matches = matchOrders(fund.id)
   await saveDatabase(); changed()
   const matched = amount - order.remaining
@@ -2282,7 +2239,7 @@ app.post('/api/funds/:fundId/invest', auth('investor'), async (req: AuthedReques
 
 app.post('/api/funds/:fundId/withdraw', auth('investor'), async (req: AuthedRequest, res) => {
   const user = req.user!
-  const fund = db.funds.find((f) => f.id === req.params.fundId)
+  const fund = ledger.data.funds.find((f) => f.id === req.params.fundId)
   const amount = round1000(req.body.amount)
   if (!fund) return res.status(404).json({ error: '펀드를 찾을 수 없어요.' })
   if (amount < 1000) return res.status(400).json({ error: '회수는 1,000원 단위로 가능해요.' })
@@ -2298,7 +2255,7 @@ app.post('/api/funds/:fundId/withdraw', auth('investor'), async (req: AuthedRequ
       // 적립률 계산은 서버 로직이라 여기서 하고, DB 에 남기는 것은 전용 RPC 로 보낸다.
       // saveDatabase() 로 원장 전체를 다시 쓰면 버전 충돌 재시도 경로가
       // 그 사이 다른 인스턴스가 쓴 내용을 낡은 스냅샷으로 덮어쓸 수 있다.
-      const settled = db.positions.find((p) => p.userId === user.id && p.fundId === fund.id)
+      const settled = ledger.data.positions.find((p) => p.userId === user.id && p.fundId === fund.id)
       const coupon = result.matched > 0 && settled ? issueCoupon(settled) : undefined
       if (coupon) {
         await runLedgerRpc('issue_coupon', {
@@ -2314,10 +2271,10 @@ app.post('/api/funds/:fundId/withdraw', auth('investor'), async (req: AuthedRequ
       return res.json({ message, matched: result.matched, queued: result.queued, coupon, matches: result.matches })
     } catch (error) { return res.status(400).json({ error: rpcMessage(error) }) }
   }
-  const position = db.positions.find((p) => p.userId === user.id && p.fundId === fund.id)
+  const position = ledger.data.positions.find((p) => p.userId === user.id && p.fundId === fund.id)
   if (!position) return res.status(400).json({ error: '보유한 투자금이 없어요.' })
-  if (fund.status === 'trading' && db.orders.some((order) => order.userId === user.id && order.fundId === fund.id && order.type === 'buy' && order.remaining > 0)) return res.status(400).json({ error: '이 펀드의 투자 예약을 먼저 취소하거나 체결해주세요.' })
-  const alreadySelling = db.orders.filter((o) => o.userId === user.id && o.fundId === fund.id && o.type === 'sell' && o.remaining > 0).reduce((sum, o) => sum + o.remaining, 0)
+  if (fund.status === 'trading' && ledger.data.orders.some((order) => order.userId === user.id && order.fundId === fund.id && order.type === 'buy' && order.remaining > 0)) return res.status(400).json({ error: '이 펀드의 투자 예약을 먼저 취소하거나 체결해주세요.' })
+  const alreadySelling = ledger.data.orders.filter((o) => o.userId === user.id && o.fundId === fund.id && o.type === 'sell' && o.remaining > 0).reduce((sum, o) => sum + o.remaining, 0)
   if (position.amount - alreadySelling < amount) return res.status(400).json({ error: '주문 가능한 투자금보다 큰 금액이에요.' })
   if (fund.status === 'funding') {
     // 모금 중 회수는 그 자리에서 확정되므로 지금까지 쌓인 혜택도 함께 정산한다.
@@ -2330,7 +2287,7 @@ app.post('/api/funds/:fundId/withdraw', auth('investor'), async (req: AuthedRequ
     return res.json({ message: `${amount.toLocaleString()}원을 바로 회수했어요.`, matched: amount, queued: 0, coupon })
   }
   const order: Order = { id: id('order'), userId: user.id, fundId: fund.id, type: 'sell', originalAmount: amount, remaining: amount, status: 'open', createdAt: now() }
-  db.orders.push(order)
+  ledger.data.orders.push(order)
   const matches = matchOrders(fund.id)
   const matched = amount - order.remaining
   // 예약 거래에서는 사는 사람이 나타나야 회수가 성립한다. 체결 전에 쿠폰을 내주면
@@ -2341,7 +2298,7 @@ app.post('/api/funds/:fundId/withdraw', auth('investor'), async (req: AuthedRequ
 })
 
 app.post('/api/positions/:positionId/coupon', auth('investor'), async (req: AuthedRequest, res) => {
-  const position = db.positions.find((p) => p.id === req.params.positionId && p.userId === req.user!.id)
+  const position = ledger.data.positions.find((p) => p.id === req.params.positionId && p.userId === req.user!.id)
   if (!position) return res.status(404).json({ error: '투자 내역을 찾을 수 없어요.' })
   const coupon = issueCoupon(position)
   if (!coupon) return res.status(400).json({ error: '쿠폰은 할인율 10%부터 발급할 수 있어요.' })
@@ -2355,8 +2312,8 @@ app.get('/api/market/rules', (_req, res) => {
   sweepExchange()
   res.json({
     rules: EXCHANGE_RULES,
-    categories: [...new Set(db.restaurants.map((item) => item.category))].sort(),
-    regions: [...new Set(db.restaurants.map((item) => item.region))].sort(),
+    categories: [...new Set(ledger.data.restaurants.map((item) => item.category))].sort(),
+    regions: [...new Set(ledger.data.restaurants.map((item) => item.region))].sort(),
     explain: [
       `할인율 차이 ${EXCHANGE_RULES.maxDiscountGap}%p 미만`,
       `최대 할인 금액 차이 ${EXCHANGE_RULES.maxValueRatio}배 이내`,
@@ -2377,7 +2334,7 @@ app.get('/api/market/listings', async (req: AuthedRequest, res) => {
   const onlyMatchable = /^(1|true)$/i.test(String(req.query.matchable || ''))
   const query = String(req.query.q || '').trim().toLocaleLowerCase('ko')
 
-  const listings = db.couponListings
+  const listings = ledger.data.couponListings
     .filter((listing) => listing.status === 'open')
     .map((listing) => listingView(listing, viewer?.id))
     .filter((listing) => {
@@ -2401,16 +2358,16 @@ app.get('/api/market/listings', async (req: AuthedRequest, res) => {
  * 먹투의 모금이 끝난 펀드는 가격이 움직이지 않는다. 1,000원은 언제나 1,000원이고
  * 대신 "누가 먼저 줄을 섰는가"만 남는다. 그래서 승재 프로젝트의 가격·시간 우선
  * 호가창 대신 시간 우선 단일가 대기열로 옮겨 붙였다.
- * 주문 자체는 예전부터 db.orders 에 쌓이고 matchOrders 가 FIFO로 체결해왔는데,
+ * 주문 자체는 예전부터 ledger.data.orders 에 쌓이고 matchOrders 가 FIFO로 체결해왔는데,
  * 화면에서 볼 방법이 없어서 "예약 거래장"이 사라진 것처럼 보였다. 이 API가 그 창이다.
  */
 app.get('/api/market/orderbook', async (req: AuthedRequest, res) => {
   const viewer = await userFromAuthorization(req.headers.authorization).catch(() => undefined)
   const wanted = typeof req.query.fundId === 'string' ? req.query.fundId : undefined
-  const funds = db.funds.filter((fund) => fund.status === 'trading' && (!wanted || fund.id === wanted))
+  const funds = ledger.data.funds.filter((fund) => fund.status === 'trading' && (!wanted || fund.id === wanted))
   const books = funds.map((fund) => {
-    const restaurant = db.restaurants.find((item) => item.id === fund.restaurantId)
-    const open = db.orders
+    const restaurant = ledger.data.restaurants.find((item) => item.id === fund.restaurantId)
+    const open = ledger.data.orders
       .filter((order) => order.fundId === fund.id && order.remaining > 0 && ['open', 'partial'].includes(order.status))
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
     // 대기열은 익명이다. 누가 얼마를 걸었는지가 아니라 내 앞에 얼마가 있는지만 알려준다.
@@ -2446,7 +2403,7 @@ app.get('/api/market/orderbook', async (req: AuthedRequest, res) => {
       sellQueue,
       buyTotal: buyQueue.reduce((sum, item) => sum + item.amount, 0),
       sellTotal: sellQueue.reduce((sum, item) => sum + item.amount, 0),
-      myPosition: viewer ? db.positions.find((item) => item.userId === viewer.id && item.fundId === fund.id)?.amount ?? 0 : 0,
+      myPosition: viewer ? ledger.data.positions.find((item) => item.userId === viewer.id && item.fundId === fund.id)?.amount ?? 0 : 0,
     }
   })
   res.json({
@@ -2467,7 +2424,7 @@ const SUPPORT_TYPE_LABELS: Record<string, string> = {
 }
 
 app.get('/api/support/requests', auth(), (req: AuthedRequest, res) => {
-  const mine = (db.supportRequests || []).filter((item) => item.userId === req.user!.id)
+  const mine = (ledger.data.supportRequests || []).filter((item) => item.userId === req.user!.id)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   res.json({ requests: mine, types: SUPPORT_TYPES.map((type) => ({ id: type, label: SUPPORT_TYPE_LABELS[type] })) })
 })
@@ -2480,7 +2437,7 @@ app.post('/api/support/requests', auth(), async (req: AuthedRequest, res) => {
   if (!SUPPORT_TYPES.includes(type as typeof SUPPORT_TYPES[number])) return res.status(400).json({ error: '문의 유형을 다시 선택해주세요.' })
   if (subject.length < 3 || subject.length > 100) return res.status(400).json({ error: '제목은 3자 이상 100자 이하로 입력해주세요.' })
   if (description.length < 10 || description.length > 2000) return res.status(400).json({ error: '내용은 10자 이상 2,000자 이하로 입력해주세요.' })
-  const restaurantId = typeof body.restaurantId === 'string' && db.restaurants.some((item) => item.id === body.restaurantId)
+  const restaurantId = typeof body.restaurantId === 'string' && ledger.data.restaurants.some((item) => item.id === body.restaurantId)
     ? body.restaurantId : undefined
   const request: SupportRequest = {
     id: id('support'), userId: req.user!.id, userName: req.user!.name, type,
@@ -2488,8 +2445,8 @@ app.post('/api/support/requests', auth(), async (req: AuthedRequest, res) => {
     priority: type === 'investment' || type === 'account' ? 'high' : 'normal',
     status: 'received', createdAt: now(),
   }
-  db.supportRequests ??= []
-  db.supportRequests.push(request)
+  ledger.data.supportRequests ??= []
+  ledger.data.supportRequests.push(request)
   pushNotification(req.user!.id, 'support', '문의를 접수했어요',
     `“${request.subject}” 문의가 접수됐어요. 영업일 기준 1~2일 안에 답변드릴게요.`, '/support')
   audit(req.user!.id, 'support.created', 'support', request.id, `${SUPPORT_TYPE_LABELS[type]} 문의 접수 · ${request.subject}`)
@@ -2500,17 +2457,17 @@ app.post('/api/support/requests', auth(), async (req: AuthedRequest, res) => {
 app.get('/api/market/mine', auth(), (req: AuthedRequest, res) => {
   sweepExchange()
   const me = req.user!
-  const myListings = db.couponListings
+  const myListings = ledger.data.couponListings
     .filter((listing) => listing.userId === me.id && ['open', 'completed', 'cancelled', 'expired'].includes(listing.status))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     .slice(0, 30)
     .map((listing) => ({
       ...listingView(listing, me.id),
-      offers: db.couponOffers
+      offers: ledger.data.couponOffers
         .filter((offer) => offer.listingId === listing.id && offer.status === 'pending')
         .map((offer) => {
-          const offered = db.coupons.find((item) => item.id === offer.offerCouponId)
-          const wanted = db.coupons.find((item) => item.id === listing.couponId)
+          const offered = ledger.data.coupons.find((item) => item.id === offer.offerCouponId)
+          const wanted = ledger.data.coupons.find((item) => item.id === listing.couponId)
           const check = offered && wanted
             ? checkSwap({ listing, wanted, offered, offeredRestaurant: restaurantOf(offered), offerUserId: offer.offerUserId })
             : { ok: false, issues: [{ code: 'gone', message: '쿠폰을 찾을 수 없어요.' }] }
@@ -2518,13 +2475,13 @@ app.get('/api/market/mine', auth(), (req: AuthedRequest, res) => {
         }),
     }))
 
-  const sentOffers = db.couponOffers
+  const sentOffers = ledger.data.couponOffers
     .filter((offer) => offer.offerUserId === me.id)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     .slice(0, 30)
     .map((offer) => {
-      const listing = db.couponListings.find((item) => item.id === offer.listingId)
-      const offered = db.coupons.find((item) => item.id === offer.offerCouponId)
+      const listing = ledger.data.couponListings.find((item) => item.id === offer.listingId)
+      const offered = ledger.data.coupons.find((item) => item.id === offer.offerCouponId)
       return {
         ...offer,
         listing: listing && listingView(listing, me.id),
@@ -2533,7 +2490,7 @@ app.get('/api/market/mine', auth(), (req: AuthedRequest, res) => {
       }
     })
 
-  const trades = db.couponTrades
+  const trades = ledger.data.couponTrades
     .filter((trade) => trade.listerUserId === me.id || trade.takerUserId === me.id)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     .slice(0, 30)
@@ -2544,8 +2501,8 @@ app.get('/api/market/mine', auth(), (req: AuthedRequest, res) => {
       return {
         id: trade.id, createdAt: trade.createdAt, mode: trade.mode,
         counterpartyName: userName(iAmLister ? trade.takerUserId : trade.listerUserId),
-        gave: db.coupons.find((item) => item.id === gaveId),
-        got: db.coupons.find((item) => item.id === gotId),
+        gave: ledger.data.coupons.find((item) => item.id === gaveId),
+        got: ledger.data.coupons.find((item) => item.id === gotId),
       }
     })
 
@@ -2558,18 +2515,18 @@ app.post('/api/coupons/:couponId/list', auth(), async (req: AuthedRequest, res) 
   if (!rateLimit(`list:${me.id}`, LIMITS.couponList, 60_000)) return res.status(429).json({ error: '잠시 후 다시 시도해주세요.' })
   const result = await withExchangeLock(async () => {
     sweepExchange()
-    const coupon = db.coupons.find((item) => item.id === req.params.couponId && item.userId === me.id)
+    const coupon = ledger.data.coupons.find((item) => item.id === req.params.couponId && item.userId === me.id)
     if (!coupon) return { status: 404, body: { error: '교환할 수 있는 쿠폰을 찾지 못했어요.' } }
     const blockers = couponUsable(coupon)
     if (blockers.length) return { status: 400, body: { error: blockers[0].message, issues: blockers } }
 
-    const open = db.couponListings.filter((item) => item.userId === me.id && item.status === 'open').length
+    const open = ledger.data.couponListings.filter((item) => item.userId === me.id && item.status === 'open').length
     if (open >= EXCHANGE_RULES.maxOpenListingsPerUser) {
       return { status: 400, body: { error: `동시에 올릴 수 있는 교환은 ${EXCHANGE_RULES.maxOpenListingsPerUser}개까지예요.` } }
     }
 
-    const categories = [...new Set(db.restaurants.map((item) => item.category))]
-    const regions = [...new Set(db.restaurants.map((item) => item.region))]
+    const categories = [...new Set(ledger.data.restaurants.map((item) => item.category))]
+    const regions = [...new Set(ledger.data.restaurants.map((item) => item.region))]
     const listing: CouponListing = {
       id: id('listing'), userId: me.id, couponId: coupon.id,
       wantedCategories: normalizePreferences(req.body.wantedCategories ?? req.body.wantedCategory, categories),
@@ -2589,12 +2546,12 @@ app.post('/api/coupons/:couponId/list', auth(), async (req: AuthedRequest, res) 
           p_min_discount: listing.minDiscount, p_auto_accept: listing.autoAccept, p_note: listing.note,
         })
         changed()
-        const saved = db.couponListings.find((item) => item.id === created.listingId)
+        const saved = ledger.data.couponListings.find((item) => item.id === created.listingId)
         return { status: 200, body: { message: '쿠폰 교환장에 등록했어요.', listing: saved && listingView(saved, me.id) } }
       } catch (error) { return { status: 400, body: { error: rpcMessage(error) } } }
     }
     coupon.status = 'listed'
-    db.couponListings.push(listing)
+    ledger.data.couponListings.push(listing)
     audit(me.id, 'coupon.list', 'listing', listing.id, `${coupon.title} 교환장 등록`)
     await saveDatabase(); changed()
     return { status: 200, body: { message: '쿠폰 교환장에 등록했어요.', listing: listingView(listing, me.id) } }
@@ -2607,10 +2564,10 @@ app.patch('/api/listings/:listingId', auth(), async (req: AuthedRequest, res) =>
   const me = req.user!
   const result = await withExchangeLock(async () => {
     sweepExchange()
-    const listing = db.couponListings.find((item) => item.id === req.params.listingId && item.userId === me.id && item.status === 'open')
+    const listing = ledger.data.couponListings.find((item) => item.id === req.params.listingId && item.userId === me.id && item.status === 'open')
     if (!listing) return { status: 404, body: { error: '수정할 수 있는 교환 등록을 찾지 못했어요.' } }
-    const categories = [...new Set(db.restaurants.map((item) => item.category))]
-    const regions = [...new Set(db.restaurants.map((item) => item.region))]
+    const categories = [...new Set(ledger.data.restaurants.map((item) => item.category))]
+    const regions = [...new Set(ledger.data.restaurants.map((item) => item.region))]
     if (req.body.wantedCategories !== undefined) listing.wantedCategories = normalizePreferences(req.body.wantedCategories, categories)
     if (req.body.wantedRegions !== undefined) listing.wantedRegions = normalizePreferences(req.body.wantedRegions, regions)
     if (req.body.minDiscount !== undefined) listing.minDiscount = Math.max(0, Math.min(100, Number(req.body.minDiscount) || 0))
@@ -2628,25 +2585,25 @@ app.delete('/api/listings/:listingId', auth(), async (req: AuthedRequest, res) =
   const me = req.user!
   const result = await withExchangeLock(async () => {
     sweepExchange()
-    const listing = db.couponListings.find((item) => item.id === req.params.listingId && item.userId === me.id && item.status === 'open')
-    const coupon = listing && db.coupons.find((item) => item.id === listing.couponId && item.userId === me.id)
+    const listing = ledger.data.couponListings.find((item) => item.id === req.params.listingId && item.userId === me.id && item.status === 'open')
+    const coupon = listing && ledger.data.coupons.find((item) => item.id === listing.couponId && item.userId === me.id)
     if (!listing || !coupon) return { status: 404, body: { error: '취소할 수 있는 교환 제안을 찾지 못했어요.' } }
     if (ledgerRpcEnabled) {
       // 매물 마감·쿠폰 반환·걸린 제안 에스크로 해제를 한 트랜잭션으로 처리한다.
       try {
         await runLedgerRpc('cancel_listing', { p_user: me.id, p_listing: listing.id })
         changed()
-        const returned = db.coupons.find((item) => item.id === listing.couponId)
+        const returned = ledger.data.coupons.find((item) => item.id === listing.couponId)
         return { status: 200, body: { message: `${coupon.title} 교환을 취소하고 내 지갑으로 돌려받았어요.`, coupon: returned && couponView(returned) } }
       } catch (error) { return { status: 400, body: { error: rpcMessage(error) } } }
     }
     listing.status = 'cancelled'
     coupon.status = daysLeft(coupon.expiresAt) > 0 ? 'available' : 'expired'
-    for (const offer of db.couponOffers) {
+    for (const offer of ledger.data.couponOffers) {
       if (offer.listingId !== listing.id || offer.status !== 'pending') continue
       offer.status = 'declined'
       offer.resolvedAt = now()
-      const held = db.coupons.find((item) => item.id === offer.offerCouponId)
+      const held = ledger.data.coupons.find((item) => item.id === offer.offerCouponId)
       if (held && held.status === 'offered') held.status = 'available'
       pushNotification(offer.offerUserId, 'offer_declined', '교환 등록이 내려갔어요',
         `${coupon.title} 매물이 취소되어 걸어둔 쿠폰을 지갑으로 돌려드렸어요.`, '/market')
@@ -2664,10 +2621,10 @@ app.post('/api/listings/:listingId/swap', auth(), async (req: AuthedRequest, res
   if (!rateLimit(`swap:${me.id}`, LIMITS.swap, 60_000)) return res.status(429).json({ error: '잠시 후 다시 시도해주세요.' })
   const result = await withExchangeLock(async () => {
     sweepExchange()
-    const listing = db.couponListings.find((item) => item.id === req.params.listingId && item.status === 'open')
+    const listing = ledger.data.couponListings.find((item) => item.id === req.params.listingId && item.status === 'open')
     if (!listing) return { status: 404, body: { error: '이미 마감된 교환 등록이에요.' } }
-    const wanted = db.coupons.find((item) => item.id === listing.couponId)
-    const offered = db.coupons.find((item) => item.id === String(req.body.couponId || '') && item.userId === me.id)
+    const wanted = ledger.data.coupons.find((item) => item.id === listing.couponId)
+    const offered = ledger.data.coupons.find((item) => item.id === String(req.body.couponId || '') && item.userId === me.id)
     if (!wanted || !offered) return { status: 400, body: { error: '교환할 쿠폰을 찾지 못했어요.' } }
     if (!listing.autoAccept) {
       return { status: 409, body: { error: '이 매물은 등록자 승인이 필요해요. 교환 제안을 보내주세요.', requiresOffer: true } }
@@ -2681,8 +2638,8 @@ app.post('/api/listings/:listingId/swap', auth(), async (req: AuthedRequest, res
         const done = await runLedgerRpc<{ tradeId: string }>('instant_swap', {
           p_user: me.id, p_listing: listing.id, p_coupon: offered.id })
         changed()
-        const settled = db.couponTrades.find((item) => item.id === done.tradeId)
-        const received = db.coupons.find((item) => item.id === wanted.id)
+        const settled = ledger.data.couponTrades.find((item) => item.id === done.tradeId)
+        const received = ledger.data.coupons.find((item) => item.id === wanted.id)
         return { status: 200, body: { message: `${offered.title} → ${wanted.title} 교환이 완료됐어요!`, trade: settled, coupon: received && couponView(received) } }
       } catch (error) { return { status: 400, body: { error: rpcMessage(error) } } }
     }
@@ -2699,23 +2656,23 @@ app.post('/api/listings/:listingId/offers', auth(), async (req: AuthedRequest, r
   if (!rateLimit(`offer:${me.id}`, LIMITS.offer, 60_000)) return res.status(429).json({ error: '잠시 후 다시 시도해주세요.' })
   const result = await withExchangeLock(async () => {
     sweepExchange()
-    const listing = db.couponListings.find((item) => item.id === req.params.listingId && item.status === 'open')
+    const listing = ledger.data.couponListings.find((item) => item.id === req.params.listingId && item.status === 'open')
     if (!listing) return { status: 404, body: { error: '이미 마감된 교환 등록이에요.' } }
-    const wanted = db.coupons.find((item) => item.id === listing.couponId)
-    const offered = db.coupons.find((item) => item.id === String(req.body.couponId || '') && item.userId === me.id)
+    const wanted = ledger.data.coupons.find((item) => item.id === listing.couponId)
+    const offered = ledger.data.coupons.find((item) => item.id === String(req.body.couponId || '') && item.userId === me.id)
     if (!wanted || !offered) return { status: 400, body: { error: '교환할 쿠폰을 찾지 못했어요.' } }
 
     const check = checkSwap({ listing, wanted, offered, offeredRestaurant: restaurantOf(offered), offerUserId: me.id })
     if (!check.ok) return { status: 400, body: { error: check.issues[0].message, issues: check.issues } }
 
-    if (db.couponOffers.some((item) => item.listingId === listing.id && item.offerUserId === me.id && item.status === 'pending')) {
+    if (ledger.data.couponOffers.some((item) => item.listingId === listing.id && item.offerUserId === me.id && item.status === 'pending')) {
       return { status: 409, body: { error: '이미 이 매물에 제안을 보냈어요. 기존 제안을 취소하고 다시 보내주세요.' } }
     }
-    const pendingMine = db.couponOffers.filter((item) => item.offerUserId === me.id && item.status === 'pending').length
+    const pendingMine = ledger.data.couponOffers.filter((item) => item.offerUserId === me.id && item.status === 'pending').length
     if (pendingMine >= EXCHANGE_RULES.maxPendingOffersPerUser) {
       return { status: 400, body: { error: `동시에 보낼 수 있는 제안은 ${EXCHANGE_RULES.maxPendingOffersPerUser}개까지예요.` } }
     }
-    const pendingHere = db.couponOffers.filter((item) => item.listingId === listing.id && item.status === 'pending').length
+    const pendingHere = ledger.data.couponOffers.filter((item) => item.listingId === listing.id && item.status === 'pending').length
     if (pendingHere >= EXCHANGE_RULES.maxOffersPerListing) {
       return { status: 400, body: { error: '이 매물에 제안이 너무 많이 몰렸어요. 잠시 후 다시 시도해주세요.' } }
     }
@@ -2727,7 +2684,7 @@ app.post('/api/listings/:listingId/offers', auth(), async (req: AuthedRequest, r
           const done = await runLedgerRpc<{ tradeId: string }>('instant_swap', {
             p_user: me.id, p_listing: listing.id, p_coupon: offered.id })
           changed()
-          return { status: 200, body: { message: `${offered.title} → ${wanted.title} 교환이 바로 완료됐어요!`, trade: db.couponTrades.find((item) => item.id === done.tradeId), settled: true } }
+          return { status: 200, body: { message: `${offered.title} → ${wanted.title} 교환이 바로 완료됐어요!`, trade: ledger.data.couponTrades.find((item) => item.id === done.tradeId), settled: true } }
         } catch (error) { return { status: 400, body: { error: rpcMessage(error) } } }
       }
       const trade = settleSwap(listing, wanted, offered, me.id, 'instant')
@@ -2743,7 +2700,7 @@ app.post('/api/listings/:listingId/offers', auth(), async (req: AuthedRequest, r
           p_user: me.id, p_listing: listing.id, p_coupon: offered.id,
           p_message: String(req.body.message || '').slice(0, 140) })
         changed()
-        return { status: 201, body: { message: '교환 제안을 보냈어요. 등록자가 수락하면 바로 교환돼요.', offer: db.couponOffers.find((item) => item.id === created.offerId), settled: false } }
+        return { status: 201, body: { message: '교환 제안을 보냈어요. 등록자가 수락하면 바로 교환돼요.', offer: ledger.data.couponOffers.find((item) => item.id === created.offerId), settled: false } }
       } catch (error) { return { status: 400, body: { error: rpcMessage(error) } } }
     }
 
@@ -2752,7 +2709,7 @@ app.post('/api/listings/:listingId/offers', auth(), async (req: AuthedRequest, r
       message: String(req.body.message || '').slice(0, 140), status: 'pending', createdAt: now(),
     }
     offered.status = 'offered'
-    db.couponOffers.push(offer)
+    ledger.data.couponOffers.push(offer)
     audit(me.id, 'coupon.offer', 'listing', listing.id, `${offered.title} 교환 제안`)
     pushNotification(listing.userId, 'offer_received', '새 교환 제안이 왔어요',
       `${me.name}님이 ${offered.discount}% ${offered.title}(으)로 교환을 제안했어요.`, '/market?view=mine')
@@ -2767,21 +2724,21 @@ app.delete('/api/offers/:offerId', auth(), async (req: AuthedRequest, res) => {
   const me = req.user!
   const result = await withExchangeLock(async () => {
     sweepExchange()
-    const offer = db.couponOffers.find((item) => item.id === req.params.offerId && item.offerUserId === me.id && item.status === 'pending')
+    const offer = ledger.data.couponOffers.find((item) => item.id === req.params.offerId && item.offerUserId === me.id && item.status === 'pending')
     if (!offer) return { status: 404, body: { error: '취소할 수 있는 제안을 찾지 못했어요.' } }
     if (ledgerRpcEnabled) {
       try {
         await runLedgerRpc('resolve_offer', { p_user: me.id, p_offer: offer.id, p_action: 'withdrawn' })
         changed()
-        const returned = db.coupons.find((item) => item.id === offer.offerCouponId)
+        const returned = ledger.data.coupons.find((item) => item.id === offer.offerCouponId)
         return { status: 200, body: { message: '교환 제안을 취소하고 쿠폰을 돌려받았어요.', coupon: returned && couponView(returned) } }
       } catch (error) { return { status: 400, body: { error: rpcMessage(error) } } }
     }
     offer.status = 'withdrawn'
     offer.resolvedAt = now()
-    const held = db.coupons.find((item) => item.id === offer.offerCouponId)
+    const held = ledger.data.coupons.find((item) => item.id === offer.offerCouponId)
     if (held && held.status === 'offered') held.status = daysLeft(held.expiresAt) > 0 ? 'available' : 'expired'
-    const listing = db.couponListings.find((item) => item.id === offer.listingId)
+    const listing = ledger.data.couponListings.find((item) => item.id === offer.listingId)
     if (listing) {
       pushNotification(listing.userId, 'offer_withdrawn', '교환 제안이 취소됐어요', `${me.name}님이 보낸 교환 제안을 거두었어요.`, '/my')
     }
@@ -2797,11 +2754,11 @@ app.post('/api/offers/:offerId/accept', auth(), async (req: AuthedRequest, res) 
   const me = req.user!
   const result = await withExchangeLock(async () => {
     sweepExchange()
-    const offer = db.couponOffers.find((item) => item.id === req.params.offerId && item.status === 'pending')
-    const listing = offer && db.couponListings.find((item) => item.id === offer.listingId && item.userId === me.id && item.status === 'open')
+    const offer = ledger.data.couponOffers.find((item) => item.id === req.params.offerId && item.status === 'pending')
+    const listing = offer && ledger.data.couponListings.find((item) => item.id === offer.listingId && item.userId === me.id && item.status === 'open')
     if (!offer || !listing) return { status: 404, body: { error: '수락할 수 있는 제안을 찾지 못했어요.' } }
-    const wanted = db.coupons.find((item) => item.id === listing.couponId)
-    const offered = db.coupons.find((item) => item.id === offer.offerCouponId)
+    const wanted = ledger.data.coupons.find((item) => item.id === listing.couponId)
+    const offered = ledger.data.coupons.find((item) => item.id === offer.offerCouponId)
     if (!wanted || !offered) return { status: 400, body: { error: '교환할 쿠폰을 찾지 못했어요.' } }
     // 제안 이후에 만료되거나 조건이 어긋났을 수 있으니 체결 직전에 다시 본다.
     const check = checkSwap({ listing, wanted, offered, offeredRestaurant: restaurantOf(offered), offerUserId: offer.offerUserId })
@@ -2816,7 +2773,7 @@ app.post('/api/offers/:offerId/accept', auth(), async (req: AuthedRequest, res) 
       try {
         const done = await runLedgerRpc<{ tradeId: string }>('accept_offer', { p_user: me.id, p_offer: offer.id })
         changed()
-        return { status: 200, body: { message: `${userName(offer.offerUserId)}님과 교환을 완료했어요!`, trade: db.couponTrades.find((item) => item.id === done.tradeId) } }
+        return { status: 200, body: { message: `${userName(offer.offerUserId)}님과 교환을 완료했어요!`, trade: ledger.data.couponTrades.find((item) => item.id === done.tradeId) } }
       } catch (error) { return { status: 400, body: { error: rpcMessage(error) } } }
     }
     const trade = settleSwap(listing, wanted, offered, offer.offerUserId, 'offer', offer)
@@ -2831,8 +2788,8 @@ app.post('/api/offers/:offerId/decline', auth(), async (req: AuthedRequest, res)
   const me = req.user!
   const result = await withExchangeLock(async () => {
     sweepExchange()
-    const offer = db.couponOffers.find((item) => item.id === req.params.offerId && item.status === 'pending')
-    const listing = offer && db.couponListings.find((item) => item.id === offer.listingId && item.userId === me.id)
+    const offer = ledger.data.couponOffers.find((item) => item.id === req.params.offerId && item.status === 'pending')
+    const listing = offer && ledger.data.couponListings.find((item) => item.id === offer.listingId && item.userId === me.id)
     if (!offer || !listing) return { status: 404, body: { error: '거절할 수 있는 제안을 찾지 못했어요.' } }
     if (ledgerRpcEnabled) {
       try {
@@ -2843,7 +2800,7 @@ app.post('/api/offers/:offerId/decline', auth(), async (req: AuthedRequest, res)
     }
     offer.status = 'declined'
     offer.resolvedAt = now()
-    const held = db.coupons.find((item) => item.id === offer.offerCouponId)
+    const held = ledger.data.coupons.find((item) => item.id === offer.offerCouponId)
     if (held && held.status === 'offered') held.status = daysLeft(held.expiresAt) > 0 ? 'available' : 'expired'
     pushNotification(offer.offerUserId, 'offer_declined', '교환 제안이 거절됐어요',
       `${me.name}님이 제안을 거절했어요. 걸어둔 쿠폰은 지갑으로 돌아왔어요.`, '/market')
@@ -2859,7 +2816,7 @@ app.post('/api/coupons/:couponId/redeem', auth(), async (req: AuthedRequest, res
   const me = req.user!
   const result = await withExchangeLock(async () => {
     sweepExchange()
-    const coupon = db.coupons.find((item) => item.id === req.params.couponId && item.userId === me.id)
+    const coupon = ledger.data.coupons.find((item) => item.id === req.params.couponId && item.userId === me.id)
     if (!coupon) return { status: 404, body: { error: '쿠폰을 찾지 못했어요.' } }
     if (coupon.status === 'redeeming' && coupon.redeemCode) {
       return { status: 200, body: { message: '이미 발급된 사용 코드예요.', code: coupon.redeemCode, coupon: couponView(coupon) } }
@@ -2868,7 +2825,7 @@ app.post('/api/coupons/:couponId/redeem', auth(), async (req: AuthedRequest, res
     if (blockers.length) return { status: 400, body: { error: blockers[0].message } }
     let code = ''
     do { code = crypto.randomBytes(4).toString('hex').toUpperCase() }
-    while (db.coupons.some((item) => item.redeemCode === code))
+    while (ledger.data.coupons.some((item) => item.redeemCode === code))
     coupon.status = 'redeeming'
     coupon.redeemCode = code
     coupon.redeemRequestedAt = now()
@@ -2893,7 +2850,7 @@ app.post('/api/owner/coupons/verify', auth('owner'), async (req: AuthedRequest, 
     sweepExchange()
     const code = String(req.body.code || '').trim().toUpperCase()
     if (!code) return { status: 400, body: { error: '쿠폰 코드를 입력해주세요.' } }
-    const coupon = db.coupons.find((item) => item.redeemCode === code && item.status === 'redeeming')
+    const coupon = ledger.data.coupons.find((item) => item.redeemCode === code && item.status === 'redeeming')
     if (!coupon) return { status: 404, body: { error: '확인할 수 없는 코드예요. 손님 화면에서 코드를 다시 받아주세요.' } }
     const restaurant = restaurantOf(coupon)
     if (!restaurant || restaurant.ownerId !== me.id) return { status: 403, body: { error: '내 가게에서 쓸 수 있는 쿠폰이 아니에요.' } }
@@ -2902,7 +2859,7 @@ app.post('/api/owner/coupons/verify', auth('owner'), async (req: AuthedRequest, 
     coupon.usedAtRestaurantId = restaurant.id
     coupon.redeemCode = undefined
     coupon.redeemRequestedAt = undefined
-    const fund = coupon.fundId ? db.funds.find((item) => item.id === coupon.fundId) : undefined
+    const fund = coupon.fundId ? ledger.data.funds.find((item) => item.id === coupon.fundId) : undefined
     if (fund) syncCouponLedger(fund.id)
     audit(me.id, 'coupon.redeemed', 'coupon', coupon.id, `${coupon.title} 사용 확인 (최대 ${coupon.maxDiscountWon}원)`)
     pushNotification(coupon.userId, 'coupon_used', '쿠폰이 사용 처리됐어요',
@@ -2918,7 +2875,7 @@ app.post('/api/owner/coupons/verify', auth('owner'), async (req: AuthedRequest, 
 
 app.get('/api/notifications', auth(), (req: AuthedRequest, res) => {
   sweepExchange()
-  const items = db.notifications
+  const items = ledger.data.notifications
     .filter((item) => item.userId === req.user!.id)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     .slice(0, 50)
@@ -2927,7 +2884,7 @@ app.get('/api/notifications', auth(), (req: AuthedRequest, res) => {
 
 app.post('/api/notifications/read', auth(), async (req: AuthedRequest, res) => {
   const ids = Array.isArray(req.body.ids) ? req.body.ids.map(String) : undefined
-  for (const item of db.notifications) {
+  for (const item of ledger.data.notifications) {
     if (item.userId !== req.user!.id) continue
     if (ids && !ids.includes(item.id)) continue
     item.read = true
@@ -2947,7 +2904,7 @@ app.post('/api/data-connections/:sourceId', auth('owner'), async (req: AuthedReq
   if (!catalog) return res.status(404).json({ error: '지원하지 않는 제휴 데이터예요.' })
   if (req.body?.consent !== true) return res.status(400).json({ error: '조회 범위와 목적에 동의해야 연결할 수 있어요.' })
   const at = now()
-  let connection = db.dataConnections.find((item) => item.userId === req.user!.id && item.sourceId === sourceId)
+  let connection = ledger.data.dataConnections.find((item) => item.userId === req.user!.id && item.sourceId === sourceId)
   if (connection) {
     Object.assign(connection, { provider: catalog.provider, status: 'active', consentScope: catalog.scope, recordCount: catalog.recordCount, lastSyncedAt: at })
   } else {
@@ -2955,7 +2912,7 @@ app.post('/api/data-connections/:sourceId', auth('owner'), async (req: AuthedReq
       id: id('connection'), userId: req.user!.id, sourceId, provider: catalog.provider, status: 'active',
       consentScope: catalog.scope, recordCount: catalog.recordCount, connectedAt: at, lastSyncedAt: at,
     } satisfies DataConnection
-    db.dataConnections.push(connection)
+    ledger.data.dataConnections.push(connection)
   }
   audit(req.user!.id, 'data_connection.connected', 'data_connection', connection.id, `${catalog.provider} · ${catalog.scope}`)
   await saveDatabase(); changed()
@@ -2965,7 +2922,7 @@ app.post('/api/data-connections/:sourceId', auth('owner'), async (req: AuthedReq
 
 app.delete('/api/data-connections/:sourceId', auth('owner'), async (req: AuthedRequest, res) => {
   const sourceId = String(req.params.sourceId)
-  const connection = db.dataConnections.find((item) => item.userId === req.user!.id && item.sourceId === sourceId && item.status === 'active')
+  const connection = ledger.data.dataConnections.find((item) => item.userId === req.user!.id && item.sourceId === sourceId && item.status === 'active')
   if (!connection) return res.status(404).json({ error: '활성 연결을 찾지 못했어요.' })
   connection.status = 'revoked'
   connection.lastSyncedAt = now()
@@ -3036,7 +2993,7 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
   const allowedSources = ['business','license','identity','pos','account','card','delivery','tax','customer','lease','debt','staff']
   const declaredSources = Array.isArray(data.connectedSources) ? data.connectedSources.map(String) : []
   const uploadedSources = declaredSources.filter((source) => allowedSources.includes(source) && source !== 'identity' && typeof uploadedDocuments[source] === 'string' && String(uploadedDocuments[source]).trim().length > 0)
-  const partnerSources = db.dataConnections.filter((item) => item.userId === req.user!.id && item.status === 'active').map((item) => item.sourceId)
+  const partnerSources = ledger.data.dataConnections.filter((item) => item.userId === req.user!.id && item.status === 'active').map((item) => item.sourceId)
   const connectedSources = [...new Set([...(data.identityVerified === true ? ['identity'] : []), ...uploadedSources, ...partnerSources])]
   // CSV 본문. 집계에만 쓰고 저장하지 않는다.
   // 이미지·PDF 는 여기로 오지 않는다(문서는 AI 판독 경로가 따로 있다).
@@ -3067,7 +3024,7 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
     ownerUploaded: uploadedSources,
     partnerConnected: partnerSources,
     identityVerified: data.identityVerified === true,
-    partnerConnections: db.dataConnections.filter((item) => item.userId === req.user!.id && item.status === 'active')
+    partnerConnections: ledger.data.dataConnections.filter((item) => item.userId === req.user!.id && item.status === 'active')
       .map((item) => ({ sourceId: item.sourceId, provider: item.provider, consentScope: item.consentScope, lastSyncedAt: item.lastSyncedAt, recordCount: item.recordCount })),
   }
   /*
@@ -3089,7 +3046,7 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
     return matched ? [matched] : []
   })
   const applicationAnalysisIds = new Set(applicationDocuments.map((item) => item.ocrAnalysisId).filter(Boolean))
-  const myAnalyses = db.ocrAnalyses
+  const myAnalyses = ledger.data.ocrAnalyses
     .filter((item) => item.userId === req.user!.id && applicationAnalysisIds.has(item.id))
     .map((analysis) => {
       const document = applicationDocuments.find((item) => item.ocrAnalysisId === analysis.id)
@@ -3129,7 +3086,7 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
    * 어느 가게 것인지 구분할 방법이 없었다.
    */
   const targetRestaurant = typeof data.targetRestaurantId === 'string'
-    ? db.restaurants.find((item) => item.id === data.targetRestaurantId && item.ownerId === req.user!.id)
+    ? ledger.data.restaurants.find((item) => item.id === data.targetRestaurantId && item.ownerId === req.user!.id)
     : undefined
   if (typeof data.targetRestaurantId === 'string' && data.targetRestaurantId && !targetRestaurant) {
     return res.status(400).json({ error: '사장님 가게 목록에서 찾을 수 없는 가게예요. 다시 선택해주세요.' })
@@ -3153,8 +3110,8 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
   // 펀드와 신청을 더하면 안 된다. 승인된 신청은 펀드를 만들기 때문에 한 회차가 두 번 세어진다.
   // (실측: 1회차 승인 뒤 2회차를 내면 '3회차'가 됐다.) 둘 중 큰 값을 지난 회차 수로 본다.
   const previousRounds = Math.max(
-    db.funds.filter((item) => targetRestaurant && item.restaurantId === targetRestaurant.id).length,
-    db.applications.filter((item) => item.userId === req.user!.id && sameBusiness(item)).length,
+    ledger.data.funds.filter((item) => targetRestaurant && item.restaurantId === targetRestaurant.id).length,
+    ledger.data.applications.filter((item) => item.userId === req.user!.id && sameBusiness(item)).length,
   )
   const applicationRound = previousRounds + 1
 
@@ -3314,11 +3271,11 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
   const monthlyDebtPayment = asNumber(measured.monthlyDebtPayment)
   const debtServiceRatio = asNumber(measured.debtServiceToCashflowRatio)
   // 업력은 어느 CSV에도 없다. 사업자등록증 개업일이 붙기 전까지는 등록된 식당 값만 쓴다.
-  const knownRestaurant = db.restaurants.find((item) => item.name === restaurantName)
+  const knownRestaurant = ledger.data.restaurants.find((item) => item.name === restaurantName)
   const operatingYears = asNumber(knownRestaurant?.openedYears)
   const staffTrend = typeof measured.staffTrend === 'string' ? measured.staffTrend : null
   // 상권 성장률은 주소로 매칭한 공개 상권자료에서 가져온다.
-  // 처음 신청하는 사장님은 db.restaurants 에 없으므로 이름 매칭만으로는 항상 미산정이 됐다.
+  // 처음 신청하는 사장님은 ledger.data.restaurants 에 없으므로 이름 매칭만으로는 항상 미산정이 됐다.
   // (시연의 '샘플식당'도 시드에 없어서 상권 지표가 늘 비어 있었다.)
   // findCommercialArea 는 동네·지역 문자열만 보므로 입력한 주소를 그대로 넘겨 찾는다.
   const address = String(data.address || '').trim()
@@ -3493,7 +3450,7 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
   // 35개 지표 · 6개 업종 신용등급. 5요소 상권 위험평가와 함께 낸다.
   // 자료가 없는 지표는 감점 대신 미산정으로 남고 coverage로 드러난다.
   const industry = toIndustry(String(data.industry || data.category || ''))
-  const matchedRestaurant = db.restaurants.find((item) => item.name === restaurantName)
+  const matchedRestaurant = ledger.data.restaurants.find((item) => item.name === restaurantName)
   const creditAssessment = assessCredit(deriveCreditInput({
     industry,
     connectedSources,
@@ -3505,10 +3462,10 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
       areaSalesGrowth: areaMatch.area.spending.localSalesGrowth,
       footTrafficGrowth: areaMatch.area.footTraffic.growthRate,
     },
-    reviews: matchedRestaurant ? db.reviews.filter((review) => review.restaurantId === matchedRestaurant.id) : [],
+    reviews: matchedRestaurant ? ledger.data.reviews.filter((review) => review.restaurantId === matchedRestaurant.id) : [],
   }))
   const riskAssessment = matchedRestaurant
-    ? assessRestaurant(matchedRestaurant, db.funds.find((item) => item.restaurantId === matchedRestaurant.id))
+    ? assessRestaurant(matchedRestaurant, ledger.data.funds.find((item) => item.restaurantId === matchedRestaurant.id))
     : undefined
   const combined = riskAssessment ? combineAssessments(riskAssessment, creditAssessment) : undefined
 
@@ -3609,16 +3566,16 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
    * 남의 신청이나 이미 대체된 건에는 붙이지 않는다.
    */
   const resubmitTarget = typeof data.resubmittedFrom === 'string'
-    ? db.applications.find((item) => item.id === data.resubmittedFrom && item.userId === req.user!.id && !item.supersededBy)
+    ? ledger.data.applications.find((item) => item.id === data.resubmittedFrom && item.userId === req.user!.id && !item.supersededBy)
     : undefined
   if (resubmitTarget) {
     resubmitTarget.supersededBy = application.id
     application.resubmittedFrom = resubmitTarget.id
   }
-  db.applications.push(application)
+  ledger.data.applications.push(application)
   // 문서함에 있는 자료가 이번 신청에 쓰였다는 것을 남긴다. 다음 라운드에 무엇을 다시 썼는지 추적한다.
   const usedDocumentIds = new Set(applicationDocuments.map((item) => item.id))
-  db.documents = (db.documents ?? []).map((item) => (item.userId === req.user!.id && usedDocumentIds.has(item.id) && !item.usedInApplicationIds.includes(application.id)
+  ledger.data.documents = (ledger.data.documents ?? []).map((item) => (item.userId === req.user!.id && usedDocumentIds.has(item.id) && !item.usedInApplicationIds.includes(application.id)
     ? { ...item, usedInApplicationIds: [...item.usedInApplicationIds, application.id] } : item))
   recordConsent(req.user!.id, 'owner_application', applyConsent.documentIds, { resourceType: 'application', resourceId: application.id })
   // 감사 로그는 사장님 화면에 그대로 보인다. 내부 코드값 대신 사람이 읽는 말로 남긴다.
@@ -3643,8 +3600,8 @@ app.get('/api/owner', auth('owner'), async (req: AuthedRequest, res) => {
   if (req.user!.sessionMode === 'demo') {
     // 체험 사장님에게는 샘플 식당 하나를 빌려주고, 변경분은 샌드박스에만 남긴다.
     const sandbox = demoSandbox(req.user!.id, 'owner')
-    const sample = db.restaurants[0]
-    const sampleFund = sample && db.funds.find((item) => item.restaurantId === sample.id)
+    const sample = ledger.data.restaurants[0]
+    const sampleFund = sample && ledger.data.funds.find((item) => item.restaurantId === sample.id)
     return res.json({
       restaurants: sample ? [{ ...sample, salesDisclosure: sandbox.salesDisclosure ?? sample.salesDisclosure }] : [],
       funds: sampleFund ? [sampleFund] : [],
@@ -3659,33 +3616,33 @@ app.get('/api/owner', auth('owner'), async (req: AuthedRequest, res) => {
       demo: { notice: DEMO_NOTICE },
     })
   }
-  const restaurants = db.restaurants.filter((r) => r.ownerId === req.user!.id)
-  const fundIds = db.funds.filter((f) => restaurants.some((r) => r.id === f.restaurantId)).map((f) => f.id)
-  const positions = db.positions.filter((p) => fundIds.includes(p.fundId))
+  const restaurants = ledger.data.restaurants.filter((r) => r.ownerId === req.user!.id)
+  const fundIds = ledger.data.funds.filter((f) => restaurants.some((r) => r.id === f.restaurantId)).map((f) => f.id)
+  const positions = ledger.data.positions.filter((p) => fundIds.includes(p.fundId))
   const auditEvents = await recentAuditEvents(req.user!.id, 30)
-  const ocrAnalyses = db.ocrAnalyses.filter((item) => item.userId === req.user!.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 20)
-  const dataConnections = db.dataConnections.filter((item) => item.userId === req.user!.id && item.status === 'active').map(({ userId: _, ...item }) => item)
+  const ocrAnalyses = ledger.data.ocrAnalyses.filter((item) => item.userId === req.user!.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 20)
+  const dataConnections = ledger.data.dataConnections.filter((item) => item.userId === req.user!.id && item.status === 'active').map(({ userId: _, ...item }) => item)
   // 문서함. 재신청 화면의 "지난번 자료 그대로 쓰기" 재료이고, 교정 통계가 판독 정확도의 실측치다.
-  const documents = (db.documents ?? []).filter((item) => item.userId === req.user!.id)
+  const documents = (ledger.data.documents ?? []).filter((item) => item.userId === req.user!.id)
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 60)
-  res.json({ restaurants, funds: db.funds.filter((f) => fundIds.includes(f.id)), positions, coupons: db.coupons.filter((c) => fundIds.includes(c.fundId || '')), applications: db.applications.filter((a) => a.userId === req.user!.id), auditEvents, ocrAnalyses, documents, documentStats: correctionStats(documents), dataConnections })
+  res.json({ restaurants, funds: ledger.data.funds.filter((f) => fundIds.includes(f.id)), positions, coupons: ledger.data.coupons.filter((c) => fundIds.includes(c.fundId || '')), applications: ledger.data.applications.filter((a) => a.userId === req.user!.id), auditEvents, ocrAnalyses, documents, documentStats: correctionStats(documents), dataConnections })
 })
 
 app.patch('/api/owner/restaurants/:restaurantId/sales-disclosure', auth('owner'), async (req: AuthedRequest, res) => {
-  const restaurant = db.restaurants.find((item) => item.id === req.params.restaurantId && item.ownerId === req.user!.id)
+  const restaurant = ledger.data.restaurants.find((item) => item.id === req.params.restaurantId && item.ownerId === req.user!.id)
   if (!restaurant) return res.status(404).json({ error: '관리할 수 있는 식당이 아니에요.' })
   restaurant.salesDisclosure = Boolean(req.body.public)
   await saveDatabase(); changed()
   res.json({ message: restaurant.salesDisclosure ? '투자자에게 월별 매출 데이터를 공개했어요.' : '월별 매출액을 비공개로 전환했어요. 성장지수만 표시됩니다.', salesDisclosure: restaurant.salesDisclosure })
 })
 app.post('/api/owner/funds/:fundId/dividend', auth('owner'), async (req: AuthedRequest, res) => {
-  const fund = db.funds.find((f) => f.id === req.params.fundId)
-  const restaurant = fund && db.restaurants.find((r) => r.id === fund.restaurantId && r.ownerId === req.user!.id)
+  const fund = ledger.data.funds.find((f) => f.id === req.params.fundId)
+  const restaurant = fund && ledger.data.restaurants.find((r) => r.id === fund.restaurantId && r.ownerId === req.user!.id)
   const discount = Math.max(5, Math.min(30, Number(req.body.discount || 10)))
   if (!fund || !restaurant) return res.status(404).json({ error: '관리할 수 있는 펀드가 아니에요.' })
-  const investors = db.positions.filter((p) => p.fundId === fund.id && p.amount > 0)
+  const investors = ledger.data.positions.filter((p) => p.fundId === fund.id && p.amount > 0)
   for (const position of investors) {
-    db.coupons.push({ id: id('coupon'), userId: position.userId, restaurantId: restaurant.id, fundId: fund.id, title: `${restaurant.name} 식당 감사 쿠폰`, discount, maxDiscountWon: Math.floor(restaurant.maxMenuPrice * discount / 100), type: 'dividend', status: 'available', createdAt: now(), expiresAt: new Date(Date.now() + 60 * 86400000).toISOString() })
+    ledger.data.coupons.push({ id: id('coupon'), userId: position.userId, restaurantId: restaurant.id, fundId: fund.id, title: `${restaurant.name} 식당 감사 쿠폰`, discount, maxDiscountWon: Math.floor(restaurant.maxMenuPrice * discount / 100), type: 'dividend', status: 'available', createdAt: now(), expiresAt: new Date(Date.now() + 60 * 86400000).toISOString() })
   }
   syncCouponLedger(fund.id)
   audit(req.user!.id, 'coupon.dividend_issued', 'fund', fund.id, `${investors.length}명에게 ${discount}% 쿠폰 발행`)
@@ -3787,7 +3744,7 @@ bbox는 0~1000 기준 [x,y,width,height]이며 이미지 전체를 가리키는 
   }
   // 판독은 이미 끝났다. 원장에 남기는 순간만 짧게 잠근다.
   await withWriteLock(() => {
-    db.ocrAnalyses.push(analysis)
+    ledger.data.ocrAnalyses.push(analysis)
     audit(req.user!.id, 'ocr.analyzed', 'ocr_analysis', analysis.id, `${filename} · ${status}`)
   })
   changed()
@@ -3801,7 +3758,7 @@ bbox는 0~1000 기준 [x,y,width,height]이며 이미지 전체를 가리키는 
  * 여기서 어떤 자료인지 정한다. 열 이름은 지표 계산기가 실제로 읽는 신호와 같아서
  * 이미지 판독보다 오히려 정확하다.
  */
-app.post('/api/documents/classify', auth('owner'), (req: AuthedRequest, res) => {
+app.post('/api/documents/classify', auth('owner'), async (req: AuthedRequest, res) => {
   const filename = String(req.body.filename || '').slice(0, 255)
   const headers = Array.isArray(req.body.headers) ? req.body.headers.slice(0, 60).map((item: unknown) => String(item).slice(0, 80)) : []
   const tabular = Boolean(req.body.tabular ?? headers.length > 0)
@@ -3812,7 +3769,7 @@ app.post('/api/documents/classify', auth('owner'), (req: AuthedRequest, res) => 
 /** 문서 원장 목록. 재신청 때 "지난번 자료 그대로 쓰기"의 재료가 된다. */
 function documentsOf(userId: string, sessionMode?: string) {
   if (sessionMode === 'demo') return demoSandbox(userId, 'owner').documents
-  return (db.documents ??= []).filter((item) => item.userId === userId)
+  return (ledger.data.documents ??= []).filter((item) => item.userId === userId)
 }
 
 /**
@@ -3877,8 +3834,8 @@ app.post('/api/owner/documents', auth('owner'), async (req: AuthedRequest, res) 
     sandbox.documents = [document, ...sandbox.documents.filter((item) => item.fileHash !== fileHash)].slice(0, 60)
     return res.json({ message: '체험 문서함에 기록했어요. 이 기록은 저장되지 않습니다.', document, ephemeral: true, demoNotice: DEMO_NOTICE })
   }
-  db.documents ??= []
-  db.documents = [document, ...db.documents.filter((item) => !(item.userId === req.user!.id && item.fileHash === fileHash))]
+  ledger.data.documents ??= []
+  ledger.data.documents = [document, ...ledger.data.documents.filter((item) => !(item.userId === req.user!.id && item.fileHash === fileHash))]
   audit(req.user!.id, existing ? 'document.updated' : 'document.registered', 'owner_document', document.id, `${filename} · ${document.sourceId}`)
   await saveDatabase(); changed()
   res.json({ message: existing ? '문서함의 같은 파일을 갱신했어요.' : '문서함에 기록했어요. 다음 신청에서 다시 쓸 수 있어요.', document })
@@ -3964,7 +3921,7 @@ app.patch('/api/owner/documents/:documentId', auth('owner'), async (req: AuthedR
     sandbox.documents = sandbox.documents.map((item) => (item.id === updated.id ? updated : item))
     return res.json({ message: '체험 문서함에서 확인했어요. 저장되지는 않습니다.', document: updated, ephemeral: true, demoNotice: DEMO_NOTICE })
   }
-  db.documents = (db.documents ?? []).map((item) => (item.id === updated.id ? updated : item))
+  ledger.data.documents = (ledger.data.documents ?? []).map((item) => (item.id === updated.id ? updated : item))
   audit(req.user!.id, 'document.reviewed', 'owner_document', updated.id,
     `${updated.filename} · 확인 ${updated.fields.filter((field) => field.state !== 'ai').length}건 · 수정 ${correctedCount}건`)
   await saveDatabase(); changed()
@@ -3986,7 +3943,7 @@ app.delete('/api/owner/documents/:documentId', auth('owner'), async (req: Authed
     sandbox.documents = sandbox.documents.filter((item) => item.id !== document.id)
     return res.json({ message: '체험 문서함에서 지웠어요.', ephemeral: true, demoNotice: DEMO_NOTICE })
   }
-  db.documents = (db.documents ?? []).filter((item) => item.id !== document.id)
+  ledger.data.documents = (ledger.data.documents ?? []).filter((item) => item.id !== document.id)
   audit(req.user!.id, 'document.deleted', 'owner_document', document.id, document.filename)
   await saveDatabase(); changed()
   res.json({ message: '문서함에서 지웠어요.' })
@@ -4020,7 +3977,7 @@ function enforceInvestmentAdvicePolicy(answer: string) {
   // 투자 판단으로 읽힐 수 있는 문장인지. 식당 이름이 직접 나오는 경우도 포함한다.
   const investmentContext = (sentence: string) =>
     /투자|펀딩|펀드|출자|모금|넣으|수익/.test(sentence)
-    || db.restaurants.some((restaurant) => sentence.includes(restaurant.name))
+    || ledger.data.restaurants.some((restaurant) => sentence.includes(restaurant.name))
   const sentences = answer.split(/(?<=[.!?…])\s+|\n+/)
   const violating = sentences.some((sentence) => investmentContext(sentence) && prohibited.some((pattern) => pattern.test(sentence)))
   return violating ? INVESTMENT_ADVICE_REFUSAL : answer
@@ -4028,9 +3985,9 @@ function enforceInvestmentAdvicePolicy(answer: string) {
 
 function localAiAnswer(question: string) {
   const normalized = question.replace(/\s/g, '').toLowerCase()
-  const restaurant = db.restaurants.find((r) => normalized.includes(r.name.replace(/\s/g, '').toLowerCase()))
+  const restaurant = ledger.data.restaurants.find((r) => normalized.includes(r.name.replace(/\s/g, '').toLowerCase()))
   if (restaurant) {
-    const fund = db.funds.find((f) => f.restaurantId === restaurant.id)!
+    const fund = ledger.data.funds.find((f) => f.restaurantId === restaurant.id)!
     const salesSummary = restaurant.salesDisclosure ? `최근 월매출은 약 ${(restaurant.monthlySales / 10000).toFixed(0)}만원이고` : '월별 매출액은 사장님 선택으로 비공개이며'
     return `${restaurant.name}은 ${restaurant.neighborhood}의 ${restaurant.category} 식당이에요. ${salesSummary} 검증된 매출 성장지수는 ${restaurant.salesGrowth}%, 재방문율은 ${restaurant.repeatRate}%예요. 현재 펀드는 ${(fund.raised / 10000).toLocaleString()}만원이 모였고 최대 ${fund.maxDiscount}% 쿠폰을 설정했어요. ${restaurant.stabilityScore >= 85 ? '운영 안정성이 비교적 높지만' : '성장성은 돋보이지만 운영 변동성도 있어'} 투자 기간과 실제 방문 가능성을 함께 고려해보세요. 이 안내는 투자 권유가 아니에요.`
   }
@@ -4089,9 +4046,9 @@ function consultationAccount(user?: SessionUser): ConsultationAccount | undefine
       favorites: state.favoriteRestaurantIds.length,
     }
   }
-  const positions = db.positions.filter((item) => item.userId === user.id && item.amount > 0)
-  const coupons = db.coupons.filter((item) => item.userId === user.id)
-  const openOrders = db.orders.filter((item) => item.userId === user.id && item.remaining > 0 && ['open', 'partial'].includes(item.status))
+  const positions = ledger.data.positions.filter((item) => item.userId === user.id && item.amount > 0)
+  const coupons = ledger.data.coupons.filter((item) => item.userId === user.id)
+  const openOrders = ledger.data.orders.filter((item) => item.userId === user.id && item.remaining > 0 && ['open', 'partial'].includes(item.status))
   return {
     role: user.role,
     cash: user.cash,
@@ -4102,11 +4059,11 @@ function consultationAccount(user?: SessionUser): ConsultationAccount | undefine
     openOrders: openOrders.length,
     buyWaiting: openOrders.filter((item) => item.type === 'buy').reduce((sum, item) => sum + item.remaining, 0),
     sellWaiting: openOrders.filter((item) => item.type === 'sell').reduce((sum, item) => sum + item.remaining, 0),
-    openListings: db.couponListings.filter((item) => item.userId === user.id && item.status === 'open').length,
-    offersReceived: db.couponOffers.filter((offer) => offer.status === 'pending' && db.couponListings.some((listing) => listing.id === offer.listingId && listing.userId === user.id)).length,
-    offersSent: db.couponOffers.filter((offer) => offer.offerUserId === user.id && offer.status === 'pending').length,
-    unreadNotifications: db.notifications.filter((item) => item.userId === user.id && !item.read).length,
-    favorites: db.favorites.filter((item) => item.userId === user.id).length,
+    openListings: ledger.data.couponListings.filter((item) => item.userId === user.id && item.status === 'open').length,
+    offersReceived: ledger.data.couponOffers.filter((offer) => offer.status === 'pending' && ledger.data.couponListings.some((listing) => listing.id === offer.listingId && listing.userId === user.id)).length,
+    offersSent: ledger.data.couponOffers.filter((offer) => offer.offerUserId === user.id && offer.status === 'pending').length,
+    unreadNotifications: ledger.data.notifications.filter((item) => item.userId === user.id && !item.read).length,
+    favorites: ledger.data.favorites.filter((item) => item.userId === user.id).length,
   }
 }
 
@@ -4168,14 +4125,14 @@ function ownerLedgerFor(user?: SessionUser): OwnerLedger | undefined {
   // 상담 챗봇은 늘 원장에서 먼저 나오는 가게 수치만 답했고,
   // 사장님은 다른 가게가 빠졌다는 사실조차 알 수 없었다.
   const restaurants = user.sessionMode === 'demo'
-    ? db.restaurants.slice(0, 1)
-    : db.restaurants.filter((item) => item.ownerId === user.id)
+    ? ledger.data.restaurants.slice(0, 1)
+    : ledger.data.restaurants.filter((item) => item.ownerId === user.id)
   if (!restaurants.length) return undefined
   const stores = restaurants.map((restaurant) => {
     // 한 가게에 라운드가 여러 개면 진행 중인 라운드를 먼저 본다. 마이페이지와 같은 규칙.
-    const fund = db.funds.filter((item) => item.restaurantId === restaurant.id)
+    const fund = ledger.data.funds.filter((item) => item.restaurantId === restaurant.id)
       .sort((a, b) => Number(a.status === 'closed') - Number(b.status === 'closed') || b.round - a.round)[0]
-    const coupons = db.coupons.filter((item) => item.restaurantId === restaurant.id)
+    const coupons = ledger.data.coupons.filter((item) => item.restaurantId === restaurant.id)
     return {
       restaurantName: restaurant.name,
       fundStatus: fund?.status,
@@ -4192,12 +4149,12 @@ function ownerLedgerFor(user?: SessionUser): OwnerLedger | undefined {
       salesDisclosure: Boolean(restaurant.salesDisclosure),
     }
   })
-  const application = [...db.applications].reverse().find((item) => item.userId === user.id)
+  const application = [...ledger.data.applications].reverse().find((item) => item.userId === user.id)
   return {
     stores,
     applicationStatus: application?.status,
-    unreadNotifications: db.notifications.filter((item) => item.userId === user.id && !item.read).length,
-    openSupport: (db.supportRequests || []).filter((item) => item.userId === user.id && !['answered', 'closed'].includes(item.status)).length,
+    unreadNotifications: ledger.data.notifications.filter((item) => item.userId === user.id && !item.read).length,
+    openSupport: (ledger.data.supportRequests || []).filter((item) => item.userId === user.id && !['answered', 'closed'].includes(item.status)).length,
   }
 }
 
@@ -4290,15 +4247,15 @@ app.get('/api/credit/model', (_req, res) => {
  * 외부 AI가 연결돼 있으면 생성형 답변을, 아니면 같은 근거로 규칙 기반 리포트를 낸다.
  */
 app.post('/api/ai/management-credit-diagnosis', auth('owner'), async (req: AuthedRequest, res) => {
-  const owned = db.restaurants.filter((item) => item.ownerId === req.user!.id)
+  const owned = ledger.data.restaurants.filter((item) => item.ownerId === req.user!.id)
   const restaurant = (typeof req.body?.restaurantId === 'string' && owned.find((item) => item.id === req.body.restaurantId)) || owned[0]
-  const application = [...db.applications].reverse().find((item) => item.userId === req.user!.id)
+  const application = [...ledger.data.applications].reverse().find((item) => item.userId === req.user!.id)
   if (!restaurant && !application) {
     return res.status(409).json({ error: '진단할 자료가 아직 없어요. 사장님 센터에서 펀딩 신청을 먼저 진행해주세요.' })
   }
 
-  const fund = restaurant ? db.funds.find((item) => item.restaurantId === restaurant.id) : undefined
-  const connections = db.dataConnections.filter((item) => item.userId === req.user!.id)
+  const fund = restaurant ? ledger.data.funds.find((item) => item.restaurantId === restaurant.id) : undefined
+  const connections = ledger.data.dataConnections.filter((item) => item.userId === req.user!.id)
   // 신용등급을 다시 계산할 때는 화면용으로 추린 값이 아니라 전체 집계값을 써야 한다.
   // (예전 심사 기록에는 measuredMetrics 가 없으므로 derivedMetrics 로 되돌아간다.)
   const derivedMetrics = (application?.data?.measuredMetrics
@@ -4319,7 +4276,7 @@ app.post('/api/ai/management-credit-diagnosis', auth('owner'), async (req: Authe
       areaSalesGrowth: located.area.spending.localSalesGrowth,
       footTrafficGrowth: located.area.footTraffic.growthRate,
     },
-    reviews: restaurant ? db.reviews.filter((review) => review.restaurantId === restaurant.id) : [],
+    reviews: restaurant ? ledger.data.reviews.filter((review) => review.restaurantId === restaurant.id) : [],
   }))
   const risk = restaurant ? assessRestaurant(restaurant, fund) : undefined
   const combined = risk ? combineAssessments(risk, credit) : undefined
@@ -4450,14 +4407,14 @@ function safeAdvisoryText(values: string[]) {
  */
 app.post('/api/ai/owner-report', auth('owner'), async (req: AuthedRequest, res) => {
   const demo = req.user!.sessionMode === 'demo'
-  const owned = demo ? db.restaurants.slice(0, 1) : db.restaurants.filter((item) => item.ownerId === req.user!.id)
+  const owned = demo ? ledger.data.restaurants.slice(0, 1) : ledger.data.restaurants.filter((item) => item.ownerId === req.user!.id)
   const restaurant = (typeof req.body?.restaurantId === 'string' && owned.find((item) => item.id === req.body.restaurantId)) || owned[0]
   if (!restaurant) return res.status(409).json({ error: '아직 등록된 가게가 없어요. 사장님 센터에서 펀딩 신청을 먼저 진행해주세요.' })
 
-  const fund = db.funds.find((item) => item.restaurantId === restaurant.id)
+  const fund = ledger.data.funds.find((item) => item.restaurantId === restaurant.id)
   const connections = demo
     ? demoSandbox(req.user!.id, 'owner').connections
-    : db.dataConnections.filter((item) => item.userId === req.user!.id)
+    : ledger.data.dataConnections.filter((item) => item.userId === req.user!.id)
   const located = findCommercialArea(restaurant)
   const facts = buildOwnerReportFacts({
     restaurant, fund,
@@ -4512,7 +4469,7 @@ app.post('/api/ai/owner-report', auth('owner'), async (req: AuthedRequest, res) 
  */
 app.post('/api/ai/anomaly-detection', auth('owner'), async (req: AuthedRequest, res) => {
   const demo = req.user!.sessionMode === 'demo'
-  const owned = demo ? db.restaurants.slice(0, 1) : db.restaurants.filter((item) => item.ownerId === req.user!.id)
+  const owned = demo ? ledger.data.restaurants.slice(0, 1) : ledger.data.restaurants.filter((item) => item.ownerId === req.user!.id)
   const restaurant = (typeof req.body?.restaurantId === 'string' && owned.find((item) => item.id === req.body.restaurantId)) || owned[0]
   if (!restaurant) return res.status(409).json({ error: '이상탐지할 가게가 없어요. 사장님 센터에서 펀딩 등록을 먼저 진행해주세요.' })
 
@@ -4658,16 +4615,16 @@ app.post('/api/ai/chat', async (req: AuthedRequest, res) => {
   const askedRole: Role = asker?.role === 'owner' ? 'owner' : req.body.role === 'owner' ? 'owner' : 'investor'
   const ownerIntent = /(펀딩|펀드)(등록|신청|개설|모집)|사장님|소상공인|자료업로드|서류제출|심사접수|매출공개|영업신고|사업자등록/.test(normalizedQuestion)
   const role: Role = ownerIntent ? 'owner' : askedRole
-  const requestedRestaurant = typeof req.body.restaurantId === 'string' ? db.restaurants.find((item) => item.id === req.body.restaurantId) : undefined
-  const mentionedRestaurant = db.restaurants.find((item) => normalizedQuestion.includes(item.name.replace(/\s/g, '').toLocaleLowerCase('ko')))
+  const requestedRestaurant = typeof req.body.restaurantId === 'string' ? ledger.data.restaurants.find((item) => item.id === req.body.restaurantId) : undefined
+  const mentionedRestaurant = ledger.data.restaurants.find((item) => normalizedQuestion.includes(item.name.replace(/\s/g, '').toLocaleLowerCase('ko')))
   // 사장님이 "내 심사 어떻게 돼가?"처럼 가게 이름을 빼고 물어도 자기 가게 기준으로 답해야 한다.
-  const ownRestaurant = asker?.role === 'owner' ? db.restaurants.find((item) => item.ownerId === asker.id) : undefined
+  const ownRestaurant = asker?.role === 'owner' ? ledger.data.restaurants.find((item) => item.ownerId === asker.id) : undefined
   const graphRestaurant = mentionedRestaurant || requestedRestaurant || ownRestaurant
-  const graphFund = graphRestaurant ? db.funds.find((item) => item.restaurantId === graphRestaurant.id) : undefined
-  const askerPosition = asker && graphFund ? db.positions.find((item) => item.userId === asker.id && item.fundId === graphFund.id && item.amount > 0) : undefined
+  const graphFund = graphRestaurant ? ledger.data.funds.find((item) => item.restaurantId === graphRestaurant.id) : undefined
+  const askerPosition = asker && graphFund ? ledger.data.positions.find((item) => item.userId === asker.id && item.fundId === graphFund.id && item.amount > 0) : undefined
   // 심사·신용·제출자료는 해당 사장님 본인 상담에만 붙인다. 투자자나 다른 가게 질문에는 절대 섞지 않는다.
   const ownsGraphRestaurant = Boolean(asker?.role === 'owner' && (!graphRestaurant || graphRestaurant.ownerId === asker.id))
-  const application = ownsGraphRestaurant ? [...db.applications].reverse().find((item) => item.userId === asker!.id) : undefined
+  const application = ownsGraphRestaurant ? [...ledger.data.applications].reverse().find((item) => item.userId === asker!.id) : undefined
   const financialRun = application?.data?.financialVerification as Record<string, any> | undefined
   const knowledgeGraph = buildKnowledgeGraph(role, graphRestaurant, graphFund, {
     assessment: graphRestaurant ? assessRestaurant(graphRestaurant, graphFund) : undefined,
@@ -4712,7 +4669,7 @@ app.post('/api/ai/chat', async (req: AuthedRequest, res) => {
   // 사장님 개인 상황과 공적 지원제도를 같은 그래프에 올린다.
   // 이게 있어야 "지금 내 심사 어디까지 됐어?", "뭐가 부족해?", "정책자금 받을 수 있어?"에
   // 절차 설명이 아니라 실제 현재값으로 답할 수 있다.
-  const ownerConnections = asker?.role === 'owner' ? db.dataConnections.filter((item) => item.userId === asker.id) : []
+  const ownerConnections = asker?.role === 'owner' ? ledger.data.dataConnections.filter((item) => item.userId === asker.id) : []
   const situation = ownsGraphRestaurant
     ? ownerSituation({ application, connections: ownerConnections, restaurant: graphRestaurant, fund: graphFund })
     : undefined
