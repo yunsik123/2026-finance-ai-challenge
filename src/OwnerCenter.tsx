@@ -86,18 +86,6 @@ const uploadOptions: UploadOption[] = [
     samplePdfUrl: '/samples/meoktu-license-sample.pdf',
   },
   {
-    id: 'pos',
-    icon: FileSpreadsheet,
-    title: 'POS 매출 원자료',
-    exact: '최근 12개월 POS 월별 매출 집계표 또는 주문 내역',
-    columns: '확인 항목: 월별 매출액, 주문건수, 결제수단별 금액, 취소환불액',
-    accept: '.png,.jpg,.jpeg,.pdf,.csv,.xlsx',
-    sampleUrl: '/samples/04_pos_sales_summary.png',
-    sampleLabel: '집계표 PNG',
-    sampleAltUrl: '/samples/meoktu-pos-sample.csv',
-    sampleAltLabel: 'CSV 샘플',
-  },
-  {
     id: 'account',
     icon: Landmark,
     title: '사업용 계좌 내역',
@@ -108,6 +96,18 @@ const uploadOptions: UploadOption[] = [
     sampleLabel: '내역서 PNG',
     sampleAltUrl: '/samples/06_business_bank_statement_photo.png',
     sampleAltLabel: '촬영본 PNG',
+  },
+  {
+    id: 'pos',
+    icon: FileSpreadsheet,
+    title: 'POS 매출 원자료',
+    exact: '최근 12개월 POS 월별 매출 집계표 또는 주문 내역',
+    columns: '확인 항목: 월별 매출액, 주문건수, 결제수단별 금액, 취소환불액',
+    accept: '.png,.jpg,.jpeg,.pdf,.csv,.xlsx',
+    sampleUrl: '/samples/04_pos_sales_summary.png',
+    sampleLabel: '집계표 PNG',
+    sampleAltUrl: '/samples/meoktu-pos-sample.csv',
+    sampleAltLabel: 'CSV 샘플',
   },
   {
     id: 'card',
@@ -235,7 +235,7 @@ const sampleProfile: Record<string, string> = {
  */
 type SampleSet = { id: 'clean' | 'rough'; label: string; description: string; overrides?: Record<string, string> }
 const sampleSets: SampleSet[] = [
-  { id: 'clean', label: '가상 서류(PNG) 한번에 올리기', description: '먹투 OCR 테스트용 합성 서류 PNG 10종 및 고객 데이터입니다. 교차검증과 AI 판독이 가능한 예시 자료입니다.' },
+  { id: 'clean', label: '데모자료 한번에 업로드하기', description: '먹투 OCR 테스트용 합성 서류 PNG 10종 및 고객 데이터입니다. 교차검증과 AI 판독이 가능한 예시 자료입니다.' },
   {
     id: 'rough', label: '실제 사장님 자료처럼 보기', description: 'POS는 8개월치만, 계좌에는 대출 입금이 섞이고, 카드는 12개월 전체인 자료입니다. 열 이름도 제각각이라 불일치가 잡힙니다.',
     overrides: {
@@ -436,7 +436,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
   const salesEvidenceMissing = satisfiedSalesEvidence.length === 0
   const guideFor = (sourceId: string): DocumentGuide | undefined => guide?.guides.find((item) => item.sourceId === sourceId)
   /** 자료를 요건 묶음으로 나눈다. 화면도 이 순서로 보여준다. */
-  const groupOrder = ['사업체 확인', '매출 확인', '현금흐름 확인', '추가 자료']
+  const groupOrder = ['사업체 확인', '현금흐름 확인', '매출 확인', '추가 자료']
   const groupedOptions = groupOrder.map((group) => ({
     group,
     options: uploadOptions.filter((option) => (guideFor(option.id)?.group ?? '추가 자료') === group),
@@ -1156,8 +1156,8 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
                   <div className="document-group-head">
                     <h4>{group}</h4>
                     <small>{group === '사업체 확인' ? '두 가지 모두 필요해요'
-                      : group === '매출 확인' ? '아래 중 하나 이상만 있으면 됩니다'
-                        : group === '현금흐름 확인' ? '반드시 필요해요'
+                      : group === '현금흐름 확인' ? '반드시 필요해요'
+                        : group === '매출 확인' ? '아래 중 하나 이상만 있으면 됩니다'
                           : '없어도 접수되지만, 올리면 산정되는 평가 지표가 늘어나요'}</small>
                   </div>
                   {group === '매출 확인' && <SalesEvidenceStatus
@@ -1209,7 +1209,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
                   onClick={() => void fillWithSamples(sampleSets[0])}
                 >
                   <UploadCloud />
-                  {fillingSample ? '가상 자료를 불러오는 중...' : '가상자료 한번에 업로드하기 (PNG 예시 서류)'}
+                  {fillingSample ? '데모 자료를 불러오는 중...' : '데모자료 한번에 업로드하기'}
                 </button>
               </div>
               {/* 부채는 자료보다 답이 먼저다. 대출이 없으면 클릭 한 번으로 끝나고,
