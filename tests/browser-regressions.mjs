@@ -185,9 +185,28 @@ try {
   // 앞 단계를 끝내지 않은 채 뒤 단계 주소를 직접 열면 되돌려보낸다.
   await evaluate('history.pushState({}, "", "/owner/plan"); window.dispatchEvent(new PopStateEvent("popstate"))')
   await waitFor('location.pathname === "/owner/store"', 'direct access to a later step is redirected back')
+  // 데모자료 버튼은 '자료 올리기' 화면에만 있다. 1단계는 직접 채워 넘어간다.
+  await evaluate(`(() => {
+    const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
+    const fill = (name, value) => {
+      const input = document.querySelector(\`[name=\${name}]\`)
+      set.call(input, value)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    fill('restaurantName', '먹투 테스트식당')
+    fill('ownerName', '김테스트')
+    fill('signature', '들기름 고등어 한상')
+    fill('businessNumber', '123-45-67891')
+    fill('licenseNumber', '제2026-테스트-0001호')
+    fill('address', '서울특별시 마포구 테스트로 123, 1층')
+    document.querySelector('.identity-action').click()
+  })()`)
+  await waitFor('Boolean(document.querySelector(".identity-action.verified"))', 'store step filled')
+  assert(await evaluate('document.querySelectorAll(".virtual-data-upload-btn").length === 0'), '데모 버튼은 자료 올리기 화면에만 있어야 합니다')
+  await click('다음')
+  await waitFor('location.pathname === "/owner/upload" && Boolean(document.querySelector(".wizard-step.active .intake-zone"))', 'store step advances to upload step')
   await evaluate('document.querySelector(".virtual-data-upload-btn").click()')
   await waitFor('document.querySelectorAll(".document-upload-card.uploaded").length === 11', 'sample uploads')
-  await waitFor('location.pathname === "/owner/upload" && Boolean(document.querySelector(".wizard-step.active .intake-zone"))', 'sample fill moves to upload step url')
   await click('올린 자료 열어보기')
   await waitFor('Boolean(document.querySelector(".doc-figure img")?.naturalWidth)', 'uploaded image preview')
   assert(await evaluate('fetch(document.querySelector(".doc-figure img").src).then(r => r.ok)'))
@@ -246,28 +265,34 @@ try {
   // 부채는 답을 해야 넘어간다. 샘플이 '대출 있음'으로 채워둔 상태여야 한다.
   await waitFor('Boolean(document.querySelector(".debt-choice button.active"))', 'debt question answered')
 
-  // 판독값 확인은 이 단계의 'AI 자료 분석 결과' 안에 있다. 별도 페이지로 넘기지 않는다.
-  await waitFor('Boolean(document.querySelector(".ai-upload-feedback .ai-ocr-block"))', 'reading review lives inside the AI analysis panel')
-  await waitFor('Boolean(document.querySelector(".ai-ocr-block .reading-tables li"))', 'table summary inside the AI analysis panel')
-  await waitFor('Boolean(document.querySelector(".ai-ocr-block .reading-pending button"))', 'unread documents can be analysed in place')
+  // 판독은 자동이다. 'AI로 읽기' 같은 버튼을 누르지 않아도 사진·PDF 가 읽혀야 한다.
+  await waitFor('document.querySelectorAll(".ai-upload-feedback .analysis-row").length === 11', 'every source has an analysis row')
+  await waitFor('[...document.querySelectorAll(".analysis-row")].filter(row => row.innerText.includes("어떻게 읽었나요?")).length >= 8', 'analysis rows are expandable')
+  await waitFor('[...document.querySelectorAll(".analysis-row .analysis-copy small")].some(item => /판독 확신|합산했어요/.test(item.innerText))', 'documents are read automatically without a button')
+  assert(await evaluate('document.body.innerText.includes("AI로 읽기") === false'), '자동 판독이므로 AI로 읽기 버튼이 없어야 합니다')
+
+  // 자료를 누르면 그 자리에서 '어떻게 읽었는지'가 펼쳐진다.
+  const tableRowIndex = await evaluate('[...document.querySelectorAll(".analysis-row")].findIndex(row => row.innerText.includes("합산했어요"))')
+  assert(tableRowIndex >= 0, '표 자료 요약이 목록에 있어야 합니다')
+  await evaluate(`document.querySelectorAll('.analysis-row')[${tableRowIndex}].querySelector('.analysis-head').click()`)
+  await waitFor('Boolean(document.querySelector(".analysis-row.open .analysis-table .analysis-headers em"))', 'table row expands to show columns')
 
   // '다시 올리기'는 방금 고른 파일을 읽어야 한다.
   // 예전에는 판독 함수가 selectedFiles(상태)에서 파일을 집었는데, 그 상태는 다음 렌더에나
   // 갱신되므로 직전 파일이 잡혔다. 옛 파일을 판독 API로 보내고 결과는 버려서,
   // 화면에는 아무 일도 일어나지 않은 것처럼 보였다. 파일 이름이 실제로 바뀌는지로 확인한다.
-  await evaluate('document.querySelector(".ai-ocr-block .reading-pending button").click()')
-  await waitFor('Boolean(document.querySelector(".ai-ocr-block .reading-card"))', 'a reading card appears after analysis')
-  const readBefore = await evaluate('document.querySelector(".reading-card header small").innerText')
+  const docRowIndex = await evaluate('[...document.querySelectorAll(".analysis-row")].findIndex(row => row.innerText.includes("사업자등록 자료"))')
+  await evaluate(`document.querySelectorAll('.analysis-row')[${docRowIndex}].querySelector('.analysis-head').click()`)
+  await waitFor(`document.querySelectorAll('.analysis-row')[${docRowIndex}].classList.contains('open')`, 'document row expands')
   await evaluate(`(async () => {
     const blob = await fetch('/samples/09_commercial_lease_excerpt.png').then(r => r.blob())
     const transfer = new DataTransfer()
     transfer.items.add(new File([blob], 'reupload-check.png', { type: 'image/png' }))
-    const input = document.querySelector('.reading-card .reading-reupload input')
+    const input = document.querySelectorAll('.analysis-row')[${docRowIndex}].querySelector('.reading-reupload input')
     input.files = transfer.files
     input.dispatchEvent(new Event('change', { bubbles: true }))
   })()`)
-  await waitFor('[...document.querySelectorAll(".reading-card header small")].some(item => item.innerText.includes("reupload-check.png"))', 'reupload analyses the newly chosen file')
-  assert(!readBefore.includes('reupload-check.png'), '재업로드 전에는 새 파일 이름이 없어야 합니다')
+  await waitFor(`document.querySelectorAll('.document-upload-card')[0].innerText.includes('reupload-check.png')`, 'reupload replaces the file in its slot')
 
   // 2 → 3단계 전환. 자료가 모두 있으니 넘어가야 한다.
   await click('다음')

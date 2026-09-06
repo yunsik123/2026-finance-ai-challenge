@@ -17,7 +17,7 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent 
 import { createPortal } from 'react-dom'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
-  ArrowLeft, ArrowRight, BadgeCheck, Banknote, Building2, Check, ChevronRight, Database, Download, Eraser, Eye,
+  ArrowLeft, ArrowRight, BadgeCheck, Banknote, Building2, Check, ChevronDown, ChevronRight, Database, Download, Eraser, Eye,
   FileSpreadsheet, FileText, FolderDown, Landmark, Link2, LockKeyhole, PlugZap, ReceiptText,
   RotateCcw, ShieldCheck, Sparkles, Store, Trash2, TriangleAlert, UploadCloud, UserCheck, Users, X, type LucideIcon,
 } from 'lucide-react'
@@ -390,6 +390,8 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
   const [classifications, setClassifications] = useState<Record<string, DocumentClassification>>({})
   const [documentRecords, setDocumentRecords] = useState<Record<string, OwnerDocument>>({})
   const [analyzingSource, setAnalyzingSource] = useState('')
+  /** 판독에 실패한 칸과 이유. 자동 판독이 같은 파일을 무한히 다시 부르지 않게 한다. */
+  const [analysisFailed, setAnalysisFailed] = useState<Record<string, string>>({})
   const [identityVerified, setIdentityVerified] = useState(false)
   const [result, setResult] = useState<ApplicationResult | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -495,6 +497,23 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
   const placedIds = new Set([...groupedOptions.flatMap((entry) => entry.options.map((option) => option.id)), ...debtOptions.map((option) => option.id)])
   const unplacedOptions = uploadOptions.filter((option) => !placedIds.has(option.id))
   const fundUseTotal = fundUsePlan.reduce((sum, item) => sum + (Number(item.amount) || 0), 0)
+  /**
+   * 아직 안 읽은 사진·PDF. 자동 판독 대기열이다.
+   *
+   * 예전에는 'AI로 읽기' 버튼을 사장님이 직접 눌러야 했다. 읽는 것은 어차피 항상 해야 하는
+   * 일이라 물어볼 이유가 없다. 실패한 칸은 빼서 같은 파일을 무한히 다시 부르지 않게 한다.
+   */
+  const pendingAnalysis = useMemo(() => Object.entries(selectedFiles)
+    .filter(([sourceId, file]) => !ocrResults[sourceId] && !analysisFailed[sourceId]
+      && (kindOf(file) === 'image' || kindOf(file) === 'pdf'))
+    .map(([sourceId]) => sourceId), [selectedFiles, ocrResults, analysisFailed])
+
+  // 한 번에 하나씩. 판독이 끝나면 이 효과가 다시 돌아 다음 것을 집는다.
+  useEffect(() => {
+    if (!owner || analyzingSource || !pendingAnalysis.length) return
+    void analyzeDocument(pendingAnalysis[0])
+  }, [owner, analyzingSource, pendingAnalysis])
+
   /** 판독 결과가 있는 자료. 3단계에서 확인받을 대상이다. */
   const readingSources = useMemo(() => Object.keys(ocrResults), [ocrResults])
   const unreviewedReadings = readingSources.filter((source) => {
@@ -950,6 +969,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
     }
     setOcrResults((current) => { const next = { ...current }; delete next[sourceId]; return next })
     setOcrImages((current) => { const next = { ...current }; delete next[sourceId]; return next })
+    setAnalysisFailed((current) => { const next = { ...current }; delete next[sourceId]; return next })
     try {
       const metadata = await placeFile(sourceId, working)
       if (filesRef.current[sourceId] !== working) return
@@ -992,12 +1012,17 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
       setOcrResults((current) => ({ ...current, [sourceId]: response.analysis }))
       setOcrImages((current) => ({ ...current, [sourceId]: dataUrl }))
       notify(response.message)
+      setAnalysisFailed((current) => { const next = { ...current }; delete next[sourceId]; return next })
       void registerDocument({
         file, sourceId, metadata: documentMetadata[sourceId] || await readDocumentMetadata(file),
         documentType: String((response.analysis.result as Record<string, unknown>)?.documentType || ''),
         ocrAnalysisId: response.analysis.id, fields: response.fields,
       })
-    } catch (error) { notify((error as Error).message) }
+    } catch (error) {
+      // 실패도 화면에 남긴다. 조용히 넘어가면 '왜 안 읽혔는지'를 알 길이 없다.
+      setAnalysisFailed((current) => ({ ...current, [sourceId]: (error as Error).message }))
+      notify((error as Error).message)
+    }
     finally { setAnalyzingSource('') }
   }
 
@@ -1148,17 +1173,10 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
         <fieldset disabled={!owner || submitting || Boolean(fillingSample)}>
           <div className="form-heading"><span>원천데이터 기반 예비심사</span><h2>{stepDefinitions[step].title}</h2><p>{stepDefinitions[step].hint}</p></div>
 
-          {/* 데모 자료 버튼은 어느 단계에서든 닿을 수 있어야 한다.
-              이 버튼은 자료뿐 아니라 1·3단계 입력란까지 함께 채우는데, 2단계 안에만 두었더니
-              1단계를 못 채운 사장님은 여기에 도달할 방법이 없었다(실제 브라우저 검사에서 걸렸다).
-              2단계에서는 화면 맨 위 SamplePack 이 같은 일을 하므로 여기서는 감춘다. */}
-          {owner && <div className="sample-sets">
-            {step !== 1 && <button
-              type="button" className="virtual-data-upload-btn compact"
-              disabled={Boolean(fillingSample)}
-              onClick={() => void fillWithSamples(sampleSets[0])}
-            ><UploadCloud /> {fillingSample ? '데모 자료를 불러오는 중...' : '데모자료 한번에 업로드'}</button>}
-            {uploadedCount > 0 && <button type="button" className="sample-clear" disabled={Boolean(fillingSample)} onClick={clearUploads}><Eraser /> 업로드 비우기</button>}
+          {/* 업로드 비우기는 올린 자료가 있을 때만.
+              데모자료 한번에 업로드 버튼은 2단계(자료 올리기) 화면 안에만 둔다. */}
+          {owner && uploadedCount > 0 && <div className="sample-sets">
+            <button type="button" className="sample-clear" disabled={Boolean(fillingSample)} onClick={clearUploads}><Eraser /> 업로드 비우기</button>
           </div>}
 
           <nav className="wizard-rail" aria-label="신청 단계">
@@ -1274,52 +1292,39 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
                 })}
 
                 {/* AI 자료 분석 결과.
-                    부족한 자료 안내와 'AI가 읽은 값 확인'을 한 곳에서 끝낸다. 예전에는 판독값 확인만
-                    3단계로 따로 떨어져 있어서, 같은 자료를 두 화면에서 두 번 설명하고 있었다. */}
+                    자료마다 한 줄씩 두고, 누르면 그 자리에서 '어떻게 읽었는지'가 펼쳐진다.
+                    예전에는 판독 카드와 표 요약이 이 목록 밑에 따로 쌓여서, 같은 자료를
+                    목록에서 한 번, 카드에서 또 한 번 설명하고 있었다. */}
                 {uploadedCount > 0 && <div className="ai-upload-feedback">
-                  <div className="ai-feedback-header"><Sparkles /><b>AI 자료 분석 결과</b></div>
-                  <div className="ai-feedback-list">
-                    {uploadOptions.map((option) => {
-                      const filled = Boolean(uploadedFiles[option.id]) || connectedIds.has(option.id)
-                      const isRequired = requiredSources.includes(option.id) || salesEvidenceSources.includes(option.id)
-                      return <div className={`ai-feedback-row ${filled ? 'filled' : isRequired ? 'missing-required' : 'missing-optional'}`} key={option.id}>
-                        <span className={`ai-status-dot ${filled ? 'green' : isRequired ? 'red' : 'gray'}`}>{filled ? <Check /> : <TriangleAlert />}</span>
-                        <div>
-                          <b>{option.title}</b>
-                          <small>{filled
-                            ? `✅ 자료가 정상적으로 등록되었습니다.${documentMetadata[option.id]?.rowCount ? ` (${documentMetadata[option.id].rowCount.toLocaleString('ko-KR')}행 확인)` : ''}`
-                            : isRequired
-                              ? `⚠️ 필수 자료가 누락되어 있습니다. ${option.title}을(를) 업로드하거나 기관 연결로 채워주세요.`
-                              : `선택 자료입니다. 올리면 평가 지표가 늘어나 더 정확한 심사가 가능합니다.`
-                          }</small>
-                        </div>
-                      </div>
-                    })}
+                  <div className="ai-feedback-header"><Sparkles /><b>AI 자료 분석 결과</b>
+                    <small>{analyzingSource ? `${labelOf(analyzingSource)}를 읽는 중이에요...` : '자료를 누르면 먹투가 어떻게 읽었는지 볼 수 있어요.'}</small>
+                  </div>
+                  <div className="analysis-list">
+                    {uploadOptions.map((option) => <AnalysisRow
+                      key={option.id}
+                      title={option.title}
+                      file={selectedFiles[option.id]}
+                      connected={connectedIds.has(option.id)}
+                      required={requiredSources.includes(option.id) || salesEvidenceSources.includes(option.id)}
+                      metadata={documentMetadata[option.id]}
+                      analysis={ocrResults[option.id]}
+                      image={ocrImages[option.id]}
+                      record={documentRecords[option.id]}
+                      analyzing={analyzingSource === option.id}
+                      failed={analysisFailed[option.id]}
+                      onConfirmField={(key) => void reviewField(option.id, key, null)}
+                      onCorrectField={(key, value) => void reviewField(option.id, key, value)}
+                      onConfirmAll={() => void confirmAllFields(option.id)}
+                      onReupload={(file) => void reuploadDocument(option.id, file)}
+                      onRetry={() => {
+                        setAnalysisFailed((current) => { const next = { ...current }; delete next[option.id]; return next })
+                      }}
+                      onOpen={() => setOpenedDocument(option.id)}
+                    />)}
                   </div>
                   {missingRequired.length > 0 && <p className="ai-feedback-summary"><ShieldCheck /> 현재 {uploadedCount}개 자료가 등록되었고, 필수 자료 {missingRequired.length}개가 부족합니다. 위 안내를 참고해 추가 업로드해주세요.</p>}
+                  {missingRequired.length === 0 && !salesEvidenceMissing && unreviewedReadings.length > 0 && <p className="ai-feedback-summary"><TriangleAlert /> 필수 자료는 다 모였어요. AI가 읽은 값 중 {unreviewedReadings.length}건만 맞는지 확인해주세요. 위에서 자료를 눌러 펼치면 됩니다.</p>}
                   {missingRequired.length === 0 && !salesEvidenceMissing && unreviewedReadings.length === 0 && <p className="ai-feedback-summary complete"><Check /> 필수 자료가 모두 확보되었습니다. 다음 단계로 진행할 수 있어요!</p>}
-
-                  <div className="ai-ocr-block">
-                    <div className="ai-ocr-intro">
-                      <b>AI가 서류에서 읽은 값</b>
-                      <p>잘 읽었으면 확인을 눌러주세요. 값이 이상하면 그 자리에서 고치거나 <b>다시 올리기</b>로 더 잘 나온 사진을 넣으면 됩니다. 확인·수정 결과는 다음 판독을 더 정확하게 만드는 데도 쓰입니다.</p>
-                    </div>
-                    <ReadingConfirm
-                      sources={readingSources}
-                      ocrResults={ocrResults}
-                      ocrImages={ocrImages}
-                      records={documentRecords}
-                      analyzing={analyzingSource}
-                      tables={Object.entries(documentMetadata).filter(([, metadata]) => metadata.rowCount > 0)}
-                      pendingDocuments={Object.entries(selectedFiles).filter(([sourceId, file]) => !ocrResults[sourceId] && (kindOf(file) === 'image' || kindOf(file) === 'pdf'))}
-                      onAnalyze={(sourceId) => void analyzeDocument(sourceId)}
-                      onConfirmField={(sourceId, key) => void reviewField(sourceId, key, null)}
-                      onCorrectField={(sourceId, key, value) => void reviewField(sourceId, key, value)}
-                      onConfirmAll={(sourceId) => void confirmAllFields(sourceId)}
-                      onReupload={(sourceId, file) => void reuploadDocument(sourceId, file)}
-                      onOpen={(sourceId) => setOpenedDocument(sourceId)}
-                    />
-                  </div>
                 </div>}
               </div>
               {/* 부채는 자료보다 답이 먼저다. 대출이 없으면 클릭 한 번으로 끝나고,
@@ -1469,102 +1474,134 @@ function UniversalIntake({ dragging, busy, note, onDragState, onFiles }: {
 }
 
 /**
- * 판독값 확인.
+ * 자료 한 줄.
  *
- * 이 화면의 버튼 하나하나가 정답 라벨이 된다. "맞아요"를 누르면 AI 값이 확정되고,
- * 고치면 고친 값이 확정되면서 어느 항목에서 오독이 나는지가 문서함에 쌓인다.
- * 이 기록이 없으면 판독 정확도를 주장할 근거가 서비스에 존재하지 않는다.
+ * 접혀 있을 때는 "들어왔는가/필수인가"만 말하고, 누르면 그 자리에서 먹투가 어떻게 읽었는지
+ * 펼쳐 보여준다. 사진·PDF 는 판독한 그림과 읽은 값을, 표(CSV)는 몇 열 몇 행을 합산했는지를 보여준다.
+ *
+ * 예전에는 이 목록 아래에 판독 카드 묶음과 표 요약 블록이 따로 쌓였다. 자료 하나를
+ * 세 군데(목록·카드·표 요약)에서 설명하니 화면만 길어지고 어디를 봐야 하는지 알기 어려웠다.
  */
-function ReadingConfirm({ sources, ocrResults, ocrImages, records, analyzing, tables, pendingDocuments, onAnalyze, onConfirmField, onCorrectField, onConfirmAll, onReupload, onOpen }: {
-  sources: string[]
-  ocrResults: Record<string, OcrAnalysis>
-  ocrImages: Record<string, string>
-  records: Record<string, OwnerDocument>
-  analyzing: string
-  tables: Array<[string, DocumentMetadata]>
-  pendingDocuments: Array<[string, File]>
-  onAnalyze: (sourceId: string) => void
-  onConfirmField: (sourceId: string, key: string) => void
-  onCorrectField: (sourceId: string, key: string, value: string) => void
-  onConfirmAll: (sourceId: string) => void
-  onReupload: (sourceId: string, file: File) => void
-  onOpen: (sourceId: string) => void
+function AnalysisRow({ title, file, connected, required, metadata, analysis, image, record, analyzing, failed,
+  onConfirmField, onCorrectField, onConfirmAll, onReupload, onRetry, onOpen }: {
+  title: string
+  file?: File
+  connected: boolean
+  required: boolean
+  metadata?: DocumentMetadata
+  analysis?: OcrAnalysis
+  image?: string
+  record?: OwnerDocument
+  analyzing: boolean
+  failed?: string
+  onConfirmField: (key: string) => void
+  onCorrectField: (key: string, value: string) => void
+  onConfirmAll: () => void
+  onReupload: (file: File) => void
+  onRetry: () => void
+  onOpen: () => void
 }) {
-  return <div className="reading-list">
-    {pendingDocuments.length > 0 && <div className="reading-pending">
-      <b>아직 읽지 않은 서류가 {pendingDocuments.length}건 있어요</b>
-      {pendingDocuments.map(([sourceId, file]) => <div key={sourceId}>
-        <span>{labelOf(sourceId)} · {file.name}</span>
-        <button type="button" disabled={Boolean(analyzing)} onClick={() => onAnalyze(sourceId)}>
-          {analyzing === sourceId ? 'AI가 읽는 중...' : 'AI로 읽기'}
-        </button>
-      </div>)}
-    </div>}
+  const [open, setOpen] = useState(false)
+  const filled = Boolean(file) || connected
+  const isTable = Boolean(metadata?.rowCount)
+  const result = (analysis?.result || {}) as Record<string, any>
+  /** 사장님이 아직 확인하지 않은 판독 항목이 있는가. */
+  const needsReview = Boolean(record?.fields.length && record.fields.some((item) => item.state === 'ai'))
+  // 접힌 줄에 한 문장으로 지금 상태를 말한다.
+  const summary = !filled
+    ? (required ? `필수 자료가 아직 없어요. 올리거나 기관 연결로 채워주세요.` : '선택 자료예요. 올리면 산정되는 평가 지표가 늘어나요.')
+    : connected && !file ? '제휴기관에서 동의 기반으로 받아온 자료예요.'
+      : analyzing ? 'AI가 지금 읽는 중이에요...'
+        : failed ? `읽지 못했어요 · ${failed}`
+          : isTable ? `표 ${metadata!.headers.length}열 ${metadata!.rowCount.toLocaleString('ko-KR')}행을 먹투가 직접 합산했어요.`
+            : analysis ? `${result.documentType || '문서'} · 판독 확신 ${Math.round((Number(result.confidence) || 0) * 100)}%${needsReview ? ' · 확인 필요' : ' · 확인 완료'}`
+              : '판독을 기다리는 중이에요...'
+  const expandable = filled && Boolean(file)
+  const tone = !filled ? (required ? 'missing-required' : 'missing-optional') : needsReview || failed ? 'attention' : 'filled'
 
-    {sources.map((sourceId) => {
-      const analysis = ocrResults[sourceId]
-      const result = (analysis.result || {}) as Record<string, any>
-      const record = records[sourceId]
-      const boxes = boxesOf(analysis)
-      const image = ocrImages[sourceId]
-      const confirmed = record ? record.fields.length > 0 && record.fields.every((field) => field.state !== 'ai') : false
-      return <article className={`reading-card ${confirmed ? 'confirmed' : ''}`} key={sourceId}>
-        <header>
-          <div>
-            <b>{labelOf(sourceId)}</b>
-            <small>{analysis.filename} · {result.documentType || '문서 종류 미확인'} · 판독 확신 {Math.round((Number(result.confidence) || 0) * 100)}%</small>
-          </div>
-          {confirmed
-            ? <span className="reading-state"><Check /> 확인 완료</span>
-            : <span className="reading-state" style={{ color: '#a1720d' }}><TriangleAlert /> 확인 필요</span>}
-        </header>
-        <div className="reading-body">
+  return <div className={`analysis-row ${tone} ${open ? 'open' : ''}`}>
+    <button
+      type="button" className="analysis-head"
+      aria-expanded={expandable ? open : undefined}
+      onClick={() => { if (expandable) setOpen((current) => !current) }}
+      // 펼칠 내용이 없는 줄은 버튼처럼 눌리지 않게 한다.
+      style={expandable ? undefined : { cursor: 'default' }}
+    >
+      <span className={`analysis-dot ${!filled ? (required ? 'red' : 'gray') : needsReview || failed ? 'amber' : 'green'}`}>
+        {analyzing ? <RotateCcw /> : !filled ? <TriangleAlert /> : failed ? <TriangleAlert /> : needsReview ? <Eye /> : <Check />}
+      </span>
+      <span className="analysis-copy"><b>{title}</b><small>{summary}</small></span>
+      {expandable && <span className="analysis-toggle">{open ? '접기' : '어떻게 읽었나요?'} <ChevronDown /></span>}
+    </button>
+
+    {open && expandable && <div className="analysis-panel">
+      {analyzing && <p className="analysis-note"><RotateCcw /> AI가 서류를 읽는 중이에요. 잠시만 기다려주세요.</p>}
+
+      {failed && !analyzing && <div className="analysis-note failed">
+        <p><TriangleAlert /> {failed}</p>
+        <div className="analysis-actions">
+          <button type="button" onClick={onRetry}>다시 읽기</button>
+          <ReuploadButton onPick={onReupload} />
+        </div>
+      </div>}
+
+      {/* 표 자료. 값을 하나씩 확인할 필요가 없어 합산 결과만 보여준다. */}
+      {isTable && !analyzing && <div className="analysis-table">
+        <p>표는 값을 하나씩 확인할 필요가 없어요. 열 이름을 찾아 전체 행을 합산하고, 그 결과를 다음 단계의 자료 일치도에서 다른 자료와 맞춰봅니다.</p>
+        <div className="analysis-table-facts">
+          <span><small>파일</small><b>{metadata!.name}</b></span>
+          <span><small>규모</small><b>{metadata!.rowCount.toLocaleString('ko-KR')}행 · {metadata!.headers.length}열</b></span>
+        </div>
+        {metadata!.headers.length > 0 && <div className="analysis-headers">
+          {metadata!.headers.slice(0, 12).map((header) => <em key={header}>{header}</em>)}
+          {metadata!.headers.length > 12 && <em>…</em>}
+        </div>}
+        <div className="analysis-actions">
+          <button type="button" onClick={onOpen}><Eye /> 원본 열어보기</button>
+          <ReuploadButton onPick={onReupload} />
+        </div>
+      </div>}
+
+      {/* 사진·PDF. 판독한 그림과 읽은 값을 나란히 둔다. */}
+      {analysis && !isTable && !analyzing && <>
+        <div className="analysis-reading">
           {image
-            ? <HighlightedImage url={image} name={analysis.filename} boxes={boxes} />
-            : <button type="button" className="reading-open" onClick={() => onOpen(sourceId)}><Eye /> 올린 자료 열어보기</button>}
+            ? <HighlightedImage url={image} name={analysis.filename} boxes={boxesOf(analysis)} />
+            : <button type="button" className="reading-open" onClick={onOpen}><Eye /> 올린 자료 열어보기</button>}
           <div className="reading-fields">
             {record?.fields.length ? record.fields.map((field) => <ReadingField
               key={field.key} field={field}
-              onConfirm={() => onConfirmField(sourceId, field.key)}
-              onCorrect={(value) => onCorrectField(sourceId, field.key, value)}
+              onConfirm={() => onConfirmField(field.key)}
+              onCorrect={(value) => onCorrectField(field.key, value)}
             />) : <p className="reading-empty">이 서류에서 확인할 값을 읽지 못했어요. 운영자가 원본을 확인합니다.</p>}
             {(result.warnings || []).map((warning: string) => <p className="reading-warning" key={warning}><TriangleAlert /> {warning}</p>)}
           </div>
         </div>
-        <div className="reading-actions">
-          {record?.fields.length ? <button type="button" className="primary" onClick={() => onConfirmAll(sourceId)}><Check /> 이 서류 값 전부 맞아요</button> : null}
-          {/* 값을 하나씩 고치는 것보다 더 잘 나온 사진으로 바꾸는 편이 빠를 때가 많다. */}
-          <label className="reading-reupload">
-            <RotateCcw /> 다시 올리기
-            <input
-              type="file" accept=".png,.jpg,.jpeg,.pdf,.csv,.xlsx"
-              onChange={(event) => {
-                const picked = event.target.files?.[0]
-                event.target.value = ''
-                if (picked) onReupload(sourceId, picked)
-              }}
-            />
-          </label>
-          <button type="button" onClick={() => onOpen(sourceId)}><Eye /> 원본 다시 보기</button>
+        <div className="analysis-actions">
+          {record?.fields.length ? <button type="button" className="primary" onClick={onConfirmAll}><Check /> 이 서류 값 전부 맞아요</button> : null}
+          <ReuploadButton onPick={onReupload} />
+          <button type="button" onClick={onOpen}><Eye /> 원본 다시 보기</button>
         </div>
-      </article>
-    })}
+      </>}
 
-    {tables.length > 0 && <div className="reading-tables">
-      <b>표 자료는 먹투가 직접 합산했어요</b>
-      <p>표는 값을 하나씩 확인할 필요가 없습니다. 열 이름을 찾아 전체 행을 합산하고, 결과는 다음 단계의 자료 일치도에서 다른 자료와 맞춰봅니다.</p>
-      <ul>{tables.map(([sourceId, metadata]) => <li key={sourceId}>
-        <span>{labelOf(sourceId)}</span>
-        <b>{metadata.rowCount.toLocaleString('ko-KR')}행 · {metadata.headers.length}열</b>
-        <small>{metadata.headers.slice(0, 5).join(', ')}{metadata.headers.length > 5 ? ' …' : ''}</small>
-        <button type="button" onClick={() => onOpen(sourceId)}><Eye /> 열어보기</button>
-      </li>)}</ul>
+      {!analysis && !isTable && !analyzing && !failed && <p className="analysis-note"><RotateCcw /> 판독 순서를 기다리는 중이에요.</p>}
     </div>}
-
-    {!sources.length && !tables.length && !pendingDocuments.length && <p className="reading-empty">
-      아직 올린 자료가 없어요. 이전 단계로 돌아가 자료를 올려주세요.
-    </p>}
   </div>
+}
+
+/** 더 잘 나온 사진으로 바꿔 넣기. 값을 하나씩 고치는 것보다 빠를 때가 많다. */
+function ReuploadButton({ onPick }: { onPick: (file: File) => void }) {
+  return <label className="reading-reupload">
+    <RotateCcw /> 다시 올리기
+    <input
+      type="file" accept=".png,.jpg,.jpeg,.pdf,.csv,.xlsx"
+      onChange={(event) => {
+        const picked = event.target.files?.[0]
+        event.target.value = ''
+        if (picked) onPick(picked)
+      }}
+    />
+  </label>
 }
 
 function ReadingField({ field, onConfirm, onCorrect }: { field: DocumentField; onConfirm: () => void; onCorrect: (value: string) => void }) {
