@@ -37,6 +37,12 @@ export interface Restaurant {
   /** 심사로 등록된 식당의 공개 여부. 기존 시드 식당은 값이 없어도 공개한다. */
   verificationStatus?: 'submitted' | 'verified' | 'rejected'
   sourceApplicationId?: string
+  /**
+   * 이 식당이 어느 사업체인가. 숫자만 남긴 사업자등록번호다.
+   * 같은 사업체로 두 번째 펀드가 만들어지는 것을 막는 유일한 열쇠라서 상호명이 아니라
+   * 이 값으로 판단한다. 상호는 계정마다 다르게 적을 수 있지만 사업자번호는 하나뿐이다.
+   */
+  businessNumber?: string
   name: string
   emoji: string
   category: string
@@ -208,6 +214,17 @@ export interface Application {
   checks: string[]
   improvements: string[]
   explanation: string
+  /**
+   * 운영자가 보완을 요청하며 적은 말. 사장님 화면에 그대로 보인다.
+   * 이게 없으면 사장님은 '보완 필요'라는 상태만 보고 무엇을 고쳐야 하는지 알 수 없다.
+   */
+  reviewNote?: string
+  /** 운영자가 최종 결정을 내린 시각. */
+  reviewedAt?: string
+  /** 이 신청이 어떤 신청을 보완해서 다시 낸 것인가. */
+  resubmittedFrom?: string
+  /** 이 신청을 보완해 다시 낸 신청. 값이 있으면 이 건은 더 이상 진행 중이 아니다. */
+  supersededBy?: string
 }
 
 export interface Review {

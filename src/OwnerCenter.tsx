@@ -15,7 +15,7 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent,
 import { createPortal } from 'react-dom'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
-  ArrowLeft, ArrowRight, BadgeCheck, Banknote, Building2, Check, ChevronRight, Database, Download, Eraser, Eye,
+  ArrowLeft, ArrowRight, BadgeCheck, Banknote, Building2, Check, ChevronRight, CircleAlert, Database, Download, Eraser, Eye,
   FileSpreadsheet, FileText, FolderDown, Landmark, Link2, LockKeyhole, PlugZap, ReceiptText,
   RotateCcw, ShieldCheck, Store, Trash2, TriangleAlert, UploadCloud, UserCheck, Users, X, type LucideIcon,
 } from 'lucide-react'
@@ -217,19 +217,60 @@ type DocumentMetadata = { name: string; size: number; type: string; rowCount: nu
  * 그 버튼은 자기 화면에 있는 칸만 채운다. 한 버튼이 세 화면을 다 채워버리면
  * 사장님은 자기가 무엇을 확인해야 하는지 모른 채 마지막 화면까지 떠밀려 간다.
  */
-/** 1단계(가게 정보) 화면의 칸. */
-const storeSampleFields: Record<string, string> = {
-  restaurantName: '먹투 테스트식당',
-  category: '한식',
-  signature: '들기름 고등어 한상',
-  avgPrice: '13000',
-  ownerName: '김테스트',
-  businessNumber: '123-45-67891',
-  licenseNumber: '제2026-테스트-0001호',
-  address: '서울특별시 마포구 테스트로 123, 1층',
+/**
+ * 사업자등록번호를 하나 만든다. 국세청 검증번호까지 맞는 값이어야 접수된다.
+ * (server/verification.ts 의 businessNumberChecksum 과 같은 계산이다.)
+ */
+function makeBusinessNumber(): string {
+  const weights = [1, 3, 7, 1, 3, 7, 1, 3, 5]
+  const digits = Array.from({ length: 9 }, () => Math.floor(Math.random() * 10))
+  let sum = digits.reduce((total, digit, index) => total + digit * weights[index], 0)
+  sum += Math.floor((digits[8] * 5) / 10)
+  const all = [...digits, (10 - (sum % 10)) % 10].join('')
+  return `${all.slice(0, 3)}-${all.slice(3, 5)}-${all.slice(5)}`
 }
-/** 1단계의 대표자·지분 표. 대표자명은 위 프로필과 같아야 판독값과 어긋나지 않는다. */
-const sampleOwnership: OwnershipRow[] = [{ name: storeSampleFields.ownerName, share: 100, role: '대표자' }]
+
+const pick = <T,>(items: readonly T[]): T => items[Math.floor(Math.random() * items.length)]
+
+const demoNamePrefix = ['담아', '온기', '소소', '해뜰', '너른', '골목', '한걸음', '느티', '별미', '오후', '차오름', '들안'] as const
+const demoNameSuffix = ['식탁', '밥상', '주방', '한상', '식당', '부엌'] as const
+const demoOwnerFamily = ['김', '이', '박', '최', '정', '조', '윤', '장', '임', '한'] as const
+const demoOwnerGiven = ['서연', '도윤', '지우', '하준', '수아', '민재', '예린', '태호', '하람', '유진'] as const
+const demoDistricts = [
+  { district: '마포구', road: '망원로' }, { district: '성동구', road: '왕십리로' },
+  { district: '광진구', road: '아차산로' }, { district: '서대문구', road: '연희로' },
+  { district: '동작구', road: '상도로' }, { district: '관악구', road: '봉천로' },
+  { district: '은평구', road: '연서로' }, { district: '중랑구', road: '면목로' },
+] as const
+const demoSignatures = [
+  '들기름 고등어 한상', '가마솥 소고기국밥', '직화구이 삼겹 정식', '계절나물 비빔밥',
+  '묵은지 등갈비찜', '통새우 순두부', '메밀 들기름 막국수', '한우 미역국 정식',
+] as const
+
+/**
+ * 1단계(가게 정보) 화면의 칸을 매번 새로 만든다.
+ *
+ * 예전에는 고정값 하나('먹투 테스트식당' · 123-45-67891)를 모든 계정이 같이 썼다.
+ * 그래서 A계정과 B계정이 같은 사업체로 신청했고, 둘 다 승인되면 투자자 목록에
+ * 같은 식당이 두 번 떴다. 이제 데모를 누를 때마다 다른 사업체가 만들어진다.
+ *
+ * 바뀌는 것은 '누구인가'(상호·대표자·사업자번호·주소)뿐이다.
+ * 매출·계좌·카드 표 자료에는 사업자 정보가 들어 있지 않으므로, 이 값을 바꿔도
+ * 자료끼리 맞춰 보는 교차검증 결과는 그대로다.
+ */
+function makeStoreSampleFields(): Record<string, string> {
+  const place = pick(demoDistricts)
+  return {
+    restaurantName: `${pick(demoNamePrefix)}${pick(demoNameSuffix)}`,
+    category: '한식',
+    signature: pick(demoSignatures),
+    avgPrice: String(11000 + Math.floor(Math.random() * 7) * 1000),
+    ownerName: `${pick(demoOwnerFamily)}${pick(demoOwnerGiven)}`,
+    businessNumber: makeBusinessNumber(),
+    licenseNumber: `제2026-${place.district.slice(0, 2)}-${String(1 + Math.floor(Math.random() * 8999)).padStart(4, '0')}호`,
+    address: `서울특별시 ${place.district} ${place.road} ${10 + Math.floor(Math.random() * 380)}, 1층`,
+  }
+}
 /** 3단계(동의와 계획) 화면의 칸. 합계는 아래 sampleFundUsePlan 과 반드시 같아야 한다. */
 const planSampleFields: Record<string, string> = {
   requestedLimit: '30000000',
@@ -431,6 +472,13 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
   const navigate = useNavigate()
   const slug = location.pathname.replace(/^\/owner\/?/, '').split('/')[0]
   const showingResult = slug === RESULT_SLUG
+  /**
+   * 마이페이지의 '보완해서 다시 제출하기'가 붙여 보내는 지난 신청 id.
+   * 이 값을 그대로 신청에 실어야 서버가 두 건을 이어 붙이고 지난 건을 닫는다.
+   */
+  const resubmitOf = new URLSearchParams(location.search).get('resubmit') || ''
+  /** 보완해서 다시 내는 중이면, 운영자가 무엇을 고치라고 했는지 신청서 위에 계속 띄운다. */
+  const resubmitSource = resubmitOf ? me?.applications?.find((item) => item.id === resubmitOf) : undefined
   const routeStep = stepDefinitions.findIndex((definition) => definition.slug === slug)
   const step = routeStep < 0 ? 0 : routeStep
   /** 어느 방향으로 넘어왔는지. 전환 애니메이션 방향에만 쓴다. */
@@ -851,10 +899,13 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
    * 자료 업로드와 자금 계획은 손대지 않는다. 각 화면의 버튼이 자기 몫만 채운다.
    */
   const fillStoreDemo = () => {
-    setFields((current) => ({ ...current, ...storeSampleFields }))
+    // 누를 때마다 다른 사업체를 만든다. 대표자·지분 표의 이름은 반드시 같은 값을 써야
+    // 판독값·신고값 대조에서 대표자가 어긋나지 않는다.
+    const sample = makeStoreSampleFields()
+    setFields((current) => ({ ...current, ...sample }))
     setIdentityVerified(true)
-    setOwnership(sampleOwnership.map((row) => ({ ...row })))
-    notify('가게 정보와 대표자 본인인증을 데모 값으로 채웠어요.')
+    setOwnership([{ name: sample.ownerName, share: 100, role: '대표자' }])
+    notify(`가게 정보와 대표자 본인인증을 채웠어요. 이번 데모 사업체는 '${sample.restaurantName}'(${sample.businessNumber})이에요.`)
   }
 
   /**
@@ -981,6 +1032,9 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
         privacyConsent: agreedDocuments.includes('privacy'),
         creditConsent: agreedDocuments.includes('credit-info'),
         consent: { version: legal.version, documentIds: agreedDocuments },
+        // 보완 요청을 받고 다시 내는 것이면 지난 신청과 이어 붙인다.
+        // 서버가 지난 건을 '대체됨'으로 닫아서 운영자가 낡은 건을 다시 판정하지 않는다.
+        ...(resubmitOf ? { resubmittedFrom: resubmitOf } : {}),
       }
       const response = await api<{ message: string; application: ApplicationResult }>('/api/applications', { method: 'POST', body: JSON.stringify(payload) })
       setResult(response.application)
@@ -1061,6 +1115,17 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
         {!owner && <div className="owner-lock-overlay"><LockKeyhole /><h2>사장님 계정 전용 기능이에요</h2><p>상호명과 자료 업로드를 포함한 모든 입력은 소상공인 계정으로 로그인한 뒤 사용할 수 있습니다.</p><button type="button" className="button" onClick={onLogin}>{me ? '소상공인 계정으로 다시 로그인' : '로그인·회원가입'}</button></div>}
         <fieldset disabled={!owner || submitting || Boolean(fillingSample)}>
           <div className="form-heading"><span>원천데이터 기반 예비심사</span><h2>{stepDefinitions[step].title}</h2><p>{stepDefinitions[step].hint}</p></div>
+
+          {/* 보완해서 다시 내는 중이면, 무엇을 고쳐야 하는지가 단계마다 계속 보여야 한다.
+              마이페이지에서 한 번 읽고 넘어오면 신청서를 쓰는 동안 잊어버린다. */}
+          {resubmitSource && <div className="owner-resubmit-banner">
+            <CircleAlert />
+            <div>
+              <b>보완해서 다시 제출하는 중이에요</b>
+              <p>{resubmitSource.reviewNote || '운영자가 남긴 상세 사유가 없어요. 지난 리포트의 보완 항목을 확인해주세요.'}</p>
+              <small>{resubmitSource.restaurantName} · {new Date(resubmitSource.submittedAt).toLocaleDateString('ko-KR')} 접수분을 보완합니다. 제출하면 지난 신청은 자동으로 닫혀요.</small>
+            </div>
+          </div>}
 
           {/* 업로드 비우기는 올린 자료가 있을 때만.
               데모 채우기 버튼은 단계마다 그 화면 안에 하나씩 둔다(StepDemoFill·SamplePack). */}

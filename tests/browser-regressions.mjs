@@ -191,7 +191,29 @@ try {
   assert(await evaluate('document.querySelectorAll(".step-demo-fill-bar .virtual-data-upload-btn").length === 1'), '1단계에 데모 채우기 버튼이 있어야 합니다')
   await evaluate('document.querySelector(".step-demo-fill-bar .virtual-data-upload-btn").click()')
   await waitFor('Boolean(document.querySelector(".identity-action.verified"))', 'store demo fills fields and verifies identity')
-  await waitFor('document.querySelector("[name=restaurantName]").value === "먹투 테스트식당" && document.querySelector("[name=ownerName]").value === "김테스트"', 'store demo fills store fields')
+  // 데모 사업체는 누를 때마다 새로 만든다. 예전에는 고정값 하나('먹투 테스트식당')를
+  // 모든 계정이 같이 써서, 서로 다른 계정이 같은 사업체로 신청하고 둘 다 승인되면
+  // 투자자 목록에 같은 식당이 두 번 떴다. 그래서 값 자체가 아니라 '모양'을 검사한다.
+  await waitFor('document.querySelector("[name=restaurantName]").value.length >= 2 && document.querySelector("[name=ownerName]").value.length >= 2', 'store demo fills store fields')
+  // 사업자등록번호는 국세청 검증번호까지 맞아야 접수된다. 형식과 검증번호를 함께 본다.
+  assert(await evaluate(`(() => {
+    const value = document.querySelector('[name=businessNumber]').value
+    if (!/^\\d{3}-\\d{2}-\\d{5}$/.test(value)) return false
+    const digits = [...value.replace(/\\D/g, '')].map(Number)
+    const weights = [1, 3, 7, 1, 3, 7, 1, 3, 5]
+    let sum = digits.slice(0, 9).reduce((total, digit, index) => total + digit * weights[index], 0)
+    sum += Math.floor((digits[8] * 5) / 10)
+    return (10 - (sum % 10)) % 10 === digits[9]
+  })()`), '데모 사업자등록번호는 검증번호까지 맞아야 합니다')
+  // 대표자·지분 표의 이름은 가게 정보의 대표자명과 반드시 같아야 판독 대조에서 어긋나지 않는다.
+  assert(await evaluate('document.querySelector(".ownership-row input")?.value === document.querySelector("[name=ownerName]").value'),
+    '데모 대표자명과 소유구조 이름이 같아야 합니다')
+  // 다시 누르면 다른 사업체가 나온다. 이것이 계정마다 다른 가게가 만들어지는 근거다.
+  const firstDemoBusiness = await evaluate('document.querySelector("[name=businessNumber]").value')
+  await evaluate('document.querySelector(".step-demo-fill-bar .virtual-data-upload-btn").click()')
+  await waitFor(`document.querySelector("[name=businessNumber]").value !== ${JSON.stringify(firstDemoBusiness)}`, 'store demo makes a different business each time')
+  // 아래에서 '단계를 오가도 입력이 남아 있는가'를 볼 때 쓴다. 값이 매번 달라지므로 지금 붙잡아 둔다.
+  const demoRestaurantName = await evaluate('document.querySelector("[name=restaurantName]").value')
   // 타 페이지까지 채우지 않는다. 1단계 버튼을 눌러도 자료는 하나도 올라가 있으면 안 된다.
   assert(await evaluate('!document.querySelector(".sample-clear")'), '1단계 데모 채우기가 자료 업로드까지 건드리면 안 됩니다')
   await click('다음')
@@ -288,7 +310,7 @@ try {
   await evaluate('document.querySelectorAll(".consent-reader-agree input").forEach(input => input.click())')
   // 이전으로 돌아가도 입력이 남아 있어야 한다. 단계 전환으로 값이 사라지면 신청을 다시 써야 한다.
   await evaluate('document.querySelectorAll(".wizard-rail button")[0].click()')
-  await waitFor('location.pathname === "/owner/store" && document.querySelector("[name=restaurantName]").value === "먹투 테스트식당"', 'store input survives page change')
+  await waitFor(`location.pathname === "/owner/store" && document.querySelector("[name=restaurantName]").value === ${JSON.stringify(demoRestaurantName)}`, 'store input survives page change')
   await evaluate('document.querySelectorAll(".wizard-rail button")[2].click()')
   await waitFor('location.pathname === "/owner/plan"', 'rail navigates by url')
   // 자금 사용계획: 합계가 희망 펀딩액과 맞아야 제출된다.

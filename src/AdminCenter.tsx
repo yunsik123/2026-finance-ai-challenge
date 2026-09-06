@@ -58,6 +58,8 @@ export default function AdminCenter({ me, onLogin, onLogout, notify }: { me: MeS
   const [tab, setTab] = useState<Tab>('overview')
   const [query, setQuery] = useState('')
   const [busy, setBusy] = useState('')
+  /** 보완·조건 사유. 심사 상세를 열 때마다 비운다(앞 건의 사유가 남으면 안 된다). */
+  const [reviewNote, setReviewNote] = useState('')
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [detail, setDetail] = useState<AdminApplicationDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState('')
@@ -91,6 +93,8 @@ export default function AdminCenter({ me, onLogin, onLogout, notify }: { me: MeS
     setDetail(null)
     setDetailLoading(id)
     setOpenedDocument('')
+    // 앞 건에서 적다 만 사유가 다음 건에 딸려 가면 엉뚱한 사장님에게 전달된다.
+    setReviewNote('')
     try {
       const result = await api<AdminApplicationDetail>(`/api/admin/applications/${id}`)
       if (requestId === detailRequest.current) setDetail(result)
@@ -174,7 +178,34 @@ export default function AdminCenter({ me, onLogin, onLogout, notify }: { me: MeS
         <h3>값의 근거와 자료 일치도 <small>지표를 누르면 어느 파일 몇 행에서 나온 값인지 펼칩니다</small></h3>
         <EvidencePanel ledger={detailData.evidenceLedger} title="이 신청의 값별 근거" />
       </section>}
-      <footer className="admin-review-footer"><div><b>최종 결정은 운영자가 제출 자료와 위 근거를 확인한 뒤 선택합니다.</b><span>먹투 성장성 예비평가는 자동 승인·자동 거절을 하지 않습니다.</span></div><select disabled={busy === detail.application.id} value={detail.application.status} onChange={async (event) => { await mutate(detail.application.id, `/api/admin/applications/${detail.application.id}`, { status: event.target.value }, '최종 심사 상태를 변경했어요.'); setDetail(null) }}><option value="manual_review">최종 검토 대기</option><option value="approved">최종 승인</option><option value="conditional">조건부 승인</option><option value="rejected">보완 요청</option></select></footer>
+      {/*
+        * 보완 요청은 '무엇을 고쳐야 하는가'가 함께 가지 않으면 사장님 쪽에서 아무 일도 일어나지 않는다.
+        * 그래서 사유 칸을 결정 바로 옆에 두고, 적은 내용은 사장님 화면과 알림에 그대로 실려 간다.
+        */}
+      <footer className="admin-review-footer">
+        <div><b>최종 결정은 운영자가 제출 자료와 위 근거를 확인한 뒤 선택합니다.</b><span>먹투 성장성 예비평가는 자동 승인·자동 거절을 하지 않습니다.</span></div>
+        <label className="admin-review-note">
+          <span>보완·조건 사유 <em>사장님 화면과 알림에 그대로 전달됩니다</em></span>
+          <textarea
+            rows={2}
+            maxLength={1000}
+            disabled={busy === detail.application.id}
+            value={reviewNote}
+            placeholder="예: 최근 3개월 POS 매출 자료가 빠졌어요. 9~11월분을 추가해 다시 제출해주세요."
+            onChange={(event) => setReviewNote(event.target.value)}
+          />
+        </label>
+        <select disabled={busy === detail.application.id} value={detail.application.status} onChange={async (event) => {
+          const status = event.target.value
+          if ((status === 'rejected' || status === 'conditional') && !reviewNote.trim()) {
+            notify('보완·조건 사유를 적어주세요. 사장님은 이 내용을 보고 자료를 고칩니다.')
+            return
+          }
+          await mutate(detail.application.id, `/api/admin/applications/${detail.application.id}`, { status, reviewNote }, '최종 심사 상태를 변경했어요.')
+          setReviewNote('')
+          setDetail(null)
+        }}><option value="manual_review">최종 검토 대기</option><option value="approved">최종 승인</option><option value="conditional">조건부 승인</option><option value="rejected">보완 요청</option></select>
+      </footer>
     </article></div>}
     {openedDocumentData && <DocumentModal
       title={sourceLabel[openedDocument] || openedDocument}

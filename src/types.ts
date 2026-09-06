@@ -267,6 +267,14 @@ export interface ApplicationResult {
   id: string; restaurantName: string; status: 'approved' | 'conditional' | 'manual_review' | 'rejected'
   requestedLimit: number; approvedLimit: number; score: number; strengths: string[]; checks: string[]; improvements: string[]
   explanation: string; submittedAt: string
+  /** 운영자가 보완을 요청하며 적은 말. 무엇을 고쳐야 하는지가 여기 담긴다. */
+  reviewNote?: string
+  /** 운영자가 최종 결정을 내린 시각. */
+  reviewedAt?: string
+  /** 이 신청이 보완해서 다시 낸 것이면 그 원래 신청. */
+  resubmittedFrom?: string
+  /** 이 신청을 보완해 다시 낸 신청. 값이 있으면 더 이상 진행 중인 건이 아니다. */
+  supersededBy?: string
   data?: {
     derivedMetrics?: Record<string, number | string | null>
     dataConfidence?: number

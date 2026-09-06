@@ -154,11 +154,13 @@ create or replace function meoktu.export_ledger()
         'createdAt', meoktu.iso(f.created_at)
       ) order by f.created_at) from meoktu.favorites f), '[]'::jsonb),
 
-    'auditEvents', coalesce((select jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
-        'id', e.id, 'actorId', e.actor_id, 'action', e.action,
-        'resourceType', e.resource_type, 'resourceId', e.resource_id,
-        'summary', e.summary, 'createdAt', meoktu.iso(e.created_at)
-      )) order by e.created_at, e.id) from meoktu.audit_events e), '[]'::jsonb),
+    -- 감사기록은 원장에 싣지 않는다.
+    -- 지우지 않는 append-only 기록이라 시간이 갈수록 원장이 끝없이 무거워진다.
+    -- (실측: 50만 건에서 원장 조립 19.2초 · 103MB. 그러면 잠금 탈취 시간을 넘겨
+    --  두 인스턴스가 원장을 동시에 덮어쓰는 갱신 유실까지 이어진다.)
+    -- 쓸 때는 meoktu.append_audit_events(), 읽을 때는 meoktu.recent_audit_events() 로
+    -- 필요한 만큼만 audit_actor_idx 를 타고 집어 온다.
+    'auditEvents', '[]'::jsonb,
 
     'ocrAnalyses', coalesce((select jsonb_agg(jsonb_build_object(
         'id', o.id, 'userId', o.user_id, 'filename', o.filename, 'sourceId', o.source_id,
@@ -244,14 +246,29 @@ begin
 end $$;
 
 
-/** 전역 쓰기 잠금. 15초 넘게 잡고 있으면 죽은 인스턴스로 보고 뺏는다. */
+/**
+ * 잠금을 뺏기 전에 기다리는 시간.
+ *
+ * 이 값은 "살아 있는 인스턴스가 잠금을 쥘 수 있는 최대 시간"보다 반드시 커야 한다.
+ * 그렇지 않으면 아직 쓰는 중인 인스턴스에게서 잠금을 뺏어, 두 인스턴스가 원장을
+ * 동시에 덮어쓴다. 에러도 나지 않고 나중에 쓴 쪽이 이긴다(갱신 유실).
+ *
+ * 한 요청이 쥐는 시간의 상한은 read_ledger + save_ledger, 즉 statement_timeout 의
+ * 두 배에 핸들러 시간을 더한 값이다. 서버는 statement_timeout 을 15초로 두므로
+ * 30초가 상한이고, 여기에 여유를 얹어 40초로 잡는다.
+ * (server/store.ts 의 DB_STATEMENT_TIMEOUT_MS 와 짝이다. 한쪽만 바꾸면 안 된다.)
+ */
+create or replace function meoktu.lock_steal_after() returns interval
+  language sql immutable as $$ select interval '40 seconds' $$;
+
+/** 전역 쓰기 잠금. lock_steal_after() 를 넘겨 잡고 있으면 죽은 인스턴스로 보고 뺏는다. */
 create or replace function meoktu.acquire_lock(owner text) returns boolean
   language plpgsql security definer set search_path = meoktu, public as $$
 declare v_ok boolean;
 begin
   update meoktu.ledger_meta
      set lock_owner = owner, locked_at = now()
-   where id = 'meoktu' and (lock_owner is null or locked_at < now() - interval '15 seconds')
+   where id = 'meoktu' and (lock_owner is null or locked_at < now() - meoktu.lock_steal_after())
   returning true into v_ok;
   return coalesce(v_ok, false);
 end $$;
@@ -287,3 +304,52 @@ create or replace function meoktu.read_ledger_version()
   select jsonb_build_object('version', coalesce((select version from meoktu.ledger_meta where id = 'meoktu'), 0))
 $$;
 revoke all on function meoktu.read_ledger_version() from anon, authenticated;
+
+
+-- ── 감사기록 ────────────────────────────────────────────────────────────────
+-- 감사기록만 원장에서 떼어내 따로 다룬다.
+-- 원장은 "지금 상태"라서 통째로 읽고 쓰는 것이 말이 되지만, 감사기록은 "쌓이는 기록"
+-- 이라 같은 방식으로 다루면 원장이 영원히 커진다. 쓰기는 append 만, 읽기는 필요한
+-- 만큼만 — 이 두 함수가 그 경계다.
+
+/**
+ * 감사기록을 덧붙인다. 기존 행은 절대 건드리지 않는다.
+ * 같은 id 가 이미 있으면 넘어가므로, 저장에 실패해 서버가 다시 보내도 중복되지 않는다.
+ * 행위자가 지워진 계정이면 actor_id 를 비운다(기록 자체는 남긴다).
+ */
+create or replace function meoktu.append_audit_events(payload jsonb)
+  returns integer language plpgsql security definer set search_path = meoktu, public as $$
+declare v_n integer;
+begin
+  insert into meoktu.audit_events(id, actor_id, action, resource_type, resource_id, summary, created_at)
+  select x.id, (select p.id from meoktu.profiles p where p.id = x."actorId"),
+         x.action, x."resourceType", x."resourceId", coalesce(x.summary, ''),
+         coalesce(x."createdAt", now())
+    from jsonb_to_recordset(coalesce(payload, '[]'::jsonb)) as x(
+      id text, "actorId" text, action text, "resourceType" text, "resourceId" text,
+      summary text, "createdAt" timestamptz)
+  on conflict (id) do nothing;
+  get diagnostics v_n = row_count;
+  return v_n;
+end $$;
+revoke all on function meoktu.append_audit_events(jsonb) from anon, authenticated;
+
+/**
+ * 한 사람의 최근 감사기록. audit_actor_idx(actor_id, created_at desc) 를 그대로 탄다.
+ * 화면이 30건만 쓰므로 상한을 200건으로 묶는다. 전체 조회 경로는 두지 않는다.
+ */
+create or replace function meoktu.recent_audit_events(actor text, max_rows integer default 30)
+  returns jsonb language sql stable security definer set search_path = meoktu, public as $$
+  select coalesce(jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
+      'id', e.id, 'actorId', e.actor_id, 'action', e.action,
+      'resourceType', e.resource_type, 'resourceId', e.resource_id,
+      'summary', e.summary, 'createdAt', meoktu.iso(e.created_at)
+    )) order by e.created_at desc, e.id desc), '[]'::jsonb)
+  from (
+    select * from meoktu.audit_events
+     where actor_id = actor
+     order by created_at desc, id desc
+     limit greatest(1, least(coalesce(max_rows, 30), 200))
+  ) e
+$$;
+revoke all on function meoktu.recent_audit_events(text, integer) from anon, authenticated;

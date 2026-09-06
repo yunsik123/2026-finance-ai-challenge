@@ -305,9 +305,13 @@ export class PostgresStateStore implements StateStore {
       max: Number(process.env.DB_POOL_MAX || 5),
       idleTimeoutMillis: 30_000,
       connectionTimeoutMillis: 15_000,
-      // 원장 전체를 조립하는 read_ledger 는 데이터가 늘면 느려질 수 있다.
-      // 여기서 잘리면 서비스가 통째로 멈추므로 넉넉하게 준다.
-      statement_timeout: Number(process.env.DB_STATEMENT_TIMEOUT_MS || 30_000),
+      // 한 질의가 여기서 잘리면 그 요청만 실패하지만, 너무 길게 주면 잠금을 쥔 채
+      // 늘어져 있는 시간이 그만큼 길어진다. 그래서 이 값은 혼자 정할 수 없다.
+      //   한 요청이 잠금을 쥐는 최대 시간 ≈ read_ledger + save_ledger = 이 값의 2배
+      // 이고, 그 상한보다 meoktu.lock_steal_after()(40초) 가 커야 아직 쓰는 중인
+      // 인스턴스에게서 잠금을 뺏지 않는다. 15초 × 2 = 30초 < 40초로 맞춰 둔다.
+      // (db/ledger.sql 의 lock_steal_after() 와 짝이다. 한쪽만 바꾸면 안 된다.)
+      statement_timeout: Number(process.env.DB_STATEMENT_TIMEOUT_MS || 15_000),
     }
     const socketPath = socketInstance ? `/cloudsql/${socketInstance}` : ''
     if (socketPath && existsSync(socketPath)) {

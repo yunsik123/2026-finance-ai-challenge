@@ -225,6 +225,29 @@ export default function OwnerMyPage({ me, refresh, notify }: { me: MeState; refr
       <div className="sales-disclosure-action"><div><small>현재 공개 범위</small><strong>{restaurant.salesDisclosure ? '성장지수 + 월별 매출액' : '성장지수만 공개'}</strong></div><button type="button" aria-pressed={restaurant.salesDisclosure} className={restaurant.salesDisclosure ? 'active' : ''} onClick={toggleDisclosure}><i />{restaurant.salesDisclosure ? '월별 매출 공개 중' : '월별 매출 공개하기'}</button></div>
     </section>}
 
+    {/*
+      * 운영자가 보완을 요청했을 때 무엇을 고쳐야 하는지 가장 먼저 보여준다.
+      * 예전에는 '보완 후 재신청'이라는 상태만 떴고 운영자가 적은 사유는 어디에도
+      * 나오지 않았다. 사장님은 무엇을 고쳐야 하는지 알 수 없었다.
+      * 이미 보완해 다시 낸 건(supersededBy)에는 띄우지 않는다.
+      */}
+    {selected && !selected.supersededBy && (selected.status === 'rejected' || selected.status === 'conditional') && <section className={`owner-review-note ${selected.status}`}>
+      <div className="owner-review-note-head">
+        <CircleAlert />
+        <div>
+          <small>{selected.reviewedAt ? `${date(selected.reviewedAt)} 운영자 확인` : '운영자 확인'}</small>
+          <b>{selected.status === 'rejected' ? '보완이 필요해요' : '조건부로 승인됐어요'}</b>
+        </div>
+      </div>
+      <p className="owner-review-note-body">{selected.reviewNote
+        || (selected.status === 'rejected'
+          ? '운영자가 남긴 상세 사유가 없어요. 아래 보완 항목을 확인해 자료를 보강해주세요.'
+          : '조건부 승인입니다. 아래 보완 항목을 확인해주세요.')}</p>
+      {selected.status === 'rejected' && <NavLink className="button" to={`/owner?resubmit=${selected.id}`}>
+        보완해서 다시 제출하기 <ChevronRight />
+      </NavLink>}
+    </section>}
+
     <section className="owner-verification-report">
       <header className="owner-report-cover">
         <div><span><FileCheck2 /> FUND VERIFICATION REPORT</span><h2>내 펀드 검증 리포트</h2><p>최종 결과부터 평가 근거와 보완 항목까지 하나의 리포트로 정리했어요.</p></div>

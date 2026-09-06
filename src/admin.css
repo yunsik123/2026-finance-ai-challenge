@@ -28,3 +28,13 @@
 .admin-demo-banner p{margin:4px 0 0;font-size:12px;line-height:1.6;color:#6f5344}
 .admin-review-section .admin-evaluation-summary{grid-template-columns:repeat(3,1fr)}
 @media(max-width:760px){.admin-demo-banner{margin:14px 12px -2px}.admin-review-section .admin-evaluation-summary{grid-template-columns:1fr}}
+
+/* ── 보완·조건 사유 ──────────────────────────────────────────
+   사장님에게 그대로 전달되는 글이라 결정 셀렉트 바로 옆에 둔다.
+   여기가 비어 있으면 '보완 필요'라는 상태만 전달되고 무엇을 고칠지가 빠진다. */
+.admin-review-note{display:block;flex:1 1 320px;min-width:260px}
+.admin-review-note>span{display:block;margin-bottom:6px;font-size:12px;font-weight:600}
+.admin-review-note>span em{margin-left:6px;font-style:normal;font-weight:400;color:var(--muted)}
+.admin-review-note textarea{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:10px;font:inherit;font-size:13px;line-height:1.6;resize:vertical}
+.admin-review-note textarea:focus{outline:2px solid var(--coral);outline-offset:1px}
+@media(max-width:720px){.admin-review-note{flex-basis:100%}}

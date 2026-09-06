@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { createServer } from 'node:http'
 import { Server } from 'socket.io'
 import { articles as seedArticles, createSeed, funds as seedFunds, restaurants as seedRestaurants, reviews as seedReviews } from './seed.ts'
-import type { Application, Coupon, CouponListing, CouponOffer, CouponTrade, DataConnection, Database, Fund, FundStatus, LegalConsent, Notification, Order, Position, Restaurant, Review, Role, SupportRequest, User } from './types.ts'
+import type { Application, AuditEvent, Coupon, CouponListing, CouponOffer, CouponTrade, DataConnection, Database, Fund, FundStatus, LegalConsent, Notification, Order, Position, Restaurant, Review, Role, SupportRequest, User } from './types.ts'
 import { LEGAL_VERSION, checkConsent, legalDocument, legalSummaries, requiredDocumentIds, type LegalContext } from './legal.ts'
 import { answerGraphProcessQuestion, assessRestaurant, buildKnowledgeGraph, normalizeOcrBoxes, questionTerms, retrieveKnowledgeSubgraph } from './trust.ts'
 import { buildEvidenceLedger, sourceLabels as evidenceSourceLabels } from './evidence.ts'
@@ -344,6 +344,9 @@ async function loadDatabase() {
 }
 
 async function saveDatabase() {
+  // 감사기록은 원장과 따로 나간다. 잠금이 없어 원장 저장을 건너뛰는 경로에서도
+  // 기록은 남아야 하므로 아래 잠금 검사보다 먼저 내보낸다.
+  await flushAuditEvents()
   if (store.kind === 'file') {
     await store.write(db, stateVersion)
     return
@@ -418,11 +421,69 @@ function safeApplication(application: Application): Application {
   return { ...application, data }
 }
 
+/**
+ * 아직 저장되지 않은 감사기록.
+ *
+ * 감사기록은 오래된 것부터 지우지 않는다. 투자·쿠폰 교환 분쟁이 생겼을 때
+ * 무슨 일이 있었는지 말해줄 수 있는 유일한 근거이고, 그게 사라지면 되돌릴 방법이 없다.
+ * (알림은 근거가 아니므로 링버퍼를 유지한다.)
+ *
+ * 문제는 "지우지 않는다"와 "원장을 통째로 읽고 쓴다"가 같이 가면 원장이 영원히
+ * 커진다는 것이다. 실측으로 감사기록 50만 건이면 원장 조립만 19.2초 · 103MB 였고,
+ * 그 정도면 잠금 탈취 시간을 넘겨 두 인스턴스가 원장을 동시에 덮어쓰게 된다.
+ *
+ * 그래서 감사기록은 원장에 태우지 않고 여기 모았다가 append 로만 따로 내보낸다.
+ * 읽을 때도 원장을 훑지 않고 필요한 30건만 인덱스로 집어 온다.
+ */
+const pendingAuditEvents: AuditEvent[] = []
+
 function audit(actorId: string | undefined, action: string, resourceType: string, resourceId: string, summary: string) {
-  // 감사기록은 오래된 것부터 지우지 않는다. 투자·쿠폰 교환 분쟁이 생겼을 때
-  // 무슨 일이 있었는지 말해줄 수 있는 유일한 근거이고, 그게 사라지면 되돌릴 방법이 없다.
-  // (알림은 근거가 아니므로 링버퍼를 유지한다.)
-  db.auditEvents.push({ id: id('audit'), actorId, action, resourceType, resourceId, summary: summary.slice(0, 300), createdAt: now() })
+  const event: AuditEvent = { id: id('audit'), actorId, action, resourceType, resourceId, summary: summary.slice(0, 300), createdAt: now() }
+  // 파일·단일행 저장소는 원장 한 덩어리가 전부라 따로 보낼 곳이 없다. 예전처럼 원장에 둔다.
+  if (!ledgerRpcEnabled) { db.auditEvents.push(event); return }
+  pendingAuditEvents.push(event)
+}
+
+/**
+ * 쌓인 감사기록을 내보낸다. 원장 잠금과 무관하게 항상 나간다.
+ * 잠금을 잡지 않는 경로(AI 조회 등)에서도 기록은 남아야 하기 때문이다.
+ */
+async function flushAuditEvents() {
+  if (!ledgerRpcEnabled || !pendingAuditEvents.length) return
+  const batch = pendingAuditEvents.splice(0, pendingAuditEvents.length)
+  try {
+    await (store as TableStateStore | PostgresStateStore).callRpc('append_audit_events', { payload: batch })
+  } catch (error) {
+    // 요청 자체를 되돌리지는 않는다. 다음 저장 때 다시 보내도록 되돌려 놓는다.
+    // append_audit_events 는 같은 id 를 무시하므로 중복으로 들어가지 않는다.
+    pendingAuditEvents.unshift(...batch)
+    console.error('감사기록 저장 실패:', (error as Error).message)
+  }
+}
+
+/** 한 사람의 최근 감사기록. 원장 전체를 훑지 않고 audit_actor_idx 로 필요한 만큼만 읽는다. */
+async function recentAuditEvents(actorId: string, limit = 30): Promise<AuditEvent[]> {
+  const byNewest = (a: AuditEvent, b: AuditEvent) => b.createdAt.localeCompare(a.createdAt)
+  if (!ledgerRpcEnabled) {
+    return db.auditEvents.filter((event) => event.actorId === actorId).sort(byNewest).slice(0, limit)
+  }
+  /*
+   * 함수가 아직 없을 수 있다.
+   *
+   * 코드 배포와 db/ledger.sql 적용은 따로 일어난다. 코드가 먼저 올라간 순간에
+   * 여기서 그냥 던지면 사장님 마이페이지 전체가 500 이 된다. 감사기록은 그 화면의
+   * 곁가지일 뿐이므로, 함수가 없으면 빈 목록으로 두고 화면은 그대로 띄운다.
+   * (db:cloud:apply 를 돌리면 저절로 채워진다.)
+   */
+  const stored = await (store as TableStateStore | PostgresStateStore)
+    .callRpc<AuditEvent[] | null>('recent_audit_events', { actor: actorId, max_rows: limit })
+    .catch((error) => {
+      console.error('감사기록 조회 실패(원장 적용 전일 수 있습니다):', (error as Error).message)
+      return null
+    })
+  // 아직 내보내기 전인 기록도 같이 보여준다. 방금 한 일이 화면에서 빠져 보이지 않게 한다.
+  const pending = pendingAuditEvents.filter((event) => event.actorId === actorId)
+  return [...pending, ...(stored ?? [])].sort(byNewest).slice(0, limit)
 }
 
 /**
@@ -878,6 +939,24 @@ function locationFromAddress(address: string) {
 }
 
 /** AI 심사에서 펀딩 가능 판정을 받은 실제 계정만 투자자 공개 원장에 올린다. */
+/** 사업자등록번호에서 숫자만 남긴다. 표기(하이픈)가 달라도 같은 사업체로 본다. */
+const businessKey = (value: unknown) => String(value ?? '').replace(/\D/g, '')
+
+/**
+ * 이 신청과 같은 사업체인데 남의 계정에 이미 등록된 식당.
+ *
+ * 데모 자료가 공유되다 보니 A계정과 B계정이 같은 가게로 신청하는 일이 실제로 생긴다.
+ * 둘 다 승인하면 같은 식당이 투자자 목록에 두 번 뜨고 펀드도 두 개가 된다.
+ * 상호명은 계정마다 다르게 적을 수 있으므로 사업자등록번호로만 판단한다.
+ */
+function conflictingRestaurant(application: Application) {
+  const key = businessKey((application.data as Record<string, unknown>)?.businessNumber)
+  if (!key) return undefined
+  return db.restaurants.find((item) => item.ownerId && item.ownerId !== application.userId
+    && businessKey(item.businessNumber) === key
+    && item.verificationStatus !== 'rejected')
+}
+
 function publishApprovedApplication(application: Application) {
   if (application.status !== 'approved') return undefined
   const data = application.data as Record<string, any>
@@ -897,11 +976,16 @@ function publishApprovedApplication(application: Application) {
   // 예전에는 sourceApplicationId 가 있기만 하면 아무 식당이나 골라 덮어썼다.
   // 그래서 두 번째 가게를 승인하면 첫 번째 가게가 두 번째 이름으로 바뀌어 사라졌고,
   // 사장님 계정은 영원히 펀드를 하나만 가질 수 있었다.
+  // 사업자등록번호가 있으면 그것이 가장 정확하다. 상호를 바꿔 다시 낸 신청도 같은 가게로 이어진다.
+  const ownKey = businessKey(data.businessNumber)
   let restaurant = db.restaurants.find((item) => item.ownerId === application.userId
-    && (item.sourceApplicationId === application.id || item.name === application.restaurantName))
+    && (item.sourceApplicationId === application.id
+      || (ownKey && businessKey(item.businessNumber) === ownKey)
+      || item.name === application.restaurantName))
   if (!restaurant) {
     restaurant = {
       id: id('restaurant'), ownerId: application.userId, sourceApplicationId: application.id, verificationStatus: 'verified',
+      businessNumber: ownKey || undefined,
       name: application.restaurantName, emoji: visual.emoji, category, ...location,
       tagline: String(data.tagline || `${location.neighborhood}에서 검증받은 ${category} 식당`).slice(0, 80),
       description: String(data.businessPlan || data.expectedEffect || '제출한 원천자료를 바탕으로 먹투 AI 검증을 통과한 식당입니다.').slice(0, 500),
@@ -923,6 +1007,7 @@ function publishApprovedApplication(application: Application) {
   } else {
     Object.assign(restaurant, {
       sourceApplicationId: application.id, verificationStatus: 'verified', name: application.restaurantName,
+      businessNumber: ownKey || restaurant.businessNumber,
       category, emoji: visual.emoji, color: visual.color, ...location, monthlySales,
       salesGrowth: growth, repeatRate, openedYears: Math.max(0, number('operatingYears', restaurant.openedYears)),
       avgPrice: Math.max(1000, number('averageTicket', number('avgPrice', restaurant.avgPrice))),
@@ -1083,6 +1168,9 @@ const UNLOCKED_AI_PATHS = new Set([
 
 app.use('/api', async (req, res, next) => {
   if (store.kind === 'file') return next()
+  // 잠금을 잡지 않는 경로에서 남긴 감사기록도 흘리지 않고 내보낸다.
+  // 원장 저장(saveDatabase)이 없는 요청에는 그것 말고 내보낼 자리가 없다.
+  res.on('finish', () => { flushAuditEvents().catch(() => undefined) })
   try {
     if (req.method === 'GET' || UNLOCKED_AI_PATHS.has(req.originalUrl.split('?')[0])) {
       await refreshState()
@@ -2001,17 +2089,52 @@ app.get('/api/admin/applications/:id', auth('admin'), (req: AuthedRequest, res) 
 app.patch('/api/admin/applications/:id', auth('admin'), async (req: AuthedRequest, res) => {
   const application = db.applications.find((item) => item.id === req.params.id)
   if (!application) return res.status(404).json({ error: '심사를 찾지 못했어요.' })
+  // 보완해서 다시 낸 건이 이미 있으면 지난 건을 다시 판정하지 않는다.
+  // 그러지 않으면 낡은 자료로 승인이 나서 최신 신청과 결과가 엇갈린다.
+  if (application.supersededBy) {
+    return res.status(409).json({ error: '사장님이 이 건을 보완해 다시 제출했어요. 최신 신청에서 판정해주세요.', supersededBy: application.supersededBy })
+  }
+  const note = String(req.body.reviewNote || '').trim().slice(0, 1000)
+  let published: { restaurant: Restaurant; fund: Fund } | undefined
   if (['approved', 'conditional', 'manual_review', 'rejected'].includes(req.body.status)) {
+    if (req.body.status === 'approved') {
+      // 같은 사업체가 이미 남의 계정으로 올라와 있으면 승인하지 않는다.
+      // 승인해 버리면 투자자 목록에 같은 가게가 두 번 뜨고 펀드도 두 개가 된다.
+      const conflict = conflictingRestaurant(application)
+      if (conflict) {
+        const holder = db.users.find((item) => item.id === conflict.ownerId)
+        return res.status(409).json({
+          error: `같은 사업자등록번호(${(application.data as Record<string, unknown>)?.businessNumber})로 이미 등록된 가게가 있어요. `
+            + `'${conflict.name}'${holder ? ` (${holder.email})` : ''} 와 같은 사업체라 펀드를 새로 만들지 않았어요. `
+            + '같은 사업체가 맞다면 그 가게에서 다음 회차로 진행하고, 아니라면 사장님께 사업자등록번호 확인을 요청해주세요.',
+          conflict: { restaurantId: conflict.id, restaurantName: conflict.name, ownerEmail: holder?.email },
+        })
+      }
+    }
     application.status = req.body.status
+    application.reviewedAt = now()
+    if (note) application.reviewNote = note
     if (application.status === 'approved') {
-      publishApprovedApplication(application)
+      published = publishApprovedApplication(application)
       pushNotification(application.userId, 'application', '펀딩 검증이 통과됐어요', `${application.restaurantName}이 투자자 식당 목록에 공개됐어요.`, '/owner/my')
     } else {
-      const published = db.restaurants.find((item) => item.sourceApplicationId === application.id)
-      if (published) published.verificationStatus = application.status === 'rejected' ? 'rejected' : 'submitted'
+      const existing = db.restaurants.find((item) => item.sourceApplicationId === application.id)
+      if (existing) existing.verificationStatus = application.status === 'rejected' ? 'rejected' : 'submitted'
+      // 보완 요청은 사장님이 알아채지 못하면 아무 일도 일어나지 않는다.
+      // 무엇을 고쳐야 하는지까지 알림에 담아 보낸다.
+      if (application.status === 'rejected') {
+        pushNotification(application.userId, 'application', '보완이 필요해요',
+          note ? `${application.restaurantName} · ${note}` : `${application.restaurantName} 신청에 보완이 필요해요. 사장님 센터에서 확인해주세요.`, '/owner/my')
+      } else if (application.status === 'conditional') {
+        pushNotification(application.userId, 'application', '조건부 승인됐어요',
+          note ? `${application.restaurantName} · ${note}` : `${application.restaurantName} 신청이 조건부로 승인됐어요.`, '/owner/my')
+      }
     }
+    audit(req.user!.id, 'admin.application_decision', 'application', application.id,
+      `${application.restaurantName} ${application.status}${note ? ` · ${note.slice(0, 120)}` : ''}`)
   }
-  await saveDatabase(); changed(); res.json(application)
+  await saveDatabase(); changed()
+  res.json({ ...application, published: published ? { restaurantId: published.restaurant.id, fundId: published.fund.id } : undefined })
 })
 
 app.patch('/api/admin/reviews/:id', auth('admin'), async (req: AuthedRequest, res) => {
@@ -3436,6 +3559,20 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
     demoNotification(sandbox, 'application', '체험 심사 완료', `${restaurantName} 먹투 성장성 예비평가 ${score}점 · 결과 ${creditAssessment.grade}`, '/owner')
     return res.status(201).json({ message: '체험 심사가 끝났어요. 결과는 저장되지 않습니다.', application, ephemeral: true, demoNotice: DEMO_NOTICE })
   }
+  /*
+   * 보완해서 다시 낸 건이면 지난 건과 이어 붙인다.
+   *
+   * 이어 붙이지 않으면 사장님 화면에 '보완 필요' 건과 새 건이 나란히 남아서
+   * 어느 것이 살아 있는 신청인지 알 수 없고, 운영자도 낡은 건을 다시 판정할 수 있다.
+   * 남의 신청이나 이미 대체된 건에는 붙이지 않는다.
+   */
+  const resubmitTarget = typeof data.resubmittedFrom === 'string'
+    ? db.applications.find((item) => item.id === data.resubmittedFrom && item.userId === req.user!.id && !item.supersededBy)
+    : undefined
+  if (resubmitTarget) {
+    resubmitTarget.supersededBy = application.id
+    application.resubmittedFrom = resubmitTarget.id
+  }
   db.applications.push(application)
   // 문서함에 있는 자료가 이번 신청에 쓰였다는 것을 남긴다. 다음 라운드에 무엇을 다시 썼는지 추적한다.
   db.documents = (db.documents ?? []).map((item) => (item.userId === req.user!.id && !item.usedInApplicationIds.includes(application.id)
@@ -3459,7 +3596,7 @@ app.post('/api/applications', auth('owner'), async (req: AuthedRequest, res) => 
   res.status(201).json({ message: '원천데이터 기반 먹투 자동분석이 완료됐어요. 최종 승인 여부는 마이페이지에서 확인할 수 있어요.', application })
 })
 
-app.get('/api/owner', auth('owner'), (req: AuthedRequest, res) => {
+app.get('/api/owner', auth('owner'), async (req: AuthedRequest, res) => {
   if (req.user!.sessionMode === 'demo') {
     // 체험 사장님에게는 샘플 식당 하나를 빌려주고, 변경분은 샌드박스에만 남긴다.
     const sandbox = demoSandbox(req.user!.id, 'owner')
@@ -3482,7 +3619,7 @@ app.get('/api/owner', auth('owner'), (req: AuthedRequest, res) => {
   const restaurants = db.restaurants.filter((r) => r.ownerId === req.user!.id)
   const fundIds = db.funds.filter((f) => restaurants.some((r) => r.id === f.restaurantId)).map((f) => f.id)
   const positions = db.positions.filter((p) => fundIds.includes(p.fundId))
-  const auditEvents = db.auditEvents.filter((event) => event.actorId === req.user!.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 30)
+  const auditEvents = await recentAuditEvents(req.user!.id, 30)
   const ocrAnalyses = db.ocrAnalyses.filter((item) => item.userId === req.user!.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 20)
   const dataConnections = db.dataConnections.filter((item) => item.userId === req.user!.id && item.status === 'active').map(({ userId: _, ...item }) => item)
   // 문서함. 재신청 화면의 "지난번 자료 그대로 쓰기" 재료이고, 교정 통계가 판독 정확도의 실측치다.
@@ -4285,7 +4422,9 @@ app.post('/api/ai/owner-report', auth('owner'), async (req: AuthedRequest, res) 
       const texts = [report.headline, report.salesCause.body, report.repeatPlan.body, report.couponPlan.body, report.costCheck.body, report.watchout, ...report.tasks]
       if (!safeAdvisoryText(texts)) throw new Error('owner report tripped advisory policy')
       if (leaksFieldName(texts)) throw new Error('owner report leaked internal field names')
-      if (!demo) await withWriteLock(() => audit(req.user!.id, 'ai.owner_report', 'restaurant', restaurant.id, `${facts.reportMonth} 경영 리포트 생성`))
+      // 감사기록은 원장 밖으로 나가므로 전역 잠금이 필요 없다.
+      // (예전에는 이 한 줄 때문에 원장을 통째로 읽고 다시 썼다.)
+      if (!demo) { audit(req.user!.id, 'ai.owner_report', 'restaurant', restaurant.id, `${facts.reportMonth} 경영 리포트 생성`); await flushAuditEvents() }
       return { value: report, model }
     })
     const { value: report, model } = generated
@@ -4324,7 +4463,7 @@ app.post('/api/ai/anomaly-detection', auth('owner'), async (req: AuthedRequest, 
       const { parsed, model } = await callAiJson(ANOMALY_EXPLANATION_SYSTEM, anomalyExplanationPrompt(detected), { maxTokens: 500 })
       const result = applyAnomalyExplanation(detected, parsed)
       if (!result || !safeAdvisoryText([result.summary, ...result.nextChecks])) throw new Error('anomaly explanation failed validation')
-      if (!demo) await withWriteLock(() => audit(req.user!.id, 'ai.anomaly_detection', 'restaurant', restaurant.id, `매출 이상탐지 ${detected.status}`))
+      if (!demo) { audit(req.user!.id, 'ai.anomaly_detection', 'restaurant', restaurant.id, `매출 이상탐지 ${detected.status}`); await flushAuditEvents() }
       return { value: result, model }
     })
     res.json({ result: generated.value, provider: aiProviderLabel(), model: generated.model, generatedAt: now(), cached: false })

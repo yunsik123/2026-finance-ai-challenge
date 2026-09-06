@@ -195,3 +195,17 @@
 .owner-report-round-list>button .owner-history-status{justify-self:start}
 .owner-report-round-list>button em{font-size:11.5px;font-style:normal;color:var(--ink-soft)}
 @media(max-width:640px){.owner-report-rounds{padding:15px 16px}.owner-report-round-list{grid-template-columns:1fr}}
+
+/* ── 운영자 보완 요청 ────────────────────────────────────────
+   '보완 후 재신청' 상태만 보이고 이유는 어디에도 없던 자리다.
+   무엇을 고쳐야 하는지와 다시 제출하는 길을 리포트보다 먼저 보여준다. */
+.owner-review-note{margin:0 0 4px;padding:20px 22px;border-radius:18px;border:1.5px solid #f0c3b6;background:#fff6f3}
+.owner-review-note.conditional{border-color:#eed7ab;background:#fdf8ee}
+.owner-review-note-head{display:flex;gap:12px;align-items:center}
+.owner-review-note-head>svg{width:24px;height:24px;flex:none;color:#c2563c}
+.owner-review-note.conditional .owner-review-note-head>svg{color:#a97c22}
+.owner-review-note-head small{display:block;font-size:11.5px;color:var(--muted)}
+.owner-review-note-head b{display:block;margin-top:2px;font-size:17px}
+.owner-review-note-body{margin:13px 0 0;padding:14px 16px;border-radius:13px;background:#fff;border:1px solid var(--line);font-size:14px;line-height:1.75;white-space:pre-wrap}
+.owner-review-note .button{margin-top:15px}
+@media(max-width:640px){.owner-review-note{padding:16px}}
