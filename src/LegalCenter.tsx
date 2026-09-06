@@ -17,11 +17,16 @@ const at = (iso: string) => new Date(iso).toLocaleString('ko-KR', { dateStyle: '
 
 /** 목록과 본문은 여러 화면에서 쓰이므로 한 번 받아 캐시해 둔다. */
 let indexCache: LegalIndex | undefined
+let indexRequest: Promise<LegalIndex> | undefined
 const documentCache = new Map<string, LegalDocument>()
 
 export async function loadLegalIndex() {
-  indexCache ??= await api<LegalIndex>('/api/legal')
-  return indexCache
+  indexRequest ??= api<LegalIndex>('/api/legal').then((result) => {
+    if (indexCache?.version !== result.version) documentCache.clear()
+    indexCache = result
+    return result
+  }).finally(() => { indexRequest = undefined })
+  return indexRequest
 }
 
 export async function loadLegalDocument(documentId: string) {
@@ -36,8 +41,16 @@ export function useLegalIndex() {
   const [index, setIndex] = useState<LegalIndex | undefined>(indexCache)
   useEffect(() => {
     let live = true
-    loadLegalIndex().then((result) => { if (live) setIndex(result) }).catch(() => undefined)
-    return () => { live = false }
+    let retry: ReturnType<typeof setTimeout> | undefined
+    const load = () => {
+      clearTimeout(retry)
+      loadLegalIndex().then((result) => { if (live) setIndex(result) }).catch(() => {
+        if (live) retry = setTimeout(load, 10_000)
+      })
+    }
+    load()
+    window.addEventListener('focus', load)
+    return () => { live = false; clearTimeout(retry); window.removeEventListener('focus', load) }
   }, [])
   return index
 }
@@ -57,6 +70,8 @@ export function LegalDocModal({ documentId, onClose }: { documentId: string; onC
   const [error, setError] = useState('')
   useEffect(() => {
     let live = true
+    setDocument(documentCache.get(documentId))
+    setError('')
     loadLegalDocument(documentId)
       .then((result) => { if (live) setDocument(result) })
       .catch((cause) => { if (live) setError((cause as Error).message) })
@@ -96,6 +111,7 @@ export function LegalConsentReader({ documentId, title, summary, agreed, onToggl
   useEffect(() => {
     if (!open || document) return
     let live = true
+    setError('')
     loadLegalDocument(documentId)
       .then((result) => { if (live) setDocument(result) })
       .catch((cause) => { if (live) setError((cause as Error).message) })
@@ -148,7 +164,8 @@ export default function LegalCenter({ me }: { me: MeState | null }) {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    if (!documentId) { setDocument(undefined); return }
+    setDocument(undefined)
+    if (!documentId) { setError(''); return }
     let live = true
     setError('')
     loadLegalDocument(documentId)

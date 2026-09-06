@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactElement } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import {
   AlertTriangle, Bot, CheckCircle2, CircleDollarSign, ClipboardCheck, FileText, Gift, LayoutDashboard, LifeBuoy, LogOut,
   Eye, MessageSquareWarning, RefreshCw, Search, ShieldCheck, Star, Store, Users, X,
@@ -60,15 +60,21 @@ export default function AdminCenter({ me, onLogin, onLogout, notify }: { me: MeS
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [detail, setDetail] = useState<AdminApplicationDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState('')
+  const detailRequest = useRef(0)
+  const dashboardRequest = useRef(0)
   /** 심사 화면에서 지금 열어 본 제출 자료의 출처 id. */
   const [openedDocument, setOpenedDocument] = useState('')
 
   const load = async () => {
     if (me?.user.role !== 'admin') return
-    try { setDashboard(await api<Dashboard>('/api/admin/dashboard')) }
+    const requestId = ++dashboardRequest.current
+    try {
+      const result = await api<Dashboard>('/api/admin/dashboard')
+      if (requestId === dashboardRequest.current) setDashboard(result)
+    }
     catch (error) { notify((error as Error).message) }
   }
-  useEffect(() => { void load() }, [me?.user.id, me?.user.role])
+  useEffect(() => { void load(); return () => { ++dashboardRequest.current; ++detailRequest.current } }, [me?.user.id, me?.user.role])
 
   const mutate = async (id: string, path: string, body: Record<string, unknown>, message: string) => {
     setBusy(id)
@@ -80,11 +86,16 @@ export default function AdminCenter({ me, onLogin, onLogout, notify }: { me: MeS
   }
 
   const openApplication = async (id: string) => {
+    const requestId = ++detailRequest.current
+    setDetail(null)
     setDetailLoading(id)
     setOpenedDocument('')
-    try { setDetail(await api<AdminApplicationDetail>(`/api/admin/applications/${id}`)) }
+    try {
+      const result = await api<AdminApplicationDetail>(`/api/admin/applications/${id}`)
+      if (requestId === detailRequest.current) setDetail(result)
+    }
     catch (error) { notify((error as Error).message) }
-    finally { setDetailLoading('') }
+    finally { if (requestId === detailRequest.current) setDetailLoading('') }
   }
 
   const filtered = <T,>(items: T[]) => {

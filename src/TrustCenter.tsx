@@ -15,7 +15,10 @@ export default function TrustCenter({ state, onSelect }: { state: PublicState; o
 
   useEffect(() => {
     setData(null); setError('')
-    api<{ assessment: TrustAssessment; graph: KnowledgeGraph }>(`/api/trust/${restaurantId}`).then(setData).catch((reason) => setError(reason.message))
+    if (!restaurantId) return
+    let live = true
+    api<{ assessment: TrustAssessment; graph: KnowledgeGraph }>(`/api/trust/${restaurantId}`).then((result) => { if (live) setData(result) }).catch((reason) => { if (live) setError(reason.message) })
+    return () => { live = false }
   }, [restaurantId])
 
   return <div className="page-wrap trust-page">

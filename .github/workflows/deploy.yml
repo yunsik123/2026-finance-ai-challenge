@@ -43,6 +43,9 @@ jobs:
       - name: 타입 검사
         run: npm run check
 
+      - name: 프론트 API 회귀 검사
+        run: npm run test:client
+
       - name: 빌드
         run: npm run build
 

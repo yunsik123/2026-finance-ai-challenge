@@ -121,6 +121,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
   const legal = useLegalIndex()
   const [agreedDocuments, setAgreedDocuments] = useState<string[]>([])
   const formRef = useRef<HTMLFormElement | null>(null)
+  useEffect(() => { setAgreedDocuments([]) }, [legal?.version])
 
   const consentDocuments = (legal?.documents || []).filter((document) => legal?.required.owner_application.includes(document.id))
   const allConsentsAgreed = consentDocuments.length > 0 && consentDocuments.every((document) => agreedDocuments.includes(document.id))
@@ -181,10 +182,10 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
     })
     if (file) {
       try {
-      const metadata = await readDocumentMetadata(file)
-      if (filesRef.current[sourceId] !== file) return
-      setDocumentMetadata((current) => ({ ...current, [sourceId]: metadata }))
-      notify(metadata.rowCount ? `${file.name}: ${metadata.headers.length}개 열·${metadata.rowCount}개 행을 확인했어요.` : `${file.name} 파일 형식과 크기를 확인했어요.`)
+        const metadata = await readDocumentMetadata(file)
+        if (filesRef.current[sourceId] !== file) return
+        setDocumentMetadata((current) => ({ ...current, [sourceId]: metadata }))
+        notify(metadata.rowCount ? `${file.name}: ${metadata.headers.length}개 열·${metadata.rowCount}개 행을 확인했어요.` : `${file.name} 파일 형식과 크기를 확인했어요.`)
       } catch (error) { if (filesRef.current[sourceId] === file) notify((error as Error).message) }
     }
   }
@@ -298,7 +299,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
         payload[key] = value
       }
       const response = await api<{ message: string; application: ApplicationResult }>('/api/applications', { method: 'POST', body: JSON.stringify(payload) }); setResult(response.application); notify(response.message); await refresh()
-  }
+    }
     catch (error) { notify((error as Error).message) }
     finally { setSubmitting(false) }
   }
@@ -355,7 +356,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
           <section className="form-section legal-consent-section">
             <div className="form-section-title"><span>3</span><div><h3>분석에 꼭 필요한 동의만 확인</h3><p>마케팅·광고 동의는 받지 않습니다. ‘전문 보기’를 누르면 수집 항목·목적·보유기간과 이의제기 절차가 펼쳐지고, 그 전문 맨 아래에서 동의할 수 있습니다.</p></div></div>
             <div className="consent-progress"><b>{consentDocuments.filter((document) => agreedDocuments.includes(document.id)).length}/{consentDocuments.length}</b><span>필수 고지 동의 완료</span><small>각 항목의 전문을 펼치면 맨 아래에서 동의할 수 있어요.</small></div>
-            {consentDocuments.map((document) => <LegalConsentReader key={document.id} documentId={document.id} title={document.title} summary={document.summary} agreed={agreedDocuments.includes(document.id)} onToggle={() => toggleConsent(document.id)} />)}
+            {consentDocuments.map((document) => <LegalConsentReader key={`${legal?.version}:${document.id}`} documentId={document.id} title={document.title} summary={document.summary} agreed={agreedDocuments.includes(document.id)} onToggle={() => toggleConsent(document.id)} />)}
             {!consentDocuments.length && <p className="legal-loading">필수 고지사항을 불러오는 중이에요.</p>}
             <div className="automated-analysis-note"><ShieldCheck /><p><b>자동분석 안내</b> 먹투 모델은 예비 점수와 설명을 만들지만 자동으로 최종 거절하지 않습니다. 자료 부족·불일치는 수동 심사로 보내며, 사장님은 결과 설명과 재검토를 요청할 수 있습니다.</p></div>
           </section>

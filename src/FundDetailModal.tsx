@@ -104,6 +104,7 @@ export default function FundDetailModal({ restaurant: r, me, initialTab = 'inves
   const toggleConsent = (documentId: string) => setAgreedDocuments((current) => current.includes(documentId)
     ? current.filter((item) => item !== documentId) : [...current, documentId])
   useEffect(() => { setAgreedDocuments([]); setRiskAccepted(false); setConfirming(false) }, [r.id, tab])
+  useEffect(() => { setAgreedDocuments([]); setRiskAccepted(false) }, [legal?.version])
 
   const transact = async () => {
     if (!me) { onLogin(); return }
@@ -201,7 +202,7 @@ export default function FundDetailModal({ restaurant: r, me, initialTab = 'inves
         <button className="trade-confirm-close" onClick={() => setConfirming(false)} aria-label="확인창 닫기"><X /></button>
         <span className="eyebrow coral">최종 확인</span><h3>{tab === 'invest' ? '투자 조건을 확인해주세요' : '회수 조건을 확인해주세요'}</h3>
         <dl><div><dt>식당</dt><dd>{r.name}</dd></div><div><dt>{tab === 'invest' ? '투자 금액' : '회수 요청'}</dt><dd>{won(amount)}</dd></div><div><dt>처리 방식</dt><dd>{r.fund.status === 'funding' ? '즉시 반영' : '1,000원 단위 예약 매칭'}</dd></div>{tab === 'invest' && <div><dt>쿠폰 조건</dt><dd>{r.fund.minIssueDiscount}%부터 발급 · 최대 {r.fund.maxDiscount}%</dd></div>}</dl>
-        <div className="trade-consent-list"><b>현재 적용 약관 {legal?.version || '불러오는 중'}</b><p>각 문서의 전문을 확인한 뒤 동의하면 이 버전과 동의 시각이 거래 기록에 남습니다.</p>{consentDocuments.map((document) => <LegalConsentReader key={document.id} documentId={document.id} title={document.title} summary={document.summary} agreed={agreedDocuments.includes(document.id)} onToggle={() => toggleConsent(document.id)} />)}{!consentDocuments.length && <span className="legal-loading">필수 약관을 불러오는 중이에요.</span>}</div>
+        <div className="trade-consent-list"><b>현재 적용 약관 {legal?.version || '불러오는 중'}</b><p>각 문서의 전문을 확인한 뒤 동의하면 이 버전과 동의 시각이 거래 기록에 남습니다.</p>{consentDocuments.map((document) => <LegalConsentReader key={`${legal?.version}:${document.id}`} documentId={document.id} title={document.title} summary={document.summary} agreed={agreedDocuments.includes(document.id)} onToggle={() => toggleConsent(document.id)} />)}{!consentDocuments.length && <span className="legal-loading">필수 약관을 불러오는 중이에요.</span>}</div>
         <label className="risk-confirm-check"><input type="checkbox" checked={riskAccepted} onChange={(event) => setRiskAccepted(event.target.checked)} /><span><i className="risk-checkbox" aria-hidden="true">{riskAccepted && <Check />}</i><AlertTriangle /><b>원금과 회수 시점이 보장되지 않으며 쿠폰은 금융수익이 아님을 확인했습니다.</b></span></label>
         <button className="button full large" disabled={!riskAccepted || !allConsentsAgreed || busy} onClick={transact}>{busy ? '처리 중...' : !legal ? '약관 불러오는 중' : !allConsentsAgreed ? '필수 약관에 동의해주세요' : tab === 'invest' ? '확인하고 투자하기' : '확인하고 회수 요청하기'}</button>
       </section></div>}
