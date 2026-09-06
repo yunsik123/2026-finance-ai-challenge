@@ -185,26 +185,19 @@ try {
   // 앞 단계를 끝내지 않은 채 뒤 단계 주소를 직접 열면 되돌려보낸다.
   await evaluate('history.pushState({}, "", "/owner/plan"); window.dispatchEvent(new PopStateEvent("popstate"))')
   await waitFor('location.pathname === "/owner/store"', 'direct access to a later step is redirected back')
-  // 데모자료 버튼은 '자료 올리기' 화면에만 있다. 1단계는 직접 채워 넘어간다.
-  await evaluate(`(() => {
-    const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
-    const fill = (name, value) => {
-      const input = document.querySelector(\`[name=\${name}]\`)
-      set.call(input, value)
-      input.dispatchEvent(new Event('input', { bubbles: true }))
-    }
-    fill('restaurantName', '먹투 테스트식당')
-    fill('ownerName', '김테스트')
-    fill('signature', '들기름 고등어 한상')
-    fill('businessNumber', '123-45-67891')
-    fill('licenseNumber', '제2026-테스트-0001호')
-    fill('address', '서울특별시 마포구 테스트로 123, 1층')
-    document.querySelector('.identity-action').click()
-  })()`)
-  await waitFor('Boolean(document.querySelector(".identity-action.verified"))', 'store step filled')
-  assert(await evaluate('document.querySelectorAll(".virtual-data-upload-btn").length === 0'), '데모 버튼은 자료 올리기 화면에만 있어야 합니다')
+  // 데모 채우기 버튼은 단계마다 하나씩 있고, 자기 화면의 칸만 채운다.
+  // 1단계 버튼은 가게 정보와 대표자 본인인증까지 끝낸다. 예전에는 이 버튼이 2단계에만 있어서,
+  // 본인인증을 손으로 마친 사람만 데모를 만날 수 있었다.
+  assert(await evaluate('document.querySelectorAll(".step-demo-fill .virtual-data-upload-btn").length === 1'), '1단계에 데모 채우기 버튼이 있어야 합니다')
+  await evaluate('document.querySelector(".step-demo-fill .virtual-data-upload-btn").click()')
+  await waitFor('Boolean(document.querySelector(".identity-action.verified"))', 'store demo fills fields and verifies identity')
+  await waitFor('document.querySelector("[name=restaurantName]").value === "먹투 테스트식당" && document.querySelector("[name=ownerName]").value === "김테스트"', 'store demo fills store fields')
+  // 타 페이지까지 채우지 않는다. 1단계 버튼을 눌러도 자료는 하나도 올라가 있으면 안 된다.
+  assert(await evaluate('!document.querySelector(".sample-clear")'), '1단계 데모 채우기가 자료 업로드까지 건드리면 안 됩니다')
   await click('다음')
   await waitFor('location.pathname === "/owner/upload" && Boolean(document.querySelector(".wizard-step.active .intake-zone"))', 'store step advances to upload step')
+  // 2단계 버튼은 자료 칸과 부채 신고만 채운다.
+  assert(await evaluate('document.querySelectorAll(".virtual-data-upload-btn").length === 1'), '2단계 데모 버튼은 하나여야 합니다')
   await evaluate('document.querySelector(".virtual-data-upload-btn").click()')
   await waitFor('document.querySelectorAll(".document-upload-card.uploaded").length === 11', 'sample uploads')
   await click('올린 자료 열어보기')
@@ -302,8 +295,13 @@ try {
   await waitFor('location.pathname === "/owner/upload" && Boolean(document.querySelector(".intake-zone"))', 'browser back returns to upload step')
   await evaluate('history.forward()')
   await waitFor('location.pathname === "/owner/plan"', 'browser forward returns to consent step')
+  // 3단계 버튼은 자금 계획만 채운다. 필수 고지 동의는 사장님이 직접 확인해야 하므로 건드리지 않는다.
+  assert(await evaluate('document.querySelectorAll(".step-demo-fill .virtual-data-upload-btn").length === 1'), '3단계에 데모 채우기 버튼이 있어야 합니다')
+  await evaluate('document.querySelector(".step-demo-fill .virtual-data-upload-btn").click()')
+  await waitFor('document.querySelector("[name=fundPurpose]").value.includes("저온 저장고") && document.querySelectorAll(".fund-use-row").length >= 2', 'plan demo fills the funding plan')
   await evaluate('document.querySelectorAll(".consent-reader-head").forEach(button => button.click())')
   await waitFor('[...document.querySelectorAll(".consent-reader-agree input")].length === 3 && [...document.querySelectorAll(".consent-reader-agree input")].every(input => !input.disabled)', 'application consent documents')
+  assert(await evaluate('[...document.querySelectorAll(".consent-reader-agree input")].every(input => !input.checked)'), '데모 채우기가 필수 고지 동의까지 체크하면 안 됩니다')
   await evaluate('document.querySelectorAll(".consent-reader-agree input").forEach(input => input.click())')
   // 이전으로 돌아가도 입력이 남아 있어야 한다. 단계 전환으로 값이 사라지면 신청을 다시 써야 한다.
   await evaluate('document.querySelectorAll(".wizard-rail button")[0].click()')

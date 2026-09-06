@@ -106,6 +106,12 @@
   .sample-pack-head .virtual-data-upload-btn { grid-column: 1 / -1; width: 100%; }
 }
 
+/* ── 화면 하나만 채우는 데모 버튼 (1·3단계 맨 위) ──────────────
+   2단계의 자료 묶음과 같은 자리·같은 생김새로 두되, 파일이 아니라 입력칸만
+   채운다는 걸 알 수 있게 테두리를 점선으로 낮춘다. */
+.step-demo-fill { border-style: dashed; padding-bottom: 16px; }
+.step-demo-fill .sample-pack-head > span { background: #eef8f1; color: var(--green); }
+
 /* ── AI 자료 분석 결과 · 자료마다 펼쳐보기 ──────────────────
    접혀 있을 때는 상태 한 줄, 누르면 '어떻게 읽었는지'가 그 자리에서 펼쳐진다. */
 .ai-feedback-header small { margin-left: auto; font-size: 11.5px; color: var(--muted); font-weight: 500; }

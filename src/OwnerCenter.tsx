@@ -13,7 +13,7 @@
  * 3단계에서 "AI가 읽은 값 맞나요?"를 묻는 이유는 두 개다. 사장님이 오독을 잡을 수 있고,
  * 그 확인·수정 결과가 문서함에 정답으로 쌓여 다음 판독을 개선할 재료가 된다.
  */
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
@@ -222,10 +222,15 @@ type DocumentMetadata = { name: string; size: number; type: string; rowCount: nu
 
 /**
  * public/samples 의 가상 원자료(OCR 테스트용 합성 서류)와 값이 맞물리는 '먹투 테스트식당' 프로필.
- * 한 번에 업로드 버튼이 1·4단계 입력란까지 같은 값으로 채워야
- * 문서 판독값과 신고값이 일치해 교차검증 결과를 그대로 볼 수 있다.
+ * 문서 판독값과 신고값이 같아야 교차검증 결과를 그대로 볼 수 있어서, 여기 적힌 값이
+ * 곧 합성 서류에 인쇄된 값이다.
+ *
+ * 단계별로 따로 나눠 둔 이유가 있다. 데모 채우기 버튼은 각 단계 화면에 하나씩 있고,
+ * 그 버튼은 자기 화면에 있는 칸만 채운다. 한 버튼이 세 화면을 다 채워버리면
+ * 사장님은 자기가 무엇을 확인해야 하는지 모른 채 마지막 화면까지 떠밀려 간다.
  */
-const sampleProfile: Record<string, string> = {
+/** 1단계(가게 정보) 화면의 칸. */
+const storeSampleFields: Record<string, string> = {
   restaurantName: '먹투 테스트식당',
   category: '한식',
   signature: '들기름 고등어 한상',
@@ -234,10 +239,35 @@ const sampleProfile: Record<string, string> = {
   businessNumber: '123-45-67891',
   licenseNumber: '제2026-테스트-0001호',
   address: '서울특별시 마포구 테스트로 123, 1층',
-  targetAmount: '30000000',
+}
+/** 1단계의 대표자·지분 표. 대표자명은 위 프로필과 같아야 판독값과 어긋나지 않는다. */
+const sampleOwnership: OwnershipRow[] = [{ name: storeSampleFields.ownerName, share: 100, role: '대표자' }]
+/** 3단계(동의와 계획) 화면의 칸. 합계는 아래 sampleFundUsePlan 과 반드시 같아야 한다. */
+const planSampleFields: Record<string, string> = {
+  requestedLimit: '30000000',
+  fundingPeriodMonths: '18',
+  ownCapital: '10000000',
+  maxDiscount: '40',
   fundPurpose: '저온 저장고 교체 1,800만원 / 주방 동선 개선 1,200만원',
   businessPlan: '마포구 테스트로 골목 상권에서 12개월 연속 재방문 고객이 늘고 있습니다. 저장·조리 설비를 바꿔 품절과 대기시간을 줄이고 점심 회전율을 높이려 합니다.',
   expectedEffect: '좌석 24석 → 38석, 점심 회전율 2.1회 → 2.8회, 재료 품절로 인한 판매 손실 월 180만원 감소',
+}
+/** 3단계 자금 사용계획. 합계 3,000만원 = planSampleFields.requestedLimit. 어긋나면 다음으로 못 넘어간다. */
+const sampleFundUsePlan: FundUseItem[] = [
+  { category: '주방설비', amount: 18000000, note: '저온 저장고 1대 교체' },
+  { category: '인테리어', amount: 12000000, note: '주방 동선 개선 공사' },
+]
+/**
+ * 2단계 부채 신고값.
+ * 데모 부채 자료(meoktu-debt-sample.csv)의 최근월과 정확히 같게 둔다.
+ * 어긋나면 결과 화면에서 '신고 대출잔액과 자료가 다르다'는 불일치로 잡힌다.
+ */
+const sampleDeclaredDebt: DeclaredDebt = {
+  hasDebt: true, answered: true,
+  loans: [
+    { lender: '한빛은행', balance: 27600000, rate: 5.4, monthlyPayment: 780000, maturity: '2029-04' },
+    { lender: '소상공인시장진흥공단', balance: 20400000, rate: 2.9, monthlyPayment: 370000, maturity: '2029-04' },
+  ],
 }
 
 /**
@@ -868,8 +898,39 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
   }
 
   /**
-   * 샘플 자료 한 번에 올리기. 세트를 골라 채운다.
-   * 3단계 필수 동의는 사장님이 직접 확인해야 하므로 자동으로 체크하지 않는다.
+   * 1단계 화면만 데모 값으로 채운다.
+   *
+   * 예전에는 데모 채우기 버튼이 2단계에만 있었다. 그런데 2단계로 넘어가려면
+   * 1단계를 먼저 끝내야 한다(firstIncompleteStep). 대표자 본인인증까지 손으로 마친
+   * 사람만 데모 버튼을 만날 수 있었다는 뜻이다. 순서가 거꾸로였다.
+   * 그래서 1단계에도 버튼을 두고, 여기서 본인인증까지 함께 끝낸다.
+   *
+   * 자료 업로드와 자금 계획은 손대지 않는다. 각 화면의 버튼이 자기 몫만 채운다.
+   */
+  const fillStoreDemo = () => {
+    setFields((current) => ({ ...current, ...storeSampleFields }))
+    setIdentityVerified(true)
+    setOwnership(sampleOwnership.map((row) => ({ ...row })))
+    notify('가게 정보와 대표자 본인인증을 데모 값으로 채웠어요. 자료 업로드는 다음 화면에서 따로 채웁니다.')
+  }
+
+  /**
+   * 3단계 화면만 데모 값으로 채운다.
+   *
+   * 필수 고지 동의는 채우지 않는다. 사장님이 전문을 펼쳐 직접 확인해야 하는 항목이고,
+   * 그걸 버튼 한 번으로 넘기면 데모가 실제 서비스에서 그대로 문제가 되는 흐름을 가르치게 된다.
+   */
+  const fillPlanDemo = () => {
+    setFields((current) => ({ ...current, ...planSampleFields }))
+    setFundUsePlan(sampleFundUsePlan.map((item) => ({ ...item })))
+    notify('희망 펀딩액과 자금 사용계획을 데모 값으로 채웠어요. 필수 고지 동의는 직접 확인해주세요.')
+  }
+
+  /**
+   * 2단계 화면만 데모 자료로 채운다. 세트를 골라 채운다.
+   *
+   * 자료 칸과 부채 신고까지만 손댄다. 1단계(가게 정보·본인인증)와
+   * 3단계(자금 계획)는 각 화면의 버튼이 따로 채운다.
    */
   const fillWithSamples = async (set: SampleSet) => {
     if (!owner) return
@@ -895,28 +956,12 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
       setDocumentMetadata(metadata)
       setOcrResults({})
       setOcrImages({})
-      setFields((current) => ({ ...current, ...sampleProfile }))
-      setIdentityVerified(true)
-      // 샘플은 새로 추가된 항목까지 채운다. 안 채우면 샘플로 끝까지 가볼 수 없다.
-      setFundUsePlan([
-        { category: '주방설비', amount: 18000000, note: '저온 저장고 1대 교체' },
-        { category: '인테리어', amount: 12000000, note: '주방 동선 개선 공사' },
-      ])
-      // 신고값은 데모 부채 자료(meoktu-debt-sample.csv)의 최근월과 정확히 같게 둔다.
-      // 어긋나면 결과 화면에서 '신고 대출잔액과 자료가 다르다'는 불일치로 잡힌다.
-      setDeclaredDebt({
-        hasDebt: true, answered: true,
-        loans: [
-          { lender: '한빛은행', balance: 27600000, rate: 5.4, monthlyPayment: 780000, maturity: '2029-04' },
-          { lender: '소상공인시장진흥공단', balance: 20400000, rate: 2.9, monthlyPayment: 370000, maturity: '2029-04' },
-        ],
-      })
-      setOwnership([{ name: '김테스트', share: 100, role: '대표자' }])
+      // 부채 신고는 이 화면(2단계) 안에 있는 칸이라 여기서 함께 채운다.
+      setDeclaredDebt({ ...sampleDeclaredDebt, loans: sampleDeclaredDebt.loans.map((loan) => ({ ...loan })) })
       const rows = metadataList.reduce((sum, item) => sum + item.rowCount, 0)
-      goToStep(1)
       notify(set.id === 'rough'
         ? `어긋난 샘플 ${files.length}종을 올렸어요. 표 자료 ${rows.toLocaleString('ko-KR')}행을 확인했습니다. 자동분석을 돌리면 매출↔계좌·매출↔카드 대조에서 불일치가 잡힙니다.`
-        : `데모 자료 ${files.length}종을 올렸어요. 서류는 합성 PNG로, 매출·계좌 자료는 표(CSV) ${rows.toLocaleString('ko-KR')}행으로 넣어 교차검증까지 돌아갑니다. 가게 정보와 자금 계획란도 채웠습니다.`)
+        : `데모 자료 ${files.length}종을 올렸어요. 서류는 합성 PNG로, 매출·계좌 자료는 표(CSV) ${rows.toLocaleString('ko-KR')}행으로 넣어 교차검증까지 돌아갑니다. 부채 신고란도 함께 채웠습니다.`)
       // 문서함에도 남긴다. 화면을 막지 않도록 뒤에서 처리한다.
       void Promise.allSettled(options.map((option, index) => registerDocument({
         file: files[index], sourceId: option.id, metadata: metadataList[index],
@@ -1174,7 +1219,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
           <div className="form-heading"><span>원천데이터 기반 예비심사</span><h2>{stepDefinitions[step].title}</h2><p>{stepDefinitions[step].hint}</p></div>
 
           {/* 업로드 비우기는 올린 자료가 있을 때만.
-              데모자료 한번에 업로드 버튼은 2단계(자료 올리기) 화면 안에만 둔다. */}
+              데모 채우기 버튼은 단계마다 그 화면 안에 하나씩 둔다(StepDemoFill·SamplePack). */}
           {owner && uploadedCount > 0 && <div className="sample-sets">
             <button type="button" className="sample-clear" disabled={Boolean(fillingSample)} onClick={clearUploads}><Eraser /> 업로드 비우기</button>
           </div>}
@@ -1199,6 +1244,15 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
           <div className="wizard-stage">
             {/* ── 1단계 · 가게 정보 ─────────────────────────── */}
             {step === 0 && <section className={`wizard-step active ${direction === 'back' ? 'back' : ''}`}>
+              {/* 이 화면 칸과 대표자 본인인증까지만 채운다. 자료 업로드는 다음 화면 버튼이 맡는다. */}
+              <StepDemoFill
+                title="가게 정보를 데모 값으로 채워볼까요?"
+                description={<>가상 식당 <em>먹투 테스트식당</em>의 사업자 정보로 아래 칸을 채우고 <b>대표자 본인인증</b>까지 함께 끝냅니다. 자료 업로드는 다음 화면에서 따로 채워요.</>}
+                label="가게 정보·대표자확인 데모로 채우기"
+                busy={Boolean(fillingSample)}
+                onFill={fillStoreDemo}
+              />
+
               {/* 새 가게인가, 이미 등록한 가게의 다음 회차인가. 처음에 정해야 회차가 꼬이지 않는다. */}
               {(ownerData?.restaurants || []).length > 0 && <div className="form-section">
                 <TargetPicker
@@ -1221,7 +1275,7 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
               </div>}
 
               <div className="form-section">
-                {/* 이 칸들은 '데모자료 한번에 업로드'가 서류와 함께 채운다. 별도 버튼을 두지 않는다. */}
+                {/* 이 칸들은 이 화면 맨 위의 '가게 정보·대표자확인 데모로 채우기'가 채운다. */}
                 <div className="form-section-title"><span>1</span><div><h3>사업체 기본정보와 대표자 확인</h3><p>상권 자료는 주소를 기준으로 먹투가 직접 수집합니다.</p></div></div>
                 <div className="field-grid">
                   <label className="field"><span>상호명</span><input name="restaurantName" placeholder="예: 소복소복" value={fields.restaurantName} onChange={setField('restaurantName')} /></label>
@@ -1348,6 +1402,15 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
 
             {/* ── 3단계 · 동의와 계획 ──────────────────────── */}
             {step === 2 && <section className={`wizard-step active ${direction === 'back' ? 'back' : ''}`}>
+              {/* 자금 계획 칸만 채운다. 필수 고지 동의는 전문을 펼쳐 직접 확인해야 해서 건드리지 않는다. */}
+              <StepDemoFill
+                title="자금 계획을 데모 값으로 채워볼까요?"
+                description={<>희망 펀딩액 3,000만원과 <b>자금 사용계획·사업계획·예상 효과</b>를 아래 칸에 채웁니다. 필수 고지 동의는 전문을 펼쳐 직접 확인해주세요.</>}
+                label="자금 계획 데모로 채우기"
+                busy={Boolean(fillingSample)}
+                onFill={fillPlanDemo}
+              />
+
               <div className="form-section legal-consent-section">
                 <div className="form-section-title"><span>3</span><div><h3>분석에 꼭 필요한 동의만 확인</h3><p>마케팅·광고 동의는 받지 않습니다. ‘전문 보기’를 누르면 수집 항목·목적·보유기간과 이의제기 절차가 펼쳐지고, 그 전문 맨 아래에서 동의할 수 있습니다.</p></div></div>
                 <div className="consent-progress"><b>{consentDocuments.filter((document) => agreedDocuments.includes(document.id)).length}/{consentDocuments.length}</b><span>필수 고지 동의 완료</span><small>각 항목의 전문을 펼치면 맨 아래에서 동의할 수 있어요.</small></div>
@@ -1671,6 +1734,33 @@ function DocumentLocker({ documents, stats, onRemove }: { documents: OwnerDocume
 }
 
 /**
+ * 화면 하나를 데모 값으로 채우는 버튼.
+ *
+ * 단계마다 하나씩 둔다. 그리고 각 버튼은 자기 화면에 보이는 칸만 채운다.
+ * 한 버튼이 세 화면을 다 채우면 화면에 없는 값이 조용히 바뀌고, 사장님은
+ * 자기가 무엇을 확인해야 하는지 모른 채 마지막 화면까지 떠밀려 간다.
+ *
+ * 2단계(자료 올리기)는 넣는 것이 파일이라 안내할 내용이 따로 있어서 SamplePack 이 맡는다.
+ */
+function StepDemoFill({ title, description, label, busy, onFill }: {
+  title: string
+  description: ReactNode
+  label: string
+  busy: boolean
+  onFill: () => void
+}) {
+  return <div className="sample-pack sample-pack-top step-demo-fill">
+    <div className="sample-pack-head">
+      <span><Sparkles /></span>
+      <div><b>{title}</b><p>{description}</p></div>
+      <button type="button" className="virtual-data-upload-btn compact" disabled={busy} onClick={onFill}>
+        <FolderDown /> {label}
+      </button>
+    </div>
+  </div>
+}
+
+/**
  * 자료가 없어도 업로드 흐름을 그대로 체험할 수 있게 만든 데모 묶음.
  *
  * ZIP 을 내려받아 다시 올리라고 하던 안내를 없앴다. 두 단계를 거칠 이유가 없다.
@@ -1683,7 +1773,7 @@ function SamplePack({ busy, onLoadDemo }: { busy: boolean; onLoadDemo: () => voi
       <span><FolderDown /></span>
       <div>
         <b>준비된 자료가 없어도 괜찮아요 · 데모 자료로 바로 체험하기</b>
-        <p>가상 식당 <em>먹투 테스트식당</em>의 12개월 원자료입니다. 누르면 자료 10종이 알맞은 칸에 바로 들어가고, 가게 정보와 자금 계획란까지 함께 채워집니다.</p>
+        <p>가상 식당 <em>먹투 테스트식당</em>의 12개월 원자료입니다. 누르면 자료 10종이 알맞은 칸에 바로 들어가고, 아래 <b>부채 확인</b>란까지 함께 채워집니다. 이 화면 밖의 칸은 건드리지 않아요.</p>
       </div>
       <button type="button" className="virtual-data-upload-btn" disabled={busy} onClick={onLoadDemo}>
         <UploadCloud /> {busy ? '데모 자료를 불러오는 중...' : '데모자료 한번에 업로드'}
