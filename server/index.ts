@@ -36,7 +36,7 @@ import {
 } from './ai-analysis.ts'
 import { orchestrateFinancialVerification, verifyBusiness } from './verification.ts'
 import { checkSwap, couponUsable, daysLeft, EXCHANGE_RULES, normalizePreferences, sweepExpired } from './exchange.ts'
-import { FileStateStore, PostgresStateStore, SupabaseStateStore, TableStateStore, type StateStore } from './store.ts'
+import { FileStateStore, PostgresStateStore, SupabaseStateStore, TableStateStore, textArray, type StateStore } from './store.ts'
 import { aiChatModel, aiCredentialSource, aiEndpoint, aiJsonExtras, aiOcrModel, aiProviderLabel, aiReady, aiToken, aiTokenBudget, initAiProvider, setAiProvider } from './ai-provider.ts'
 import { eligibilityFromSituation, graphDbAudit, graphDbEnabled, graphDbStatus, initGraphDb, ownerEligibility, retrieveSubgraph, syncKnowledge, syncOwnerSituation } from './graph-db.ts'
 
@@ -135,8 +135,9 @@ function tokenFor(user: User) {
   return `${payload}.${signature}`
 }
 
-const demoSessionName: Record<Role, string> = {
-  owner: '사장님 체험자', investor: '투자자 체험자', admin: '운영자 체험자',
+// 운영자는 빠져 있다. 운영센터는 실제 계정으로만 들어간다.
+const demoSessionName: Record<'owner' | 'investor', string> = {
+  owner: '사장님 체험자', investor: '투자자 체험자',
 }
 
 function demoTokenFor(role: Role) {
@@ -157,7 +158,9 @@ function userFromToken(value?: string) {
   try {
     const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString()) as { sub: string; exp: number; mode?: string; role?: Role }
     if (parsed.exp < Date.now()) return undefined
-    if (parsed.mode === 'demo' && (parsed.role === 'owner' || parsed.role === 'investor' || parsed.role === 'admin')) {
+    // 운영자 체험 토큰은 더 이상 발급하지 않는다. 예전에 받아 둔 토큰이 남아 있어도
+    // 여기서 통과시키지 않아야 운영센터가 샌드박스로 되돌아가지 않는다(다시 로그인하면 실제 운영 계정으로 붙는다).
+    if (parsed.mode === 'demo' && (parsed.role === 'owner' || parsed.role === 'investor')) {
       return {
         id: parsed.sub, email: `${parsed.role}@demo-session.meoktu`, name: demoSessionName[parsed.role],
         role: parsed.role, passwordHash: 'demo-session', cash: 0, createdAt: now(), sessionMode: 'demo',
@@ -1569,51 +1572,6 @@ async function handleDemoMutation(req: AuthedRequest, res: Response, user: Sessi
      (그 핸들러 안에서 체험 세션이면 원장 대신 샌드박스에 저장한다.) */
   if (method === 'POST' && pathname === '/api/applications') return false
 
-  /* 운영자 체험의 상태 변경. 원장은 그대로 두고 이 세션의 덮개에만 기록한다.
-     그래서 동시에 여러 명이 체험해도 서로의 화면과 실제 원장이 흔들리지 않는다. */
-  if (method === 'PATCH' && user.role === 'admin' && pathname.startsWith('/api/admin/')) {
-    const overrides = sandbox.adminOverrides
-    const adminMatch = /^\/api\/admin\/(users|restaurants|funds|applications|reviews|support|coupons)\/([^/]+)$/.exec(pathname)
-    if (!adminMatch) { res.status(403).json({ error: '이 기능은 운영자 체험에서 아직 준비되지 않았어요.' }); return }
-    const [, kind, targetId] = adminMatch
-    const note = '운영자 체험이라 이 변경은 내 화면에서만 적용되고 실제 원장은 그대로예요.'
-    if (kind === 'users') {
-      if (db.users.find((item) => item.id === targetId)?.role === 'admin') { res.status(400).json({ error: '관리자 계정은 변경할 수 없어요.' }); return }
-      overrides.users[targetId] = body.accountStatus === 'suspended' ? 'suspended' : 'active'
-      return done({ message: note, accountStatus: overrides.users[targetId] })
-    }
-    if (kind === 'restaurants') {
-      const current = overrides.restaurants[targetId] ?? db.restaurants.find((item) => item.id === targetId)?.salesDisclosure ?? false
-      overrides.restaurants[targetId] = 'salesDisclosure' in body ? Boolean(body.salesDisclosure) : !current
-      return done({ message: note, salesDisclosure: overrides.restaurants[targetId] })
-    }
-    if (kind === 'funds') {
-      if (!['funding', 'trading', 'closed'].includes(body.status)) { res.status(400).json({ error: '바꿀 수 있는 펀드 상태가 아니에요.' }); return }
-      overrides.funds[targetId] = body.status
-      return done({ message: note, status: body.status })
-    }
-    if (kind === 'applications') {
-      if (!['approved', 'conditional', 'manual_review', 'rejected'].includes(body.status)) { res.status(400).json({ error: '바꿀 수 있는 심사 상태가 아니에요.' }); return }
-      overrides.applications[targetId] = body.status
-      return done({ message: note, status: body.status })
-    }
-    if (kind === 'reviews') {
-      overrides.reviews[targetId] = body.status === 'hidden' ? 'hidden' : 'published'
-      return done({ message: note, status: overrides.reviews[targetId] })
-    }
-    if (kind === 'coupons') {
-      if (!['available', 'used', 'expired'].includes(body.status)) { res.status(400).json({ error: '바꿀 수 있는 쿠폰 상태가 아니에요.' }); return }
-      overrides.coupons[targetId] = body.status
-      return done({ message: note, status: body.status })
-    }
-    // support: 답변을 실제로 보내지 않는다. 문의한 사람은 공유 원장의 실제 회원이다.
-    const answer = String(body.answer || '').trim()
-    overrides.support[targetId] = answer
-      ? { status: 'answered', answer: answer.slice(0, 2000), answeredAt: now() }
-      : { status: body.status === 'closed' ? 'closed' : 'in_review' }
-    return done({ message: answer ? `${note} 실제 계정에서는 이 답변이 문의하신 분에게 전달됩니다.` : note, ...overrides.support[targetId] })
-  }
-
   res.status(403).json({ error: '이 기능은 체험 모드에서 아직 준비되지 않았어요. 회원가입하면 바로 이용할 수 있어요.' })
 }
 
@@ -1902,19 +1860,27 @@ app.post('/api/auth/signup', async (req, res) => {
 })
 
 app.post('/api/auth/demo', (req, res) => {
-  // 운영자 체험도 여기로 온다. 예전에는 진짜 운영자 계정으로 로그인시켰는데,
-  // 그러면 체험자가 실제 회원을 정지시키고 실제 심사를 승인·거절할 수 있었고
-  // 여러 명이 동시에 들어오면 서로의 변경까지 덮어썼다.
   const requested = req.body?.role
   const role: Role = requested === 'owner' || requested === 'admin' ? requested : 'investor'
+  // 운영자는 체험 세션을 주지 않는다. 운영센터는 '공유 원장 그 자체'를 다루는 화면이고,
+  // 이 서비스에서 운영자로 들어오는 길은 이 버튼 하나뿐이다. 샌드박스에 가둬 두면
+  // 승인해도 펀드가 생기지 않고 정지해도 그 계정이 계속 로그인되는, 절반만 도는 화면이 된다.
+  // 그래서 운영자는 실제 운영 계정으로 붙이고, 누른 결정은 실제 원장에 그대로 남긴다.
+  if (role === 'admin') {
+    const admin = db.users.find((item) => item.role === 'admin')
+    if (!admin) return res.status(503).json({ error: '운영 계정을 준비하지 못했어요. 잠시 뒤 다시 시도해주세요.' })
+    return res.json({
+      token: tokenFor(admin), user: publicUser(accountSession(admin)), provider: 'operator',
+      capabilities: ['public-read', 'graph-rag', 'review-read', 'review-write'],
+    })
+  }
   // 누를 때마다 무작위 sub가 든 새 토큰을 발급한다. 이전 체험 샌드박스를 이어 쓰지 않는다.
   const user: SessionUser = {
     id: `demo-${role}`, email: `${role}@demo-session.meoktu`, name: demoSessionName[role],
     role, passwordHash: 'demo-session', cash: 0, createdAt: now(), sessionMode: 'demo',
   }
   const capabilities = ['public-read', 'graph-rag',
-    ...(role === 'owner' ? ['local-upload', 'ocr-preview'] : []),
-    ...(role === 'admin' ? ['review-read', 'sandboxed-review-write'] : [])]
+    ...(role === 'owner' ? ['local-upload', 'ocr-preview'] : [])]
   res.json({ token: demoTokenFor(role), user: publicUser(user), provider: 'ephemeral-demo', capabilities })
 })
 
@@ -1984,37 +1950,15 @@ app.get('/api/me', auth(), async (req: AuthedRequest, res) => {
   res.json({ user: publicUser(user), positions, orders, coupons, applications, visitVerifications, walletTransactions, favoriteRestaurantIds, ocrAnalyses, documents: myDocuments, dataConnections, notifications, unreadNotifications: notifications.filter((item) => !item.read).length, exchange, rules: EXCHANGE_RULES, legalConsents, legalVersion: LEGAL_VERSION })
 })
 
-app.get('/api/admin/dashboard', auth('admin'), (req: AuthedRequest, res) => {
-  // 운영자 체험 세션은 자기 덮개를 얹은 사본을 본다. 공유 원장은 건드리지 않는다.
-  const overrides = req.user!.sessionMode === 'demo' ? demoSandbox(req.user!.id, 'admin').adminOverrides : undefined
-  const applications = [...db.applications]
-    .sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))
-    .map((application) => {
-      const status = overrides?.applications[application.id]
-      return status ? { ...application, status: status as Application['status'] } : application
-    })
+app.get('/api/admin/dashboard', auth('admin'), (_req: AuthedRequest, res) => {
+  // 운영센터는 공유 원장을 그대로 읽는다. 여기 보이는 값이 곧 투자자·사장님이 보는 값이다.
+  const applications = [...db.applications].sort((a, b) => b.submittedAt.localeCompare(a.submittedAt))
   const users = db.users.filter((user) => user.role !== 'admin')
-    .map((user) => (overrides?.users[user.id] ? { ...user, accountStatus: overrides.users[user.id] } : user))
-  const restaurants = db.restaurants.map((restaurant) => (restaurant.id in (overrides?.restaurants || {})
-    ? { ...restaurant, salesDisclosure: overrides!.restaurants[restaurant.id] } : restaurant))
-  const funds = db.funds.map((fund) => {
-    const status = overrides?.funds[fund.id]
-    return status ? { ...fund, status: status as Fund['status'] } : fund
-  })
-  const reviews = db.reviews.map((review) => {
-    const status = overrides?.reviews[review.id]
-    return status ? { ...review, status } : review
-  })
-  const coupons = db.coupons.map((coupon) => {
-    const status = overrides?.coupons[coupon.id]
-    return status ? { ...coupon, status: status as Coupon['status'] } : coupon
-  })
-  const support = [...(db.supportRequests || [])]
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-    .map((request) => {
-      const patch = overrides?.support[request.id]
-      return patch ? { ...request, ...patch, status: patch.status as SupportRequest['status'] } : request
-    })
+  const restaurants = db.restaurants
+  const funds = db.funds
+  const reviews = db.reviews
+  const coupons = db.coupons
+  const support = [...(db.supportRequests || [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   res.json({
     stats: {
       users: users.length,
@@ -2035,7 +1979,6 @@ app.get('/api/admin/dashboard', auth('admin'), (req: AuthedRequest, res) => {
       return { ...safeApplication(application), owner: owner ? publicUser(owner) : undefined }
     }),
     restaurants, funds, reviews, support, coupons,
-    demo: overrides ? { notice: DEMO_NOTICE, sandboxed: true } : undefined,
   })
 })
 
@@ -2064,12 +2007,8 @@ app.patch('/api/admin/funds/:id', auth('admin'), async (req: AuthedRequest, res)
 })
 
 app.get('/api/admin/applications/:id', auth('admin'), (req: AuthedRequest, res) => {
-  const stored = db.applications.find((item) => item.id === req.params.id)
-  if (!stored) return res.status(404).json({ error: '심사를 찾지 못했어요.' })
-  // 운영자 체험에서 바꾼 상태는 원장이 아니라 그 세션의 덮개에 있다.
-  const demoStatus = req.user!.sessionMode === 'demo'
-    ? demoSandbox(req.user!.id, 'admin').adminOverrides.applications[stored.id] : undefined
-  const application = demoStatus ? { ...stored, status: demoStatus as Application['status'] } : stored
+  const application = db.applications.find((item) => item.id === req.params.id)
+  if (!application) return res.status(404).json({ error: '심사를 찾지 못했어요.' })
   const owner = db.users.find((item) => item.id === application.userId)
   const restaurant = db.restaurants.find((item) => item.sourceApplicationId === application.id)
   const fund = restaurant && db.funds.find((item) => item.restaurantId === restaurant.id)
@@ -2599,7 +2538,7 @@ app.post('/api/coupons/:couponId/list', auth(), async (req: AuthedRequest, res) 
       try {
         const created = await runLedgerRpc<{ listingId: string }>('list_coupon', {
           p_user: me.id, p_coupon: coupon.id,
-          p_categories: listing.wantedCategories, p_regions: listing.wantedRegions,
+          p_categories: textArray(listing.wantedCategories), p_regions: textArray(listing.wantedRegions),
           p_min_discount: listing.minDiscount, p_auto_accept: listing.autoAccept, p_note: listing.note,
         })
         changed()

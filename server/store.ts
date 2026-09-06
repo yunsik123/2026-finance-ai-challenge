@@ -148,6 +148,24 @@ export class SupabaseStateStore implements StateStore {
 }
 
 /**
+ * RPC 의 text[] 인자로 갈 값.
+ *
+ * pg 드라이버 경로는 객체·배열 인자를 JSON 문자열로 바꿔서 보낸다.
+ * jsonb 인자에는 그게 맞지만 list_coupon(p_categories text[]) 처럼
+ * 진짜 Postgres 배열을 받는 자리에는 반대로 틀려서
+ * 빈 배열이 '[]' 문자열로 들어가고 malformed array literal 이 난다.
+ * 그래서 text[] 로 갈 값만 이걸로 감싸 구분한다.
+ * PostgREST 경로는 toJSON 덕분에 그냥 JSON 배열로 나간다.
+ */
+export class SqlTextArray {
+  constructor(readonly values: readonly string[]) {}
+  toJSON() { return this.values }
+}
+
+/** RPC 인자를 text[] 로 표시한다. */
+export const textArray = (values: readonly string[]) => new SqlTextArray(values)
+
+/**
  * 정규화 테이블 저장소.
  *
  * SupabaseStateStore 는 원장 전체를 app_state.data JSONB 한 칸에 넣는다.
@@ -344,6 +362,8 @@ export class PostgresStateStore implements StateStore {
     const params = names.map((name, index) => `${name} => $${index + 1}`).join(', ')
     const values = names.map((name) => {
       const value = args[name]
+      // text[] 인자는 배열 그대로 넘긴다. 드라이버가 Postgres 배열 리터럴로 바꿔준다.
+      if (value instanceof SqlTextArray) return value.values
       // jsonb 인자는 문자열로 넘겨야 드라이버가 배열을 Postgres 배열로 오해하지 않는다.
       return value !== null && typeof value === 'object' ? JSON.stringify(value) : value
     })

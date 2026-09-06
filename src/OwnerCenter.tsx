@@ -1144,10 +1144,9 @@ export default function OwnerCenter({ me, onLogin, refresh, notify }: { me: MeSt
               <span><b>{definition.title}</b><small>{index === step ? '진행 중' : stepComplete(index) ? '완료' : index <= reachableStep ? '작성 중' : '대기'}</small></span>
             </button>)}
           </nav>
-          {/* 지금 어느 주소에 있는지 그대로 보여준다. 단계가 진짜로 넘어간다는 걸 알 수 있게. */}
+          {/* 몇 번째 단계인지만 알린다. 주소는 브라우저 주소창에 이미 보인다. */}
           <p className="wizard-route" aria-live="polite">
             <span>{step + 1}/{stepDefinitions.length}</span>
-            <code>/owner/{stepDefinitions[step].slug}</code>
           </p>
 
           <div className="wizard-stage">
