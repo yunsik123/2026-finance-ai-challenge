@@ -26,8 +26,25 @@ IMAGE="${REGION}-docker.pkg.dev/${PROJECT}/meoktu/${SERVICE}"
 MIN_INSTANCES=0
 if [[ "${DEMO:-0}" == "1" ]]; then MIN_INSTANCES=2; echo "▶ 시연 모드: min-instances=2"; fi
 
-CONNECTION_NAME="$(gcloud sql instances describe meoktu-db --format='value(connectionName)')"
-NEO4J_IP="$(gcloud compute instances describe meoktu-neo4j --zone="$ZONE" --format='value(networkInterfaces[0].networkIP)')"
+# gcloud 는 명령마다 인증 토큰을 갱신한다. 그 통신이 한 번 끊기면
+#   ERROR: There was a problem refreshing your current auth tokens:
+#   ('Connection aborted.', ConnectionResetError(104, 'Connection reset by peer'))
+# 로 즉시 실패하고, set -e 때문에 배포 전체가 거기서 끝난다.
+# 실제로 2026-09-07 배포가 이 한 번의 순간 장애로 0초 만에 죽었다.
+# 값만 읽어오는 조회라 다시 불러도 부작용이 없으므로 짧게 재시도한다.
+retry() {
+  local label="$1"; shift
+  local attempt=1
+  until "$@"; do
+    if (( attempt >= 4 )); then echo "  ${label} 조회를 4번 시도했지만 실패했습니다." >&2; return 1; fi
+    echo "  ${label} 조회 실패 — ${attempt}번째, $((attempt * 5))초 뒤 다시 시도합니다." >&2
+    sleep $((attempt * 5))
+    attempt=$((attempt + 1))
+  done
+}
+
+CONNECTION_NAME="$(retry 'Cloud SQL 연결이름' gcloud sql instances describe meoktu-db --format='value(connectionName)')"
+NEO4J_IP="$(retry 'Neo4j 내부 IP' gcloud compute instances describe meoktu-neo4j --zone="$ZONE" --format='value(networkInterfaces[0].networkIP)')"
 
 echo "▶ 이미지 빌드 (Cloud Build)"
 # 로컬 Docker 없이 클라우드에서 빌드한다. Apple Silicon 과 배포 아키텍처가 달라도 안전하다.
