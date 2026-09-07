@@ -63,6 +63,8 @@ function vertexEndpoint(project: string) {
 
 let cachedProject = ''
 let cachedToken: { value: string; expiresAt: number } | undefined
+/** 진행 중인 토큰 갱신. 동시에 만료를 만난 요청들이 이 하나를 같이 기다린다. */
+let refresh: Promise<{ value: string; expiresAt: number }> | undefined
 let credentialKind: 'metadata' | 'service-account' | 'user' | undefined
 /** 자격증명 탐색은 한 번만 한다. 여러 요청이 동시에 들어와도 중복 조회하지 않는다. */
 let discovery: Promise<boolean> | undefined
@@ -231,13 +233,26 @@ export function aiEndpoint() {
 
 /**
  * 호출 직전에 부른다. 만료가 가까우면 새로 받고, 아니면 캐시를 준다.
- * 여러 요청이 동시에 만료를 만나도 각자 새로 받을 뿐 잘못된 토큰을 쓰지는 않는다.
+ *
+ * 갱신은 한 번에 하나만 나간다. 예전에는 동시에 만료를 만난 요청이 각자
+ * 자격증명 서버를 두드려서, 토큰 하나 받자고 메타데이터·OAuth 엔드포인트에
+ * 요청이 동시 요청 수만큼 몰렸다(50개 요청 = 50번 조회). 여기서 몰리면
+ * 그 순간의 AI 호출이 통째로 실패하고 조용히 규칙 폴백으로 떨어진다.
  */
 export async function aiToken() {
   if (provider !== 'vertex') return ''
   if (cachedToken && cachedToken.expiresAt - REFRESH_MARGIN_MS > Date.now()) return cachedToken.value
-  cachedToken = await fetchToken()
-  return cachedToken.value
+  refresh ??= fetchToken()
+    .then((token) => {
+      // access_token 이 빠진 응답을 캐시하면 만료까지 한 시간 동안 모든 호출이
+      // 'Bearer undefined' 로 나가 전부 조용히 폴백으로 떨어진다. 캐시하지 말고 실패시킨다.
+      if (!token?.value) throw new Error('credential response has no access token')
+      cachedToken = token
+      return token
+    })
+    // 실패한 갱신은 붙들지 않는다. 다음 요청이 다시 시도할 수 있어야 한다.
+    .finally(() => { refresh = undefined })
+  return (await refresh).value
 }
 
 /**

@@ -525,6 +525,9 @@ const OCR_BOX_FIELDS = ['merchant', 'businessNumber', 'date', 'total'] as const
 export function normalizeOcrBoxes(value: unknown) {
   if (!Array.isArray(value)) return []
   return value.slice(0, 24).flatMap((entry) => {
+    // 이 배열은 생성형이 만든 JSON 을 그대로 파싱한 값이다. 원소가 null 이면
+    // item.bbox 를 읽는 순간 터져서, 자료를 올린 사장님은 판독 실패만 본다.
+    if (!entry || typeof entry !== 'object') return []
     const item = entry as Record<string, unknown>
     const box = Array.isArray(item.bbox) ? item.bbox.map(Number) : []
     if (box.length !== 4 || box.some((number) => !Number.isFinite(number))) return []
@@ -543,7 +546,9 @@ export function normalizeOcrBoxes(value: unknown) {
       label: String(item.label || field).slice(0, 120),
       value: String(item.value ?? '').slice(0, 300),
       bbox: [safeX, safeY, clamp(width, 1, 1000 - safeX), clamp(height, 1, 1000 - safeY)],
-      confidence: clamp(Number(item.confidence || 0), 0, 1),
+      // 숫자가 아닌 확신도("높음" 같은 값)를 그대로 통과시키면 NaN 이 되고,
+      // JSON 으로 나가면서 null 로 바뀌어 판독 화면의 확신도 표시가 깨진다.
+      confidence: Number.isFinite(Number(item.confidence)) ? clamp(Number(item.confidence), 0, 1) : 0,
     }]
   })
 }
