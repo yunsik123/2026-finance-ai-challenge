@@ -103,7 +103,8 @@ create table if not exists meoktu.restaurants (
   opened_years  numeric(5,2) not null default 0 check (opened_years >= 0),
   monthly_sales bigint not null default 0 check (monthly_sales >= 0),
   sales_growth  numeric(6,4) not null default 0,
-  repeat_rate   numeric(6,4) not null default 0 check (repeat_rate between 0 and 1),
+  -- 퍼센트다(61 = 61%). 화면도 `{repeatRate}%` 로 그대로 쓴다.
+  repeat_rate   numeric(7,4) not null default 0 check (repeat_rate between 0 and 100),
   foot_traffic_growth numeric(6,4) not null default 0,
   competition   text not null default '보통' check (competition in ('낮음', '보통', '높음')),
   closing_rate  numeric(6,4) not null default 0,
@@ -124,7 +125,17 @@ create table if not exists meoktu.restaurants (
   menu_highlights jsonb not null default '[]'::jsonb,
   created_at    timestamptz not null default now()
 );
+-- 사업자등록번호. 운영자가 승인할 때 '같은 사업체가 남의 계정으로 이미 올라와 있는가'를
+-- 이 값으로 판단한다(conflictingRestaurant). 저장되지 않으면 그 차단이 아예 동작하지 않는다.
+alter table meoktu.restaurants add column if not exists business_number text;
 alter table meoktu.restaurants add column if not exists source_application_id text;
+
+-- 이미 만들어진 DB 의 repeat_rate 는 아직 0~1 제약이라 값이 1 로 잘려 들어간다.
+-- 제약을 퍼센트로 넓히고, 잘린 값은 다음 저장에서 원장 값으로 덮인다.
+alter table meoktu.restaurants alter column repeat_rate type numeric(7,4);
+alter table meoktu.restaurants drop constraint if exists restaurants_repeat_rate_check;
+alter table meoktu.restaurants add constraint restaurants_repeat_rate_check
+  check (repeat_rate between 0 and 100);
 create index if not exists restaurants_owner_idx on meoktu.restaurants(owner_id);
 create index if not exists restaurants_discover_idx on meoktu.restaurants(region, category);
 
@@ -309,8 +320,24 @@ create table if not exists meoktu.applications (
   explanation text not null default '',
   -- 파생지표·교차검증·신용등급 원본. 구조가 심사 엔진 버전마다 달라져서 jsonb 로 둔다.
   data       jsonb not null default '{}'::jsonb,
+  -- 서버가 계산한 권고. status 는 운영자의 최종 결정이라 둘을 따로 남긴다.
+  recommended_status text check (recommended_status in ('approved', 'conditional', 'manual_review', 'rejected')),
+  -- 운영자가 보완을 요청하며 적은 말. 사장님 화면에 그대로 보인다.
+  -- 이게 없으면 사장님은 '보완 필요'라는 상태만 보고 무엇을 고쳐야 하는지 알 수 없다.
+  review_note text,
+  reviewed_at timestamptz,
+  -- 보완 재제출의 앞뒤 연결. superseded_by 가 차 있으면 이 건은 더 이상 진행 중이 아니다.
+  resubmitted_from text,
+  superseded_by text,
   submitted_at timestamptz not null default now()
 );
+-- 이미 만들어진 DB 에는 위 create table 이 아무 일도 하지 않는다.
+-- 운영자의 심사 결과가 저장되지 않고 사라지므로 여기서 따로 붙인다.
+alter table meoktu.applications add column if not exists recommended_status text;
+alter table meoktu.applications add column if not exists review_note text;
+alter table meoktu.applications add column if not exists reviewed_at timestamptz;
+alter table meoktu.applications add column if not exists resubmitted_from text;
+alter table meoktu.applications add column if not exists superseded_by text;
 create index if not exists applications_user_idx on meoktu.applications(user_id, submitted_at desc);
 
 create table if not exists meoktu.ocr_analyses (
@@ -326,6 +353,63 @@ create table if not exists meoktu.ocr_analyses (
   created_at timestamptz not null default now()
 );
 create index if not exists ocr_user_idx on meoktu.ocr_analyses(user_id, created_at desc);
+
+-- 문서 원장.
+--
+-- 원본 파일은 서버에 올리지 않는다(그 약속은 그대로 지킨다).
+-- 남기는 것은 "무엇이었고, AI 가 어떻게 읽었고, 사장님이 맞다고 했는지 고쳤는지"뿐이다.
+-- 사장님이 값을 고치는 순간이 곧 정답 라벨이라, 이 표가 판독 정확도의 유일한 실측 근거다.
+--
+-- classification·fields·correction_history 는 jsonb 로 둔다.
+-- 항목 구성이 문서 종류마다 다르고 판독 엔진 버전마다 바뀌어서,
+-- 열로 펴면 스키마가 엔진을 따라다니게 된다(applications.data 와 같은 이유).
+create table if not exists meoktu.owner_documents (
+  id         text primary key default meoktu.new_id(),
+  user_id    text not null references meoktu.profiles(id) on delete cascade,
+  filename   text not null,
+  -- 브라우저에서 계산한 내용 해시. 같은 파일을 다시 올리면 새 행을 만들지 않고 이 행을 갱신한다.
+  file_hash  text not null,
+  byte_size  bigint not null default 0 check (byte_size >= 0),
+  mime_type  text not null default '',
+  -- 확정 분류. 사장님이 바꿨다면 바꾼 값.
+  source_id  text not null,
+  classification jsonb not null default '{}'::jsonb,
+  -- 사장님이 분류를 손으로 바꿨는가.
+  reclassified boolean not null default false,
+  fields     jsonb not null default '[]'::jsonb,
+  correction_history jsonb not null default '[]'::jsonb,
+  ocr_analysis_id text references meoktu.ocr_analyses(id) on delete set null,
+  row_count  integer,
+  headers    text[] not null default '{}',
+  status     text not null default 'pending' check (status in ('pending', 'confirmed')),
+  -- 이 문서가 반영된 심사 신청 id. 재신청 때 어느 자료를 다시 썼는지 추적한다.
+  used_in_application_ids text[] not null default '{}',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  -- 같은 사장님이 같은 파일을 두 번 올리면 갱신만 한다. 서버 쪽 중복 제거와 짝이다.
+  unique (user_id, file_hash)
+);
+create index if not exists owner_documents_user_idx on meoktu.owner_documents(user_id, updated_at desc);
+
+-- 법적 동의 기록.
+--
+-- 투자·출금처럼 돈이 움직이는 행위는 "그때 어떤 문서의 어느 판을 보고 동의했는가"가
+-- 분쟁의 근거다. 그래서 동의 시점의 문서 id 목록과 판 번호를 그대로 굳혀서 남긴다.
+-- 감사기록과 같은 성격이라 한 번 쓰면 고치지 않는다.
+create table if not exists meoktu.legal_consents (
+  id         text primary key default meoktu.new_id(),
+  user_id    text not null references meoktu.profiles(id) on delete cascade,
+  context    text not null check (context in ('signup', 'invest', 'withdraw', 'owner_application')),
+  document_ids text[] not null default '{}',
+  version    text not null,
+  resource_type text,
+  resource_id text,
+  amount     bigint,
+  risk_acknowledged boolean,
+  agreed_at  timestamptz not null default now()
+);
+create index if not exists legal_consents_user_idx on meoktu.legal_consents(user_id, agreed_at desc);
+create index if not exists legal_consents_resource_idx on meoktu.legal_consents(resource_type, resource_id);
 
 create table if not exists meoktu.data_connections (
   id         text primary key default meoktu.new_id(),

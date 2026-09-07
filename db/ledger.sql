@@ -44,6 +44,7 @@ create or replace function meoktu.export_ledger()
         'category', r.category, 'region', r.region, 'neighborhood', r.neighborhood,
         'tagline', r.tagline, 'description', r.description, 'signature', r.signature,
         'story', r.story, 'color', r.color, 'tags', meoktu.arr(r.tags),
+        'businessNumber', r.business_number,
         'avgPrice', r.avg_price, 'maxMenuPrice', r.max_menu_price,
         'openedYears', r.opened_years, 'monthlySales', r.monthly_sales,
         'salesGrowth', r.sales_growth, 'repeatRate', r.repeat_rate,
@@ -123,14 +124,21 @@ create or replace function meoktu.export_ledger()
         'link', n.link, 'read', n.read, 'createdAt', meoktu.iso(n.created_at)
       )) order by n.created_at, n.id) from meoktu.notifications n), '[]'::jsonb),
 
-    'applications', coalesce((select jsonb_agg(jsonb_build_object(
+    -- 값이 없는 항목은 원장에서 키 자체가 없으므로 jsonb_strip_nulls 로 모양을 맞춘다.
+    -- 다만 data 는 그 밖에 둔다. strip_nulls 는 안쪽까지 파고들어서, 측정하지 못해
+    -- null 로 남긴 지표(derivedMetrics.repeatRate 등)까지 통째로 지워 버린다.
+    -- '측정 못 함'과 '항목 자체가 없음'은 심사에서 다른 뜻이라 그대로 보존해야 한다.
+    'applications', coalesce((select jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
         'id', a.id, 'userId', a.user_id, 'restaurantName', a.restaurant_name,
         'submittedAt', meoktu.iso(a.submitted_at), 'status', a.status,
         'requestedLimit', a.requested_limit, 'approvedLimit', a.approved_limit,
-        'score', a.score, 'data', a.data, 'strengths', meoktu.arr(a.strengths),
+        'score', a.score, 'strengths', meoktu.arr(a.strengths),
         'checks', meoktu.arr(a.checks), 'improvements', meoktu.arr(a.improvements),
-        'explanation', a.explanation
-      ) order by a.submitted_at, a.id) from meoktu.applications a), '[]'::jsonb),
+        'explanation', a.explanation, 'recommendedStatus', a.recommended_status,
+        'reviewNote', a.review_note, 'reviewedAt', meoktu.iso(a.reviewed_at),
+        'resubmittedFrom', a.resubmitted_from, 'supersededBy', a.superseded_by
+      )) || jsonb_build_object('data', a.data)
+      order by a.submitted_at, a.id) from meoktu.applications a), '[]'::jsonb),
 
     'reviews', coalesce((select jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
         'id', v.id, 'restaurantId', v.restaurant_id, 'userId', v.user_id,
@@ -167,6 +175,26 @@ create or replace function meoktu.export_ledger()
         'plan', o.plan, 'result', o.result, 'model', o.model, 'status', o.status,
         'createdAt', meoktu.iso(o.created_at)
       ) order by o.created_at, o.id) from meoktu.ocr_analyses o), '[]'::jsonb),
+
+    'documents', coalesce((select jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
+        'id', d.id, 'userId', d.user_id, 'filename', d.filename, 'fileHash', d.file_hash,
+        'byteSize', d.byte_size, 'mimeType', d.mime_type, 'sourceId', d.source_id,
+        'classification', d.classification, 'reclassified', d.reclassified,
+        'fields', d.fields, 'correctionHistory', d.correction_history,
+        'ocrAnalysisId', d.ocr_analysis_id, 'rowCount', d.row_count,
+        'headers', meoktu.arr(d.headers), 'status', d.status,
+        'usedInApplicationIds', meoktu.arr(d.used_in_application_ids),
+        'createdAt', meoktu.iso(d.created_at), 'updatedAt', meoktu.iso(d.updated_at)
+      -- 서버가 문서함을 최신순으로 다루므로 읽을 때부터 그 순서로 준다.
+      )) order by d.updated_at desc, d.id) from meoktu.owner_documents d), '[]'::jsonb),
+
+    'legalConsents', coalesce((select jsonb_agg(jsonb_strip_nulls(jsonb_build_object(
+        'id', c.id, 'userId', c.user_id, 'context', c.context,
+        'documentIds', meoktu.arr(c.document_ids), 'version', c.version,
+        'resourceType', c.resource_type, 'resourceId', c.resource_id,
+        'amount', c.amount, 'riskAcknowledged', c.risk_acknowledged,
+        'agreedAt', meoktu.iso(c.agreed_at)
+      )) order by c.agreed_at, c.id) from meoktu.legal_consents c), '[]'::jsonb),
 
     'dataConnections', coalesce((select jsonb_agg(jsonb_build_object(
         'id', d.id, 'userId', d.user_id, 'sourceId', d.source_id, 'provider', d.provider,
@@ -240,6 +268,14 @@ begin
 
   select array_agg(value->>'id') into v_ids from jsonb_array_elements(payload->'coupons');
   delete from meoktu.coupons where not (id = any (coalesce(v_ids, '{}')));
+
+  -- 문서함에서 지운 자료. documents 는 선택 키라, 키 자체가 없는 원장이 오면
+  -- "전부 지우라"는 뜻으로 오해하지 않도록 키가 있을 때만 정리한다.
+  if payload ? 'documents' then
+    select array_agg(value->>'id') into v_ids from jsonb_array_elements(payload->'documents');
+    delete from meoktu.owner_documents where not (id = any (coalesce(v_ids, '{}')));
+  end if;
+  -- 동의 기록은 지우지 않는다. 감사기록과 같은 성격이라 정리 대상이 아니다.
 
   update meoktu.ledger_meta set version = v_current + 1, updated_at = now() where id = 'meoktu';
   return v_current + 1;

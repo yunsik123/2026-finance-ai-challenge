@@ -20,6 +20,7 @@ begin
     'positions','orders','coupons','coupon_listings','coupon_offers','coupon_trades',
     'applications','ocr_analyses','data_connections','visit_verifications','reviews',
     'favorites','support_requests','notifications','audit_events',
+    'owner_documents','legal_consents',
     'articles','etf_funds','etf_members','ledger_meta'
   ] loop
     execute format('alter table meoktu.%I enable row level security', t);
@@ -43,7 +44,8 @@ grant select on meoktu.profiles, meoktu.positions, meoktu.orders, meoktu.coupons
   meoktu.coupon_listings, meoktu.coupon_offers, meoktu.coupon_trades, meoktu.applications,
   meoktu.ocr_analyses, meoktu.data_connections, meoktu.wallet_transactions,
   meoktu.visit_verifications, meoktu.support_requests, meoktu.notifications,
-  meoktu.audit_events, meoktu.favorites to authenticated;
+  meoktu.audit_events, meoktu.favorites,
+  meoktu.owner_documents, meoktu.legal_consents to authenticated;
 grant insert, delete on meoktu.favorites to authenticated;
 grant update on meoktu.notifications to authenticated;
 
@@ -159,6 +161,14 @@ create policy notifications_update_self on meoktu.notifications
 
 create policy audit_select_self on meoktu.audit_events
   for select to authenticated using (actor_id = meoktu.current_profile_id());
+
+-- 문서함과 동의 기록은 본인만 본다. 판독값·교정 이력은 사업 실태 그 자체라
+-- 남에게 새어 나가면 매출·부채가 그대로 드러난다. 쓰기는 서버 경로로만 연다.
+create policy owner_documents_select_self on meoktu.owner_documents
+  for select to authenticated using (user_id = meoktu.current_profile_id());
+
+create policy legal_consents_select_self on meoktu.legal_consents
+  for select to authenticated using (user_id = meoktu.current_profile_id());
 
 
 -- ── 공개 콘텐츠 ─────────────────────────────────────────────────────────────

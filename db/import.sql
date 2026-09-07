@@ -39,7 +39,7 @@ begin
   insert into meoktu.restaurants(
     id, owner_id, name, emoji, category, region, neighborhood, tagline, description,
     signature, story, color, tags, avg_price, max_menu_price, opened_years, monthly_sales,
-    sales_growth, repeat_rate, foot_traffic_growth, competition, closing_rate, rating,
+    business_number, sales_growth, repeat_rate, foot_traffic_growth, competition, closing_rate, rating,
     review_count, supporters, community_score, stability_score, sales_disclosure,
     verification_status, source_application_id, food_description, dining_notes, strengths, menu_highlights)
   select x.id,
@@ -50,7 +50,7 @@ begin
          coalesce(x.story, ''), coalesce(x.color, '#ff6948'),
          coalesce(x.tags, '{}'), coalesce(x."avgPrice", 0), coalesce(x."maxMenuPrice", 0),
          coalesce(x."openedYears", 0), greatest(coalesce(x."monthlySales", 0), 0),
-         coalesce(x."salesGrowth", 0), least(greatest(coalesce(x."repeatRate", 0), 0), 1),
+         x."businessNumber", coalesce(x."salesGrowth", 0), least(greatest(coalesce(x."repeatRate", 0), 0), 100),
          coalesce(x."footTrafficGrowth", 0), coalesce(x.competition, '보통'),
          coalesce(x."closingRate", 0), least(greatest(coalesce(x.rating, 0), 0), 5),
          coalesce(x."reviewCount", 0), coalesce(x.supporters, 0),
@@ -65,13 +65,14 @@ begin
       neighborhood text, tagline text, description text, signature text, story text,
       color text, tags text[], "avgPrice" integer, "maxMenuPrice" integer,
       "openedYears" numeric, "monthlySales" bigint, "salesGrowth" numeric,
-      "repeatRate" numeric, "footTrafficGrowth" numeric, competition text,
+      "businessNumber" text, "repeatRate" numeric, "footTrafficGrowth" numeric, competition text,
       "closingRate" numeric, rating numeric, "reviewCount" integer, supporters integer,
       "communityScore" integer, "stabilityScore" integer, "salesDisclosure" boolean,
       "verificationStatus" text, "sourceApplicationId" text,
       "foodDescription" text, "diningNotes" text, strengths text[], "menuHighlights" jsonb)
   on conflict (id) do update set
     name = excluded.name, monthly_sales = excluded.monthly_sales,
+    business_number = coalesce(excluded.business_number, meoktu.restaurants.business_number),
     sales_growth = excluded.sales_growth, repeat_rate = excluded.repeat_rate,
     rating = excluded.rating, review_count = excluded.review_count,
     supporters = excluded.supporters, sales_disclosure = excluded.sales_disclosure,
@@ -229,20 +230,31 @@ begin
   -- ── 심사·증빙 ───────────────────────────────────────────────────────────
   insert into meoktu.applications(
     id, user_id, restaurant_name, status, requested_limit, approved_limit, score,
-    strengths, checks, improvements, explanation, data, submitted_at)
+    strengths, checks, improvements, explanation, data,
+    recommended_status, review_note, reviewed_at, resubmitted_from, superseded_by, submitted_at)
   select x.id, x."userId", x."restaurantName", x.status,
          greatest(coalesce(x."requestedLimit", 0), 0), greatest(coalesce(x."approvedLimit", 0), 0),
          coalesce(x.score, 0), coalesce(x.strengths, '{}'), coalesce(x.checks, '{}'),
          coalesce(x.improvements, '{}'), coalesce(x.explanation, ''),
-         coalesce(x.data, '{}'::jsonb), coalesce(x."submittedAt", now())
+         coalesce(x.data, '{}'::jsonb),
+         x."recommendedStatus", x."reviewNote", x."reviewedAt",
+         x."resubmittedFrom", x."supersededBy", coalesce(x."submittedAt", now())
     from jsonb_to_recordset(coalesce(payload->'applications', '[]'::jsonb)) as x(
       id text, "userId" text, "restaurantName" text, status text, "requestedLimit" bigint,
       "approvedLimit" bigint, score numeric, strengths text[], checks text[],
-      improvements text[], explanation text, data jsonb, "submittedAt" timestamptz)
+      improvements text[], explanation text, data jsonb, "recommendedStatus" text,
+      "reviewNote" text, "reviewedAt" timestamptz, "resubmittedFrom" text,
+      "supersededBy" text, "submittedAt" timestamptz)
    where exists (select 1 from meoktu.profiles p where p.id = x."userId")
-  on conflict (id) do update set status = excluded.status, data = excluded.data;
+  -- 운영자의 결정은 심사 화면에서 계속 바뀐다. 상태만 갱신하고 사유를 두고 오면
+  -- 사장님 화면에 '보완 필요'만 남고 무엇을 고칠지가 사라진다.
+  on conflict (id) do update set
+    status = excluded.status, data = excluded.data,
+    approved_limit = excluded.approved_limit,
+    recommended_status = excluded.recommended_status,
+    review_note = excluded.review_note, reviewed_at = excluded.reviewed_at,
+    resubmitted_from = excluded.resubmitted_from, superseded_by = excluded.superseded_by;
   get diagnostics v_n = row_count; v_report := v_report || jsonb_build_object('applications', v_n);
-
   insert into meoktu.ocr_analyses(id, user_id, filename, source_id, plan, result, model, status, created_at)
   select x.id, x."userId", x.filename, x."sourceId", coalesce(x.plan, ''),
          coalesce(x.result, '{}'::jsonb), x.model, x.status, coalesce(x."createdAt", now())
@@ -252,6 +264,53 @@ begin
    where exists (select 1 from meoktu.profiles p where p.id = x."userId")
   on conflict (id) do nothing;
   get diagnostics v_n = row_count; v_report := v_report || jsonb_build_object('ocr_analyses', v_n);
+
+  -- 문서 원장. 같은 사장님이 같은 파일을 다시 올리면 서버가 같은 id 를 그대로 쓰므로
+  -- id 충돌 하나로 갱신이 끝난다(unique(user_id, file_hash) 와 짝).
+  -- 판독 결과가 지워진 뒤에도 문서 기록 자체는 남긴다. 그래서 ocr_analysis_id 는 없으면 null 로 눕힌다.
+  insert into meoktu.owner_documents(
+    id, user_id, filename, file_hash, byte_size, mime_type, source_id, classification,
+    reclassified, fields, correction_history, ocr_analysis_id, row_count, headers,
+    status, used_in_application_ids, created_at, updated_at)
+  select x.id, x."userId", x.filename, x."fileHash", greatest(coalesce(x."byteSize", 0), 0),
+         coalesce(x."mimeType", ''), x."sourceId", coalesce(x.classification, '{}'::jsonb),
+         coalesce(x.reclassified, false), coalesce(x.fields, '[]'::jsonb),
+         coalesce(x."correctionHistory", '[]'::jsonb),
+         (select o.id from meoktu.ocr_analyses o where o.id = x."ocrAnalysisId"),
+         x."rowCount", coalesce(x.headers, '{}'),
+         coalesce(x.status, 'pending'), coalesce(x."usedInApplicationIds", '{}'),
+         coalesce(x."createdAt", now()), coalesce(x."updatedAt", now())
+    from jsonb_to_recordset(coalesce(payload->'documents', '[]'::jsonb)) as x(
+      id text, "userId" text, filename text, "fileHash" text, "byteSize" bigint,
+      "mimeType" text, "sourceId" text, classification jsonb, reclassified boolean,
+      fields jsonb, "correctionHistory" jsonb, "ocrAnalysisId" text, "rowCount" integer,
+      headers text[], status text, "usedInApplicationIds" text[],
+      "createdAt" timestamptz, "updatedAt" timestamptz)
+   where exists (select 1 from meoktu.profiles p where p.id = x."userId")
+  on conflict (id) do update set
+    filename = excluded.filename, byte_size = excluded.byte_size, mime_type = excluded.mime_type,
+    source_id = excluded.source_id, classification = excluded.classification,
+    reclassified = excluded.reclassified, fields = excluded.fields,
+    correction_history = excluded.correction_history,
+    ocr_analysis_id = coalesce(excluded.ocr_analysis_id, meoktu.owner_documents.ocr_analysis_id),
+    row_count = excluded.row_count, headers = excluded.headers, status = excluded.status,
+    used_in_application_ids = excluded.used_in_application_ids, updated_at = excluded.updated_at;
+  get diagnostics v_n = row_count; v_report := v_report || jsonb_build_object('owner_documents', v_n);
+
+  -- 동의 기록은 한 번 쓰면 고치지 않는다. 나중에 판이 바뀌면 새 행이 쌓인다.
+  insert into meoktu.legal_consents(
+    id, user_id, context, document_ids, version, resource_type, resource_id,
+    amount, risk_acknowledged, agreed_at)
+  select x.id, x."userId", x.context, coalesce(x."documentIds", '{}'), x.version,
+         x."resourceType", x."resourceId", x.amount, x."riskAcknowledged",
+         coalesce(x."agreedAt", now())
+    from jsonb_to_recordset(coalesce(payload->'legalConsents', '[]'::jsonb)) as x(
+      id text, "userId" text, context text, "documentIds" text[], version text,
+      "resourceType" text, "resourceId" text, amount bigint,
+      "riskAcknowledged" boolean, "agreedAt" timestamptz)
+   where exists (select 1 from meoktu.profiles p where p.id = x."userId")
+  on conflict (id) do nothing;
+  get diagnostics v_n = row_count; v_report := v_report || jsonb_build_object('legal_consents', v_n);
 
   insert into meoktu.data_connections(
     id, user_id, source_id, provider, status, consent_scope, record_count, connected_at, last_synced_at)

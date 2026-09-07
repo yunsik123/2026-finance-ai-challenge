@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import {
   AlertTriangle, Bot, CheckCircle2, CircleDollarSign, ClipboardCheck, FileText, Gift, LayoutDashboard, LifeBuoy, LogOut,
-  Eye, MessageSquareWarning, RefreshCw, Search, ShieldCheck, Star, Store, Users, X,
+  Eye, FolderOpen, MessageSquareWarning, RefreshCw, Search, ShieldCheck, Star, Store, Users, X,
 } from 'lucide-react'
 import { api } from './lib/api.ts'
 import CreditGradePanel from './CreditGradePanel.tsx'
@@ -29,7 +29,20 @@ type AdminApplicationDetail = {
   documents?: OwnerDocument[]
   consent?: LegalConsentRecord
 }
-type Tab = 'overview' | 'applications' | 'users' | 'restaurants' | 'funds' | 'reviews' | 'support' | 'coupons' | 'ai'
+type AdminDocument = OwnerDocument & {
+  userId: string
+  usedIn: Array<{ id: string; restaurantName: string; status: ApplicationResult['status']; submittedAt: string }>
+}
+type DocumentLedger = {
+  stats: {
+    documentCount: number; confirmedDocuments: number; fieldCount: number
+    reviewedFields: number; correctedFields: number; reclassifiedDocuments: number
+    accuracy: number | null
+  }
+  owners: Array<User & { documentCount: number }>
+  documents: AdminDocument[]
+}
+type Tab = 'overview' | 'applications' | 'documents' | 'users' | 'restaurants' | 'funds' | 'reviews' | 'support' | 'coupons' | 'ai'
 
 const applicationLabel: Record<ApplicationResult['status'], string> = {
   approved: '승인', conditional: '조건부 승인', manual_review: '최종 검토 대기', rejected: '보완 필요',
@@ -45,6 +58,7 @@ const sourceLabel: Record<string, string> = {
 const tabItems: Array<{ id: Tab; label: string; icon: typeof LayoutDashboard }> = [
   { id: 'overview', label: '운영 현황', icon: LayoutDashboard },
   { id: 'applications', label: '심사 관리', icon: ClipboardCheck },
+  { id: 'documents', label: '자료 관리', icon: FolderOpen },
   { id: 'users', label: '회원 관리', icon: Users },
   { id: 'restaurants', label: '식당 관리', icon: Store },
   { id: 'funds', label: '펀딩 관리', icon: CircleDollarSign },
@@ -72,6 +86,20 @@ export default function AdminCenter({ me, onLogin, onLogout, notify }: { me: MeS
   const dashboardRequest = useRef(0)
   /** 심사 화면에서 지금 열어 본 제출 자료의 출처 id. */
   const [openedDocument, setOpenedDocument] = useState('')
+  /** 자료 관리 탭. 원장이 커질 수 있어 탭을 처음 열 때만 불러온다. */
+  const [ledger, setLedger] = useState<DocumentLedger | null>(null)
+  const [ledgerLoading, setLedgerLoading] = useState(false)
+  /** 자료 관리 탭에서 펼쳐 본 자료 id. */
+  const [openedLedgerDocument, setOpenedLedgerDocument] = useState('')
+
+  const loadLedger = async () => {
+    if (me?.user.role !== 'admin') return
+    setLedgerLoading(true)
+    try { setLedger(await api<DocumentLedger>('/api/admin/documents')) }
+    catch (error) { notify((error as Error).message) }
+    finally { setLedgerLoading(false) }
+  }
+  useEffect(() => { if (tab === 'documents' && !ledger && !ledgerLoading) void loadLedger() }, [tab])
 
   const load = async () => {
     if (me?.user.role !== 'admin') return
@@ -163,7 +191,52 @@ export default function AdminCenter({ me, onLogin, onLogout, notify }: { me: MeS
 
   const ai = <section className="admin-ai-panel"><div className="admin-ai-intro"><Bot /><div><span>규칙 기반 운영 보조</span><h2>AI 운영 점검</h2><p>상권 위험, 펀딩 진행률, 미처리 문의를 함께 읽어 운영자가 먼저 볼 항목을 정리합니다. 자동 제재나 자동 승인에는 사용하지 않습니다.</p></div></div><div className="admin-ai-alerts">{aiAlerts.map((alert) => <article key={alert.title}><i className={alert.level} /><div><b>{alert.title}</b><p>{alert.detail}</p></div><span>{alert.level === 'high' ? '긴급 확인' : alert.level === 'medium' ? '확인 권장' : '정상'}</span></article>)}</div></section>
 
-  const content: Record<Tab, ReactElement> = { overview, applications, users, restaurants, funds, reviews, support, coupons, ai }
+  /*
+   * 자료 관리.
+   *
+   * 심사 상세의 자료는 "이 신청에 딸린 것"만 보인다. 아직 신청에 쓰이지 않았거나
+   * 심사가 끝난 뒤 새로 올라온 자료는 거기에 나오지 않아, 보완을 요청하려 해도
+   * 사장님이 무엇을 올려 두었는지 운영자가 확인할 방법이 없었다. 그 목록이 여기다.
+   * 원본 파일은 서버에 없으므로 보이는 것은 판독 항목값과 확인·정정 이력뿐이다.
+   */
+  const documentsTab = !ledger
+    ? <div className="admin-loading">{ledgerLoading ? '자료함을 불러오는 중...' : '자료함을 불러옵니다.'}</div>
+    : <>
+      <section className="admin-kpis">
+        <article><FolderOpen /><span>등록된 자료</span><b>{ledger.stats.documentCount}건</b><small>사장님 {ledger.owners.length}명</small></article>
+        <article><CheckCircle2 /><span>사장님 확인 완료</span><b>{ledger.stats.confirmedDocuments}건</b><small>미확인 {ledger.stats.documentCount - ledger.stats.confirmedDocuments}건</small></article>
+        <article><Eye /><span>판독 정확도</span><b>{ledger.stats.accuracy === null ? '—' : `${ledger.stats.accuracy}%`}</b><small>확인 {ledger.stats.reviewedFields} · 정정 {ledger.stats.correctedFields}</small></article>
+        <article><AlertTriangle /><span>분류 정정</span><b>{ledger.stats.reclassifiedDocuments}건</b><small>사장님이 종류를 바꾼 자료</small></article>
+      </section>
+      <section className="admin-list">{filtered(ledger.documents).map((document) => {
+        const owner = ledger.owners.find((item) => item.id === document.userId)
+        const reviewed = document.fields.filter((field) => field.state !== 'ai')
+        const corrected = document.fields.filter((field) => field.state === 'corrected')
+        const opened = openedLedgerDocument === document.id
+        return <article className="admin-row-card" key={document.id}>
+          <div className="admin-row-main">
+            <span className={`admin-status ${document.status === 'confirmed' ? 'approved' : 'manual_review'}`}>{document.status === 'confirmed' ? '확인 완료' : '확인 대기'}</span>
+            <div>
+              <small>{owner?.name || '사장님'} · {owner?.email || '-'} · {date(document.updatedAt)}</small>
+              <h3>{document.filename}</h3>
+              <p>{sourceLabel[document.sourceId] || document.sourceId}{document.reclassified ? ' · 사장님이 종류를 바꿨어요' : ''} · {document.classification.reason}</p>
+              <p className="admin-classification-basis">
+                {fileSizeLabel(document.byteSize)}{document.rowCount ? ` · ${document.rowCount.toLocaleString()}행` : ''} · 판독 {document.fields.length}개 중 {reviewed.length}개 확인 · {corrected.length}개 정정
+                {document.usedIn.length ? ` · 신청 ${document.usedIn.map((item) => `${item.restaurantName}(${applicationLabel[item.status]})`).join(', ')}에 반영` : ' · 아직 신청에 쓰이지 않음'}
+              </p>
+              {opened && <>
+                {document.fields.length > 0 && <div className="admin-correction-fields">{document.fields.map((field) => <p className={field.state} key={field.key}><b>{field.label}</b><span>AI {field.aiValue || '값 없음'}</span><span>확정 {field.state === 'ai' ? '미확인' : field.confirmedValue || '값 없음'}</span></p>)}</div>}
+                {!document.fields.length && <p className="admin-review-empty">판독된 항목이 없는 자료입니다.</p>}
+                {(document.correctionHistory || []).length > 0 && <details open><summary>정정 이력 {(document.correctionHistory || []).length}건</summary>{(document.correctionHistory || []).map((event) => <p className="admin-correction-event" key={event.id}><time>{new Date(event.createdAt).toLocaleString('ko-KR')}</time><b>{event.label}</b><span>{event.action === 'reclassified' ? `${sourceLabel[event.fromSourceId || ''] || event.fromSourceId} → ${sourceLabel[event.toSourceId || ''] || event.toSourceId}` : event.action === 'corrected' ? `${event.aiValue || '값 없음'} → ${event.confirmedValue || '값 없음'}` : `${event.confirmedValue || event.aiValue || '값 없음'} 확인`}</span></p>)}</details>}
+              </>}
+            </div>
+          </div>
+          <button className="admin-review-button" onClick={() => setOpenedLedgerDocument(opened ? '' : document.id)}><Eye /> {opened ? '접기' : '판독값 보기'}</button>
+        </article>
+      })}{!filtered(ledger.documents).length && <Empty text="등록된 자료가 없어요." />}</section>
+    </>
+
+  const content: Record<Tab, ReactElement> = { overview, applications, documents: documentsTab, users, restaurants, funds, reviews, support, coupons, ai }
   const current = tabItems.find((item) => item.id === tab)!
   const detailData = detail?.application.data as Record<string, any> | undefined
   const documents = Object.entries((detailData?.documentMetadata || {}) as Record<string, Record<string, any>>)
@@ -171,7 +244,7 @@ export default function AdminCenter({ me, onLogin, onLogout, notify }: { me: MeS
   const openedDocumentData = documents.find(([source]) => source === openedDocument)?.[1] as SubmittedDocument | undefined
   return <div className="admin-hub">
     <aside className="admin-sidebar"><div className="admin-brand"><span className="brand-mark">먹</span><div><b>먹투 운영센터</b><small>MEOKTU ADMIN</small></div></div><nav>{tabItems.map((item) => { const Icon = item.icon; return <button key={item.id} className={tab === item.id ? 'active' : ''} onClick={() => { setTab(item.id); setQuery('') }}><Icon />{item.label}{item.id === 'support' && dashboard.stats.openSupport > 0 && <em>{dashboard.stats.openSupport}</em>}</button> })}</nav><div className="admin-profile"><ShieldCheck /><div><b>{me.user.name}</b><span>{me.user.email}</span></div></div></aside>
-    <main className="admin-main"><header className="admin-topbar"><div><span>운영센터 / {current.label}</span><h1>{current.label}</h1></div><div className="admin-tools">{tab !== 'overview' && tab !== 'ai' && <label><Search /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="이름·내용 검색" /></label>}<button onClick={load} aria-label="새로고침"><RefreshCw /></button><button className="admin-logout" onClick={onLogout} aria-label="운영센터 로그아웃"><LogOut /></button></div></header>{content[tab]}</main>
+    <main className="admin-main"><header className="admin-topbar"><div><span>운영센터 / {current.label}</span><h1>{current.label}</h1></div><div className="admin-tools">{tab !== 'overview' && tab !== 'ai' && <label><Search /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="이름·내용 검색" /></label>}<button onClick={() => { void load(); if (tab === 'documents') void loadLedger() }} aria-label="새로고침"><RefreshCw /></button><button className="admin-logout" onClick={onLogout} aria-label="운영센터 로그아웃"><LogOut /></button></div></header>{content[tab]}</main>
     {detail && <div className="admin-review-backdrop" onMouseDown={() => setDetail(null)}><article className="admin-review-modal" onMouseDown={(event) => event.stopPropagation()}>
       <button className="admin-review-close" onClick={() => setDetail(null)} aria-label="상세 검토 닫기"><X /></button>
       <header className="admin-review-head"><div><span><ShieldCheck /> AI 심사 완료 · 운영자 최종 검토</span><h2>{detail.application.restaurantName}</h2><p>{detail.owner?.name || '사장님'} · {detail.owner?.email || '-'} · {date(detail.application.submittedAt)}</p></div><div><small>먹투 성장성 예비평가</small><b>{detail.application.score}<em>/100</em></b><span>제안 한도 {won(detail.application.approvedLimit)}</span></div></header>

@@ -1979,6 +1979,40 @@ app.get('/api/admin/dashboard', auth('admin'), (_req: AuthedRequest, res) => {
   })
 })
 
+/**
+ * 사장님이 올린 자료 전체를 운영자가 한자리에서 본다.
+ *
+ * 심사 상세에도 자료가 나오지만 거기는 "이 신청에 딸린 것"만 보인다.
+ * 아직 신청에 쓰이지 않은 자료, 신청이 끝난 뒤 새로 올라온 자료는
+ * 지금까지 운영자가 볼 방법이 없었다. 보완을 요청하려면 사장님이 무엇을
+ * 올려 두었는지부터 봐야 하므로 그 목록을 여기서 연다.
+ *
+ * 원본 파일은 서버에 없다(그 약속은 그대로다). 여기서 나가는 것은
+ * 파일 이름·분류·판독 항목값과 사장님이 확인·정정한 이력뿐이다.
+ */
+app.get('/api/admin/documents', auth('admin'), (_req: AuthedRequest, res) => {
+  const documents = [...(ledger.data.documents ?? [])].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  const applications = ledger.data.applications
+  res.json({
+    stats: correctionStats(documents),
+    // 사장님 단위로 묶어 준다. 운영자가 보는 단위가 "이 사장님이 뭘 냈나"이기 때문이다.
+    owners: ledger.data.users
+      .filter((user) => documents.some((item) => item.userId === user.id))
+      .map((user) => ({
+        ...publicUser(user),
+        documentCount: documents.filter((item) => item.userId === user.id).length,
+      })),
+    documents: documents.map((document) => ({
+      ...document,
+      // 이 자료가 어느 신청에 실제로 쓰였는지. 지워진 신청은 목록에서 빠진다.
+      usedIn: document.usedInApplicationIds
+        .map((id) => applications.find((item) => item.id === id))
+        .filter((item): item is Application => Boolean(item))
+        .map((item) => ({ id: item.id, restaurantName: item.restaurantName, status: item.status, submittedAt: item.submittedAt })),
+    })),
+  })
+})
+
 app.patch('/api/admin/users/:id', auth('admin'), async (req: AuthedRequest, res) => {
   const user = ledger.data.users.find((item) => item.id === req.params.id)
   if (!user) return res.status(404).json({ error: '회원을 찾지 못했어요.' })
