@@ -77,6 +77,23 @@ assert(afterSwap.coupons.find((item: any) => item.id === swappable.matchableCoup
 const sharedAfterSwap = await ok('/api/public')
 assert(sharedAfterSwap.listings.some((item: any) => item.id === swappable.id), '체험 교환이 공유 원장의 매물을 가져가면 안 됩니다.')
 
+// "내 교환" 탭(/api/market/mine)도 체험 원장을 봐야 한다.
+// 이 자리가 공유 원장만 읽던 동안, 체험 세션은 등록도 교환도 실제로 되는데
+// 그 탭만 늘 "교환장에 올린 쿠폰이 없어요"를 보여줬다.
+const demoTrades = await ok('/api/market/mine', {}, otherDemo.token)
+assert(demoTrades.trades.length === 1, '체험 교환 이력이 내 교환 탭에 보여야 합니다.')
+assert(demoTrades.trades[0].gave?.restaurant?.name && demoTrades.trades[0].got?.restaurant?.name,
+  '교환 이력의 주고받은 쿠폰에 식당 정보가 붙어야 합니다.')
+const demoListable = afterSwap.coupons.find((item: any) => item.status === 'available')
+const demoListed = await ok(`/api/coupons/${demoListable.id}/list`, { method: 'POST', body: JSON.stringify({ minDiscount: 5 }) }, otherDemo.token)
+const demoMine = await ok('/api/market/mine', {}, otherDemo.token)
+assert(demoMine.listings.some((item: any) => item.id === demoListed.listing.id && item.status === 'open'),
+  '체험으로 올린 매물이 내 교환 탭에 보여야 합니다.')
+assert(demoMine.listings.every((item: any) => item.coupon && item.restaurant),
+  '내 교환 탭의 매물에 쿠폰·식당 정보가 붙어야 합니다.')
+assert(!(await ok('/api/market/mine', {}, otherDemo.token)).listings.some((item: any) => !String(item.id).startsWith('demo-')),
+  '체험 세션의 내 교환 탭에 공유 원장 매물이 섞이면 안 됩니다.')
+
 const ownerAccount = await ok('/api/auth/login', { method: 'POST', body: JSON.stringify({ email: 'owner@meoktu.demo', password: 'demo1234!' }) })
 const beforeOcrCount = (await ok('/api/owner', {}, ownerAccount.token)).ocrAnalyses.length
 const demoOwner = await ok('/api/auth/demo', { method: 'POST', body: JSON.stringify({ role: 'owner' }) })
@@ -84,7 +101,11 @@ const image = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAw
 const demoOcr = await ok('/api/ai/ocr', { method: 'POST', body: JSON.stringify({ image, filename: 'mvp-sample.png', sourceId: 'business', plan: '체험' }) }, demoOwner.token)
 assert(demoOcr.ephemeral === true, '체험 OCR은 비영구 결과임을 표시해야 합니다.')
 assert((await ok('/api/owner', {}, ownerAccount.token)).ocrAnalyses.length === beforeOcrCount, '체험 OCR 결과를 실제 계정 원장에 저장하면 안 됩니다.')
-const demoConnection = await ok('/api/data-connections/pos', { method: 'POST', body: JSON.stringify({}) }, demoOwner.token)
+// 동의는 체험에서도 실제 경로와 똑같이 받는다. 체험만 통과시키면
+// "동의 없이도 자료가 연결되는 화면"을 서비스 설명으로 보여주게 된다.
+const demoConnectionNoConsent = await request('/api/data-connections/pos', { method: 'POST', body: JSON.stringify({}) }, demoOwner.token)
+assert(demoConnectionNoConsent.status === 400, '체험 기관 연결도 동의 없이는 막혀야 합니다.')
+const demoConnection = await ok('/api/data-connections/pos', { method: 'POST', body: JSON.stringify({ consent: true }) }, demoOwner.token)
 assert(demoConnection.ephemeral === true && demoConnection.connection.sourceId === 'pos', '체험 사장님은 기관 연결을 눌러볼 수 있어야 합니다.')
 assert((await ok('/api/owner', {}, ownerAccount.token)).dataConnections.every((item: any) => item.id !== demoConnection.connection.id), '체험 기관 연결이 실제 계정 원장에 남으면 안 됩니다.')
 const demoOwnerState = await ok('/api/owner', {}, demoOwner.token)

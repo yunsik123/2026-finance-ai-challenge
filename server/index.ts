@@ -1719,6 +1719,9 @@ async function handleDemoMutation(req: AuthedRequest, res: Response, user: Sessi
       sandbox.connections = sandbox.connections.filter((item) => item.sourceId !== sourceId)
       return done({ message: `${provider.title} 연결을 해제했어요.` })
     }
+    // 실제 경로(POST /api/data-connections/:sourceId)와 같은 동의를 받는다.
+    // 체험만 그냥 통과시키면 "동의 없이도 자료가 연결되는 화면"을 보여주게 된다.
+    if (body?.consent !== true) { res.status(400).json({ error: '조회 범위와 목적에 동의해야 연결할 수 있어요.' }); return }
     if (sandbox.connections.some((item) => item.sourceId === sourceId)) {
       res.status(409).json({ error: '이미 연결된 기관이에요.' })
       return
@@ -1831,6 +1834,47 @@ function demoMeState(user: SessionUser) {
     legalVersion: LEGAL_VERSION,
     demo: { notice: DEMO_NOTICE, startingCash: INVESTOR_STARTING_CASH },
   }
+}
+
+/**
+ * 체험 세션이 보는 /api/market/mine.
+ *
+ * 이 자리가 공유 원장만 읽던 동안, 체험 세션은 교환장에 쿠폰을 올려도 교환을 체결해도
+ * "내 교환" 탭이 늘 비어 있었다(매물 userId 가 demo-… 라 원장에서 하나도 안 걸린다).
+ * 등록·교환은 실제로 됐는데 그 결과를 보여줄 화면만 없었던 셈이라, 샌드박스를 읽어 준다.
+ *
+ * 체험 매물은 다른 사람에게 보이지 않으니 받은 제안·보낸 제안은 언제나 비어 있고,
+ * 체험 교환은 그 자리에서 체결되므로(handleDemoMutation 의 swap) 거래 이력만 쌓인다.
+ */
+function demoMarketMine(user: SessionUser) {
+  const sandbox = demoSandbox(user.id, user.role)
+  // 교환으로 받은 쿠폰은 샌드박스에, 상대가 내놓은 원본은 공유 원장에 있다. 두 곳을 다 본다.
+  const couponOf = (couponId: string) => {
+    const found = sandbox.coupons.find((item) => item.id === couponId) || ledger.data.coupons.find((item) => item.id === couponId)
+    return found && { ...found, restaurant: demoRestaurantOf(found.restaurantId) }
+  }
+  const listings = [...sandbox.listings]
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, 30)
+    .map((listing) => {
+      const coupon = sandbox.coupons.find((item) => item.id === listing.couponId)
+      // 필드 모양은 listingView() 와 같아야 한다. 다르면 교환장 화면이 깨진다.
+      return {
+        ...listing, coupon, restaurant: coupon && demoRestaurantOf(coupon.restaurantId),
+        userName: user.name, offerCount: 0, myOfferId: undefined,
+        matchableCouponIds: [] as string[], mine: true, offers: [] as never[],
+      }
+    })
+  const trades = [...sandbox.trades]
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, 30)
+    .map((trade) => ({
+      id: trade.id, createdAt: trade.createdAt, mode: trade.mode,
+      counterpartyName: userName(trade.listerUserId),
+      gave: couponOf(trade.takerCouponId),
+      got: couponOf(trade.listerCouponId),
+    }))
+  return { listings, sentOffers: [], trades, rules: EXCHANGE_RULES, demo: { notice: DEMO_NOTICE } }
 }
 
 /** 공개 데이터 위에 이 체험 세션의 리뷰·투자분·매물만 얹는다. */
@@ -2690,6 +2734,7 @@ app.post('/api/support/requests', auth(), async (req: AuthedRequest, res) => {
 app.get('/api/market/mine', auth(), (req: AuthedRequest, res) => {
   sweepExchange()
   const me = req.user!
+  if (me.sessionMode === 'demo') return res.json(demoMarketMine(me))
   const myListings = ledger.data.couponListings
     .filter((listing) => listing.userId === me.id && ['open', 'completed', 'cancelled', 'expired'].includes(listing.status))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
@@ -2723,6 +2768,10 @@ app.get('/api/market/mine', auth(), (req: AuthedRequest, res) => {
       }
     })
 
+  const mapCoupon = (couponId: string) => {
+    const coupon = ledger.data.coupons.find((item) => item.id === couponId)
+    return coupon && couponView(coupon)
+  }
   const trades = ledger.data.couponTrades
     .filter((trade) => trade.listerUserId === me.id || trade.takerUserId === me.id)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
@@ -2734,8 +2783,10 @@ app.get('/api/market/mine', auth(), (req: AuthedRequest, res) => {
       return {
         id: trade.id, createdAt: trade.createdAt, mode: trade.mode,
         counterpartyName: userName(iAmLister ? trade.takerUserId : trade.listerUserId),
-        gave: ledger.data.coupons.find((item) => item.id === gaveId),
-        got: ledger.data.coupons.find((item) => item.id === gotId),
+        // 화면은 trade.gave.restaurant.emoji·name 을 읽는다. 원장 쿠폰을 그대로 넘기면
+        // 그 자리가 비어서 거래 이력이 "  26%" 처럼 식당 없이 나온다. couponView 로 붙여 준다.
+        gave: mapCoupon(gaveId),
+        got: mapCoupon(gotId),
       }
     })
 
