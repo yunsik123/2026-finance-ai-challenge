@@ -1,0 +1,99 @@
+{
+  "at": "2026-09-07T01:52:57.364Z",
+  "environment": "local isolated synthetic ledger; AI disabled; not production capacity",
+  "store": "file",
+  "results": [
+    {
+      "name": "mixed reads",
+      "concurrency": 10,
+      "total": 40,
+      "elapsedMs": 20,
+      "requestsPerSecond": 2043.9,
+      "p50Ms": 2,
+      "p95Ms": 11,
+      "maxMs": 12,
+      "statuses": {
+        "200": 40
+      }
+    },
+    {
+      "name": "mixed reads",
+      "concurrency": 50,
+      "total": 200,
+      "elapsedMs": 79,
+      "requestsPerSecond": 2543,
+      "p50Ms": 5,
+      "p95Ms": 44,
+      "maxMs": 71,
+      "statuses": {
+        "200": 200
+      }
+    },
+    {
+      "name": "mixed reads",
+      "concurrency": 100,
+      "total": 400,
+      "elapsedMs": 151,
+      "requestsPerSecond": 2652.4,
+      "p50Ms": 5,
+      "p95Ms": 81,
+      "maxMs": 146,
+      "statuses": {
+        "200": 400
+      }
+    },
+    {
+      "name": "concurrent wallet writes",
+      "concurrency": 10,
+      "total": 10,
+      "elapsedMs": 10,
+      "requestsPerSecond": 956,
+      "p50Ms": 7,
+      "p95Ms": 10,
+      "maxMs": 10,
+      "statuses": {
+        "200": 10
+      }
+    },
+    {
+      "name": "concurrent wallet writes",
+      "concurrency": 50,
+      "total": 50,
+      "elapsedMs": 48,
+      "requestsPerSecond": 1038,
+      "p50Ms": 30,
+      "p95Ms": 46,
+      "maxMs": 47,
+      "statuses": {
+        "200": 50
+      }
+    },
+    {
+      "name": "concurrent wallet writes",
+      "concurrency": 100,
+      "total": 100,
+      "elapsedMs": 99,
+      "requestsPerSecond": 1015,
+      "p50Ms": 60,
+      "p95Ms": 93,
+      "maxMs": 97,
+      "statuses": {
+        "200": 100
+      }
+    },
+    {
+      "name": "concurrent investment",
+      "concurrency": 20,
+      "total": 20,
+      "elapsedMs": 23,
+      "requestsPerSecond": 862.4,
+      "p50Ms": 15,
+      "p95Ms": 22,
+      "maxMs": 23,
+      "statuses": {
+        "200": 20
+      }
+    }
+  ],
+  "invariants": "successful wallet writes and investments preserved exactly"
+}

@@ -11,7 +11,7 @@ import { Server } from 'socket.io'
 import { articles as seedArticles, createSeed, funds as seedFunds, restaurants as seedRestaurants, reviews as seedReviews } from './seed.ts'
 import type { Application, AuditEvent, Coupon, CouponListing, CouponOffer, CouponTrade, DataConnection, Database, Fund, FundStatus, LegalConsent, Notification, Order, Position, Restaurant, Review, Role, SupportRequest, User } from './types.ts'
 import { LEGAL_VERSION, checkConsent, legalDocument, legalSummaries, requiredDocumentIds, type LegalContext } from './legal.ts'
-import { answerGraphProcessQuestion, assessRestaurant, buildKnowledgeGraph, normalizeOcrBoxes, questionTerms, retrieveKnowledgeSubgraph } from './trust.ts'
+import { answerGraphProcessQuestion, answerServiceRuleQuestion, assessRestaurant, buildKnowledgeGraph, normalizeOcrBoxes, questionTerms, retrieveKnowledgeSubgraph } from './trust.ts'
 import { buildEvidenceLedger, sourceLabels as evidenceSourceLabels } from './evidence.ts'
 import { classifyDocument, correctionStats, effectiveValue, fieldsFromOcr, type DocumentCorrection, type DocumentField, type OwnerDocument } from './documents.ts'
 import { ALWAYS_REQUIRED_SOURCES, DOCUMENT_GUIDE_VERSION, documentGuideGraph, documentGuides, SALES_EVIDENCE_SOURCES } from './issuance.ts'
@@ -113,7 +113,11 @@ const ledger = new LedgerContext(store)
 
 const id = (prefix: string) => `${prefix}-${crypto.randomUUID()}`
 const now = () => new Date().toISOString()
-const round1000 = (value: unknown) => Math.floor(Number(value) / 1000) * 1000
+const round1000 = (value: unknown) => {
+  if (typeof value !== 'number' && typeof value !== 'string') return 0
+  const amount = Number(value)
+  return Number.isFinite(amount) && Math.abs(amount) <= Number.MAX_SAFE_INTEGER ? Math.floor(amount / 1000) * 1000 : 0
+}
 
 async function hashPassword(password: string) {
   const salt = crypto.randomBytes(16).toString('hex')
@@ -366,15 +370,13 @@ async function saveDatabase() {
 const ledgerRpcEnabled = store.kind === 'tables' || store.kind === 'postgres'
 
 async function runLedgerRpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
-  const result = await (store as TableStateStore | PostgresStateStore).callRpc<T>(fn, args)
-  // 버전 비교를 건너뛰고 무조건 다시 읽는다. RPC 직후에는 반드시 달라져 있다.
-  const snapshot = await store.read()
-  if (snapshot) {
-    ledger.data = snapshot.data
-    ledger.version = snapshot.version
+  return ledger.track(async () => {
+    const result = await (store as TableStateStore | PostgresStateStore).callRpc<T>(fn, args)
+    // 요청 사본뿐 아니라 공유 읽기 캐시도 갱신해야 거래 직후 조회에 반영된다.
+    await ledger.refresh(true)
     normalizeDatabase()
-  }
-  return result
+    return result
+  })
 }
 
 /** RPC 가 raise exception 으로 돌려준 사장님용 문구만 꺼낸다. */
@@ -477,7 +479,10 @@ function recordConsent(
   userId: string, context: LegalContext, documentIds: string[],
   extra: { resourceType?: string; resourceId?: string; amount?: number; riskAcknowledged?: boolean } = {},
 ) {
-  if (!documentIds.length) return undefined
+  // 회수처럼 필수 약관 문서가 없는 맥락도 있다(server/legal.ts 의 requiredFor).
+  // 그때도 위험 확인은 받으므로, 확인 사실만 있으면 기록을 남긴다.
+  // 남기지 않으면 회수 동의가 원장에 아예 없고, 거래 RPC 도 동의를 찾지 못해 막힌다.
+  if (!documentIds.length && !extra.riskAcknowledged) return undefined
   ledger.data.legalConsents ??= []
   const consent: LegalConsent = {
     id: id('consent'), userId, context, documentIds, version: LEGAL_VERSION,
@@ -1104,12 +1109,23 @@ if (await initGraphDb()) {
 } else {
   console.log(`지식그래프: 서버 내장 그래프 사용 — ${graphDbStatus()}`)
 }
-syncCouponLedger()
-for (const fund of ledger.data.funds) {
-  matchOrders(fund.id)
-  refreshOrderTotals(fund.id)
-}
-await saveDatabase()
+/*
+ * 기동 시 파생값(쿠폰 집계·대기 주문 체결·호가 합계)을 원장과 맞춘다.
+ *
+ * 반드시 쓰기 잠금 컨텍스트 안에서 해야 한다. 공유 원장 모드의 저장은 잠금을 쥔
+ * 요청만 수행하므로(LedgerContext.save), 컨텍스트 없이 부르면 saveDatabase() 가
+ * 조용히 아무것도 하지 않는다. 그러면 여기서 맞춘 값이 메모리에만 남고, 첫 요청이
+ * DB 를 다시 읽는 순간 맞추기 전 값으로 되돌아간다.
+ * (실제로 그 탓에 funds.total_coupon_used 가 전 펀드에서 0으로 남아 있었다.)
+ */
+await ledger.run(true, async () => {
+  syncCouponLedger()
+  for (const fund of ledger.data.funds) {
+    matchOrders(fund.id)
+    refreshOrderTotals(fund.id)
+  }
+  await saveDatabase()
+})
 
 const app = express()
 const httpServer = createServer(app)
@@ -1120,6 +1136,15 @@ app.use(cors({ origin: true, credentials: true }))
 // base64 는 원본보다 약 33% 커진다. 이미지 상한(LIMITS.uploadMb)보다 넉넉해야
 // "6MB 이하" 안내를 보고 올린 파일이 본문 크기에서 먼저 막히는 일이 없다.
 app.use(express.json({ limit: `${Math.ceil(LIMITS.uploadMb * 1.4)}mb` }))
+app.use('/api', (req, res, next) => {
+  if (['POST', 'PUT', 'PATCH'].includes(req.method)) {
+    if (req.body === undefined) req.body = {}
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+      return res.status(400).json({ error: '요청 본문은 JSON 객체로 보내주세요.' })
+    }
+  }
+  next()
+})
 
 /**
  * 공유 원장을 쓸 때만 동작한다.
@@ -1582,7 +1607,7 @@ async function handleDemoMutation(req: AuthedRequest, res: Response, user: Sessi
     if (!restaurant) { res.status(404).json({ error: '식당을 찾을 수 없어요.' }); return }
     const rating = Math.round(Number(body.rating))
     const content = String(body.content || '').trim().slice(0, 500)
-    if (rating < 1 || rating > 5) { res.status(400).json({ error: '평점은 1점부터 5점까지 선택해주세요.' }); return }
+    if (!Number.isFinite(rating) || rating < 1 || rating > 5) { res.status(400).json({ error: '평점은 1점부터 5점까지 선택해주세요.' }); return }
     if (content.length < 10) { res.status(400).json({ error: '리뷰를 10자 이상 작성해주세요.' }); return }
     const verification = sandbox.visits.find((item) => item.restaurantId === restaurant.id && !item.usedForReview)
     if (!verification) { res.status(400).json({ error: '방문 인증 후 리뷰를 작성할 수 있어요.' }); return }
@@ -2361,7 +2386,7 @@ app.post('/api/restaurants/:restaurantId/reviews', auth('investor'), async (req:
   const content = String(req.body.content || '').trim().slice(0, 500)
   if (!restaurant) return res.status(404).json({ error: '식당을 찾을 수 없어요.' })
   if (!verification) return res.status(400).json({ error: '방문 인증 후 리뷰를 작성할 수 있어요.' })
-  if (rating < 1 || rating > 5) return res.status(400).json({ error: '평점은 1점부터 5점까지 선택해주세요.' })
+  if (!Number.isFinite(rating) || rating < 1 || rating > 5) return res.status(400).json({ error: '평점은 1점부터 5점까지 선택해주세요.' })
   if (content.length < 10) return res.status(400).json({ error: '리뷰를 10자 이상 작성해주세요.' })
   const review: Review = { id: id('review'), restaurantId: restaurant.id, userId: req.user!.id, userName: req.user!.name, rating, content, visitVerified: true, createdAt: now() }
   const oldCount = restaurant.reviewCount
@@ -2401,13 +2426,13 @@ app.post('/api/funds/:fundId/invest', auth('investor'), async (req: AuthedReques
   // 투자 건마다 어떤 위험고지 문서의 어느 버전에 동의했는지 남긴다.
   const investConsent = checkConsent('invest', req.body, 'investor')
   if (!investConsent.ok) return res.status(400).json({ error: investConsent.error })
-  recordConsent(user.id, 'invest', investConsent.documentIds, { resourceType: 'fund', resourceId: fund.id, amount, riskAcknowledged: investConsent.riskAcknowledged })
+  const consent = recordConsent(user.id, 'invest', investConsent.documentIds, { resourceType: 'fund', resourceId: fund.id, amount, riskAcknowledged: investConsent.riskAcknowledged })
   if (ledgerRpcEnabled) {
     // 잔액 차감·포지션·모금액·FIFO 매칭을 Postgres 트랜잭션 하나로 처리한다.
     // 검증도 그 안에서 다시 하므로 여기서 미리 거를 필요가 없다.
     try {
       const result = await runLedgerRpc<{ matched: number; queued: number; matches: unknown[] }>(
-        'invest', { p_user: user.id, p_fund: fund.id, p_amount: amount })
+        'consented_fund_action', { p_user: user.id, p_fund: fund.id, p_amount: amount, p_action: 'invest', p_consent: consent })
       changed()
       const message = result.queued === 0
         ? (fund.status === 'funding' ? `${result.matched.toLocaleString()}원이 바로 투자됐어요.` : '예약한 금액이 모두 투자됐어요.')
@@ -2453,13 +2478,13 @@ app.post('/api/funds/:fundId/withdraw', auth('investor'), async (req: AuthedRequ
   if (amount < 1000) return res.status(400).json({ error: '회수는 1,000원 단위로 가능해요.' })
   const withdrawConsent = checkConsent('withdraw', req.body, 'investor')
   if (!withdrawConsent.ok) return res.status(400).json({ error: withdrawConsent.error })
-  recordConsent(user.id, 'withdraw', withdrawConsent.documentIds, { resourceType: 'fund', resourceId: fund.id, amount, riskAcknowledged: withdrawConsent.riskAcknowledged })
+  const consent = recordConsent(user.id, 'withdraw', withdrawConsent.documentIds, { resourceType: 'fund', resourceId: fund.id, amount, riskAcknowledged: withdrawConsent.riskAcknowledged })
   if (ledgerRpcEnabled) {
     // 돈이 오가는 부분만 트랜잭션으로 처리하고, 쿠폰 정산은 적립률 계산이
     // 서버에 있어 체결 결과를 받아 이어서 한다. 체결이 0원이면 쿠폰도 없다.
     try {
       const result = await runLedgerRpc<{ matched: number; queued: number; matches: unknown[] }>(
-        'withdraw_investment', { p_user: user.id, p_fund: fund.id, p_amount: amount })
+        'consented_fund_action', { p_user: user.id, p_fund: fund.id, p_amount: amount, p_action: 'withdraw', p_consent: consent })
       // 적립률 계산은 서버 로직이라 여기서 하고, DB 에 남기는 것은 전용 RPC 로 보낸다.
       // saveDatabase() 로 원장 전체를 다시 쓰면 버전 충돌 재시도 경로가
       // 그 사이 다른 인스턴스가 쓴 내용을 낡은 스냅샷으로 덮어쓸 수 있다.
@@ -5043,8 +5068,12 @@ app.post('/api/ai/chat', async (req: AuthedRequest, res) => {
   const rawLedgerAnswer = ownerRole
     ? (!reviewIntent && opsIntent ? (accountAnswer || statusAnswer) : (statusAnswer || accountAnswer))
     : (accountAnswer || statusAnswer)
-  const ledgerAnswer = (howToIntent && wantsNavigation && navigationAnswer) || ruleIntent ? '' : rawLedgerAnswer
-  const localAnswer = ledgerAnswer || currentPageAnswer || ((wantsNavigation && navigationAnswer) ? navigationAnswer : (supportAnswer || graphAnswer || fallback))
+  const ruleAnswer = answerServiceRuleQuestion(effectiveQuestion, graphFund)
+  if (ruleAnswer && !retrievedGraph.sources.some(source => source.id === ruleAnswer.source.id)) retrievedGraph.sources.unshift(ruleAnswer.source)
+  const reviewAnswer = /리뷰|후기/.test(ownerAsk) && /남겨|작성|어떻게/.test(ownerAsk)
+    ? '식당 상세 화면에서 방문 인증 후 별점과 리뷰를 작성할 수 있어요. 방문 인증은 현재 시연용이며 리뷰는 10자 이상 입력해주세요.' : ''
+  const ledgerAnswer = (howToIntent && wantsNavigation && navigationAnswer) || ruleIntent || ruleAnswer ? '' : rawLedgerAnswer
+  const localAnswer = ruleAnswer?.answer || reviewAnswer || ledgerAnswer || currentPageAnswer || ((wantsNavigation && navigationAnswer) ? navigationAnswer : (supportAnswer || graphAnswer || fallback))
   // 개인 원장 값은 외부 생성형 서비스로 보내지 않고 서버 원장에서 집계한 답을 그대로 돌려준다.
   if (ledgerAnswer) return res.json({
     answer: enforceInvestmentAdvicePolicy(localAnswer),
@@ -5205,9 +5234,19 @@ if (clientBuilt) {
   app.get(/^\/(?!api\/).*/, (_req, res) => res.sendFile(clientIndex))
 }
 
-app.use((error: Error, _req: Request, res: Response, _next: NextFunction) => {
-  console.error(error)
-  res.status(500).json({ error: '잠시 문제가 생겼어요. 다시 시도해주세요.' })
+app.use('/api', (_req, res) => res.status(404).json({ error: '요청한 API를 찾을 수 없어요.' }))
+
+app.use((error: Error & { status?: number; type?: string }, _req: Request, res: Response, next: NextFunction) => {
+  if (res.headersSent) return next(error)
+  const status = Number.isInteger(error.status) && error.status! >= 400 && error.status! < 600 ? error.status! : 500
+  // 파서 오류 객체에는 요청 원문이 포함되므로 그대로 로그에 남기지 않는다.
+  if (status >= 500) console.error('요청 처리 실패:', error.name)
+  const message = error.type === 'entity.parse.failed' ? '올바른 JSON 형식으로 요청해주세요.'
+    : status === 413 ? '요청 크기가 업로드 한도를 초과했어요.'
+    : status === 409 ? '다른 요청에서 정보가 변경됐어요. 새로고침 후 다시 시도해주세요.'
+    : status === 503 ? '요청이 몰리고 있어요. 잠시 후 다시 시도해주세요.'
+    : '요청을 처리하지 못했어요. 입력을 확인하고 다시 시도해주세요.'
+  res.status(status).json({ error: message })
 })
 
 io.on('connection', (socket) => socket.emit('connected', { at: now() }))

@@ -481,6 +481,30 @@ export function retrieveKnowledgeSubgraph(graph: KnowledgeGraph, question: strin
   }
 }
 
+/** 규칙의 숫자는 검색 순위나 모델 가용성과 무관하게 같은 원천에서 읽는다. */
+export function answerServiceRuleQuestion(question: string, fund?: Fund) {
+  const text = question.replace(/\s/g, '')
+  let ruleId = ''
+  let keys: string[] = []
+  if (/쿠폰/.test(text) && /코드|확인/.test(text) && /안|않|시간|분|언제|어떻게돼/.test(text)) {
+    ruleId = 'rule:redeem'; keys = ['codeRule', 'holdRule', 'stateRule']
+  } else if (/최초|가속/.test(text) && /투자|혜택|보너스/.test(text)) {
+    ruleId = 'rule:coupon-accrual'; keys = ['earlyBonus', 'issueFloor', 'cap']
+  } else if (/쿠폰|교환/.test(text) && /제안|교환|올릴/.test(text)
+      && /차이|제한|조건|규칙|수있|만료|며칠|잠기|수락.*전/.test(text)) {
+    ruleId = 'rule:exchange'; keys = ['discountGapRule', 'valueRatioRule', 'expiryRule', 'escrowRule']
+  } else if (/투자|회수|빼면|빼고|빼도/.test(text) && /한도|최대|얼마까지|모금중|바로|즉시/.test(text)) {
+    ruleId = 'rule:invest-withdraw'
+    keys = /한도|최대|얼마까지/.test(text) ? ['personalCap', 'unit', 'noGuarantee']
+      : fund?.status === 'funding' ? ['duringFunding', 'noGuarantee']
+      : fund?.status === 'trading' ? ['afterFunding', 'noGuarantee'] : ['duringFunding', 'afterFunding', 'noGuarantee']
+  }
+  const rule = serviceRuleNodes().find(node => node.id === ruleId)
+  if (!rule) return undefined
+  return { answer: keys.map(key => String(rule.properties[key])).join('. ') + '.',
+    source: { id: rule.id, label: rule.label, type: rule.type } }
+}
+
 export function answerGraphProcessQuestion(question: string, subgraph: ReturnType<typeof retrieveKnowledgeSubgraph>) {
   if (!/(어떻게|절차|순서|준비|등록|제출|자료|서류|업로드|회수|심사|참여)/.test(question)) return ''
   const steps = subgraph.nodes.filter((node) => node.type === 'GuideStep')

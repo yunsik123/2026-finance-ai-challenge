@@ -37,19 +37,23 @@ export class FileStateStore implements StateStore {
     try {
       const raw = await fs.readFile(this.dbPath, 'utf8')
       return { data: JSON.parse(raw) as Database, version: 0 }
-    } catch {
-      return undefined
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+      // 손상·권한 오류를 빈 원장으로 취급하면 시작 시 시드로 덮어쓰게 된다.
+      throw error
     }
   }
 
   async version() { return 0 }
 
   write(data: Database) {
+    const snapshot = JSON.stringify(data, null, 2)
     // 부분 저장된 파일이 남지 않도록 임시 파일에 쓴 뒤 원자적으로 교체한다.
-    this.#queue = this.#queue.then(async () => {
+    // 이전 저장 실패는 해당 호출자에게 전달하되 다음 저장까지 실패시키지 않는다.
+    this.#queue = this.#queue.catch(() => undefined).then(async () => {
       await fs.mkdir(path.dirname(this.dbPath), { recursive: true })
       const temp = `${this.dbPath}.tmp`
-      await fs.writeFile(temp, JSON.stringify(data, null, 2), 'utf8')
+      await fs.writeFile(temp, snapshot, 'utf8')
       await fs.rename(temp, this.dbPath)
     })
     return this.#queue.then(() => 0)

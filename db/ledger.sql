@@ -69,7 +69,10 @@ create or replace function meoktu.export_ledger()
         'startedAt', meoktu.iso(f.started_at), 'endsAt', meoktu.iso(f.ends_at),
         'purpose', f.purpose, 'investorCount', f.investor_count,
         'totalCouponIssued', f.total_coupon_issued, 'totalCouponUsed', f.total_coupon_used,
-        'openBuyAmount', f.open_buy_amount, 'openSellAmount', f.open_sell_amount,
+        'openBuyAmount', coalesce((select sum(o.remaining) from meoktu.orders o
+          where o.fund_id = f.id and o.type = 'buy' and o.status in ('open','partial')), 0),
+        'openSellAmount', coalesce((select sum(o.remaining) from meoktu.orders o
+          where o.fund_id = f.id and o.type = 'sell' and o.status in ('open','partial')), 0),
         'riskLevel', f.risk_level
       ) order by f.created_at, f.id) from meoktu.funds f), '[]'::jsonb),
 

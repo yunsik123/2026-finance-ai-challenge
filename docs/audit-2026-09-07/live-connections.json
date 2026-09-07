@@ -1,0 +1,175 @@
+{
+  "at": "2026-09-07T01:38:17.806Z",
+  "mode": "read-only",
+  "postgres": {
+    "connected": true,
+    "version": 259,
+    "settings": {
+      "max_connections": 400,
+      "connections": 9,
+      "lock_waiters": 0
+    },
+    "counts": {
+      "etfs": 3,
+      "funds": 17,
+      "users": 38,
+      "orders": 10,
+      "coupons": 128,
+      "reviews": 36,
+      "articles": 3,
+      "documents": 0,
+      "favorites": 0,
+      "positions": 21,
+      "auditEvents": 0,
+      "ocrAnalyses": 8,
+      "restaurants": 17,
+      "applications": 7,
+      "couponOffers": 4,
+      "couponTrades": 1,
+      "legalConsents": 0,
+      "notifications": 27,
+      "couponListings": 12,
+      "dataConnections": 0,
+      "supportRequests": 0,
+      "visitVerifications": 0,
+      "walletTransactions": 2
+    },
+    "documentsPersisted": true,
+    "tables": [
+      {
+        "tablename": "restaurants",
+        "rowsecurity": true
+      },
+      {
+        "tablename": "restaurant_sales",
+        "rowsecurity": true
+      },
+      {
+        "tablename": "funds",
+        "rowsecurity": true
+      },
+      {
+        "tablename": "coupons",
+        "rowsecurity": true
+      },
+      {
+        "tablename": "coupon_trades",
+        "rowsecurity": true
+      },
+      {
+        "tablename": "ledger_meta",
+        "rowsecurity": true
+      },
+      {
+        "tablename": "reviews",
+        "rowsecurity": true
+      },
+      {
+        "tablename": "articles",
+        "rowsecurity": true
+      },
+      {
+        "tablename": "etf_funds",
+        "rowsecurity": true
+      },
+      {
+        "tablename": "etf_members",
+        "rowsecurity": true
+      },
+      {
+        "tablename": "profiles",
+        "rowsecurity": true
+      },
+      {
+        "tablename": "positions",
+        "rowsecurity": true
+      },
+      {
+        "tablename": "orders",
+        "rowsecurity": true
+      },
+      {
+        "tablename": "coupon_listings",
+        "rowsecurity": true
+      },
+      {
+        "tablename": "coupon_offers",
+        "rowsecurity": true
+      },
+      {
+        "tablename": "applications",
+        "rowsecurity": true
+      },
+      {
+        "tablename": "ocr_analyses",
+        "rowsecurity": true
+      },
+      {
+        "tablename": "data_connections",
+        "rowsecurity": true
+      },
+      {
+        "tablename": "wallet_transactions",
+        "rowsecurity": true
+      },
+      {
+        "tablename": "visit_verifications",
+        "rowsecurity": true
+      },
+      {
+        "tablename": "support_requests",
+        "rowsecurity": true
+      },
+      {
+        "tablename": "audit_events",
+        "rowsecurity": true
+      },
+      {
+        "tablename": "owner_documents",
+        "rowsecurity": true
+      },
+      {
+        "tablename": "legal_consents",
+        "rowsecurity": true
+      },
+      {
+        "tablename": "favorites",
+        "rowsecurity": true
+      },
+      {
+        "tablename": "notifications",
+        "rowsecurity": true
+      }
+    ],
+    "functions": [
+      {
+        "name": "import_ledger",
+        "handlesDocuments": true
+      },
+      {
+        "name": "export_ledger",
+        "handlesDocuments": true
+      },
+      {
+        "name": "save_ledger",
+        "handlesDocuments": true
+      },
+      {
+        "name": "lock_steal_after",
+        "handlesDocuments": false
+      }
+    ],
+    "invariants": {
+      "nonnegativeCash": true,
+      "nonnegativePositions": true,
+      "validOrderRemaining": true,
+      "uniqueCouponIds": true
+    }
+  },
+  "neo4j": {
+    "connected": true,
+    "nodes": 218,
+    "edges": 349,
+    "orphans": 0
+  }
+}

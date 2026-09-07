@@ -113,6 +113,11 @@ begin
    where exists (select 1 from meoktu.restaurants r where r.id = x."restaurantId")
   on conflict (id) do update set
     status = excluded.status, raised = excluded.raised,
+    goal = excluded.goal, max_discount = excluded.max_discount,
+    min_issue_discount = excluded.min_issue_discount, daily_rate_per_100k = excluded.daily_rate_per_100k,
+    sales_bonus = excluded.sales_bonus, early_bonus = excluded.early_bonus, purpose = excluded.purpose,
+    open_buy_amount = excluded.open_buy_amount, open_sell_amount = excluded.open_sell_amount,
+    risk_level = excluded.risk_level, started_at = excluded.started_at, ends_at = excluded.ends_at,
     investor_count = excluded.investor_count,
     total_coupon_issued = excluded.total_coupon_issued,
     total_coupon_used = excluded.total_coupon_used;
@@ -165,8 +170,11 @@ begin
      and exists (select 1 from meoktu.restaurants r where r.id = x."restaurantId")
   on conflict (id) do update set
     user_id = excluded.user_id, status = excluded.status,
+    title = excluded.title, discount = excluded.discount, max_discount_won = excluded.max_discount_won,
     acquired_from_user_id = excluded.acquired_from_user_id, acquired_at = excluded.acquired_at,
-    redeem_code = excluded.redeem_code, used_at = excluded.used_at;
+    redeem_code = excluded.redeem_code, redeem_requested_at = excluded.redeem_requested_at,
+    used_at = excluded.used_at, used_at_restaurant_id = excluded.used_at_restaurant_id,
+    expires_at = excluded.expires_at;
   get diagnostics v_n = row_count; v_report := v_report || jsonb_build_object('coupons', v_n);
 
   insert into meoktu.coupon_listings(
@@ -186,7 +194,11 @@ begin
       "expiresAt" timestamptz, "createdAt" timestamptz)
    where exists (select 1 from meoktu.profiles p where p.id = x."userId")
      and exists (select 1 from meoktu.coupons c where c.id = x."couponId")
-  on conflict (id) do update set status = excluded.status, completed_at = excluded.completed_at;
+  on conflict (id) do update set status = excluded.status, completed_at = excluded.completed_at,
+    completed_with_user_id = excluded.completed_with_user_id,
+    wanted_categories = excluded.wanted_categories, wanted_regions = excluded.wanted_regions,
+    min_discount = excluded.min_discount, auto_accept = excluded.auto_accept,
+    note = excluded.note, expires_at = excluded.expires_at;
   get diagnostics v_n = row_count; v_report := v_report || jsonb_build_object('coupon_listings', v_n);
 
   insert into meoktu.coupon_offers(

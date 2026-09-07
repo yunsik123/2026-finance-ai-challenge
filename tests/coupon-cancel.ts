@@ -9,7 +9,8 @@ function assert(value: unknown, message: string): asserts value { if (!value) th
 
 const login = await request('/api/auth/login', { method: 'POST', body: JSON.stringify({ email: 'owner@meoktu.demo', password: 'demo1234!' }) })
 const before = await request('/api/public')
-const listing = before.listings.find((item: any) => item.userId === login.user.id)
+// 후속 교환 규칙 테스트가 사용하는 cl-2를 취소하지 않도록 대상을 명시한다.
+const listing = before.listings.find((item: any) => item.userId === login.user.id && item.id === 'cl-1')
 assert(listing?.couponId, '김소담 계정의 열린 교환 제안이 필요합니다.')
 
 const cancelled = await request(`/api/listings/${listing.id}`, { method: 'DELETE' }, login.token)

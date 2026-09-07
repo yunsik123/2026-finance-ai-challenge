@@ -579,6 +579,7 @@ declare
   v_offered meoktu.coupons%rowtype;
   v_reason  text;
   v_trade   text;
+  v_loser   text;
 begin
   select * into v_listing from meoktu.coupon_listings where id = p_listing for update;
   if not found then raise exception '교환 등록을 찾을 수 없어요.' using errcode = 'no_data_found'; end if;
@@ -615,6 +616,13 @@ begin
   end if;
 
   -- 같은 매물에 걸려 있던 나머지 제안은 거절 처리하고 에스크로를 푼다.
+  -- 알림 없이 쿠폰만 돌려주면 제안자는 왜 교환이 안 됐는지 알 수 없다.
+  -- 수락된 제안은 위에서 이미 accepted 로 바뀌었으므로 여기 남은 pending 이 곧 탈락자다.
+  for v_loser in select offer_user_id from meoktu.coupon_offers
+       where listing_id = p_listing and status = 'pending' loop
+    perform meoktu.push_notification(v_loser, 'offer_declined', '교환이 다른 분과 성사됐어요',
+      format('%s 매물이 마감되어 걸어둔 쿠폰을 지갑으로 돌려드렸어요.', v_wanted.title), '/market');
+  end loop;
   update meoktu.coupons set status = 'available'
    where status = 'offered'
      and id in (select offer_coupon_id from meoktu.coupon_offers
@@ -630,10 +638,10 @@ begin
     v_listing.user_id, v_wanted.id, v_wanted.discount, v_wanted.max_discount_won,
     p_taker, v_offered.id, v_offered.discount, v_offered.max_discount_won);
 
-  perform meoktu.push_notification(v_listing.user_id, 'swap_done', '쿠폰 교환이 완료됐어요',
+  perform meoktu.push_notification(v_listing.user_id, 'trade_done', '쿠폰 교환이 완료됐어요',
     format('%s님과 교환했어요. 지갑에서 %s을(를) 확인해보세요.',
       (select name from meoktu.profiles where id = p_taker), v_offered.title), '/my');
-  perform meoktu.push_notification(p_taker, 'swap_done', '쿠폰 교환이 완료됐어요',
+  perform meoktu.push_notification(p_taker, 'trade_done', '쿠폰 교환이 완료됐어요',
     format('%s님과 교환했어요. 지갑에서 %s을(를) 확인해보세요.',
       (select name from meoktu.profiles where id = v_listing.user_id), v_wanted.title), '/my');
   perform meoktu.log_audit(p_taker, 'coupon.swap', 'coupon_trade', v_trade, '쿠폰 교환 체결');
@@ -838,3 +846,37 @@ begin
 end $$;
 revoke all on function meoktu.issue_coupon(text,text,text,text,text,numeric,bigint,timestamptz)
   from anon, authenticated;
+
+-- 거래와 위험고지 동의를 한 트랜잭션에 남긴다. 거래 후 원장을 재조회할 때
+-- 메모리에만 있던 동의가 사라지거나, 동의 저장만 실패하는 상태를 막는다.
+create or replace function meoktu.consented_fund_action(
+  p_user text, p_fund text, p_amount bigint, p_action text, p_consent jsonb
+) returns jsonb language plpgsql security definer set search_path = meoktu, public as $$
+declare v_result jsonb;
+begin
+  if p_action not in ('invest', 'withdraw') or p_action is null
+     or p_consent is null
+     or p_consent->>'userId' is distinct from p_user
+     or p_consent->>'resourceId' is distinct from p_fund
+     or p_consent->>'context' is distinct from p_action
+     or p_consent->>'resourceType' is distinct from 'fund'
+     or p_consent->>'riskAcknowledged' is distinct from 'true'
+     or nullif(p_consent->>'version', '') is null
+     or (p_consent->>'amount')::bigint is distinct from p_amount
+     or jsonb_typeof(p_consent->'documentIds') is distinct from 'array' then
+    raise exception '거래 위험고지 동의를 확인해주세요.' using errcode = 'check_violation';
+  end if;
+  -- 회수(withdraw)에는 필수 약관 문서가 없다(server/legal.ts 의 requiredFor).
+  -- 문서 목록이 비어 있다고 거절하면 회수가 통째로 막히므로, 형태만 확인하고
+  -- 실제 동의 여부는 위의 riskAcknowledged 로 판단한다.
+  if p_action = 'invest' then v_result := meoktu.invest(p_user, p_fund, p_amount);
+  else v_result := meoktu.withdraw_investment(p_user, p_fund, p_amount); end if;
+  insert into meoktu.legal_consents(id, user_id, context, document_ids, version,
+    resource_type, resource_id, amount, risk_acknowledged, agreed_at)
+  values (p_consent->>'id', p_user, p_action,
+    array(select jsonb_array_elements_text(p_consent->'documentIds')), p_consent->>'version',
+    'fund', p_fund, p_amount, true, (p_consent->>'agreedAt')::timestamptz);
+  return v_result;
+end $$;
+revoke all on function meoktu.consented_fund_action(text,text,bigint,text,jsonb) from public, anon, authenticated;
+grant execute on function meoktu.consented_fund_action(text,text,bigint,text,jsonb) to service_role;

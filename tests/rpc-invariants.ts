@@ -54,7 +54,7 @@ lines.forEach((line, index) => {
 })
 
 // 반대 방향도 본다. RPC 를 부르고 원장을 다시 읽지 않으면 메모리가 낡은 채로 남는다.
-if (!/const snapshot = await store\.read\(\)/.test(source.split('async function runLedgerRpc')[1]?.slice(0, 600) || '')) {
+if (!/await ledger\.refresh\(true\)/.test(source.split('async function runLedgerRpc')[1]?.slice(0, 800) || '')) {
   violations.push('runLedgerRpc 가 RPC 호출 뒤 원장을 다시 읽지 않습니다.')
 }
 

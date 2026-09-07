@@ -1,0 +1,85 @@
+{
+  "at": "2026-09-07T01:52:56.071Z",
+  "mode": "postgres",
+  "failures": [],
+  "reports": [
+    {
+      "suite": "smoke.ts",
+      "exitCode": 0,
+      "elapsedMs": 265,
+      "output": "PASS: 12 restaurants and funds | investor login and portfolio | investment and realtime broadcast | AI restaurant answer | credit policy (C, 원점수 54.1 → 53.7, 상한 A) | source-data review (manual_review, 53.7점, POS 11083행, 산정률 72.5%) | no-data guard (manual_review, 매출 미산정) | production client served + deep link\n"
+    },
+    {
+      "suite": "enhancements.ts",
+      "exitCode": 0,
+      "elapsedMs": 313,
+      "output": "{\n  \"walletTopup\": 123000,\n  \"invested\": {\n    \"message\": \"예약한 금액이 모두 투자됐어요.\",\n    \"matched\": 20000,\n    \"queued\": 0,\n    \"matches\": [\n      {\n        \"amount\": 20000,\n        \"buyerId\": \"user-5279f595-6c3e-4018-9d6b-7f14eee659b2\",\n        \"sellerId\": \"u-market-a\"\n      }\n    ]\n  },\n  \"withdrawal\": {\n    \"message\": \"사는 사람이 나타나면 1,000원부터 순서대로 회수돼요.\",\n    \"matched\": 0,\n    \"queued\": 10000,\n    \"matches\": []\n  },\n  \"counterpartyInvested\": 140000,\n  \"review\": \"review-fab3ce19-672a-4ae0-9102-618316d42105\",\n  \"applicationStatus\": \"manual_review\",\n  \"dataConfidence\": 100,\n  \"couponListings\": 12\n}\n"
+    },
+    {
+      "suite": "integration-new.ts",
+      "exitCode": 0,
+      "elapsedMs": 148,
+      "output": "PASS: trust model | role graph | favorites ledger | OCR/manual review | audit trail\n"
+    },
+    {
+      "suite": "coupon-cancel.ts",
+      "exitCode": 0,
+      "elapsedMs": 120,
+      "output": "PASS: 바다의 식탁 20% 쿠폰 취소 → 지갑 복원 → 교환장 재등록\n"
+    },
+    {
+      "suite": "coupon-exchange.ts",
+      "exitCode": 0,
+      "elapsedMs": 439,
+      "output": "PASS: 조건 강제 | 에스크로 | 중복·자기교환 차단 | 동시 교환 1건만 체결 | 사용 코드 검증 | 교환장 필터\n"
+    },
+    {
+      "suite": "merged-modules.ts",
+      "exitCode": 0,
+      "elapsedMs": 138,
+      "output": "PASS: 상권 매칭(exact/nearby/미연동) | 위험모형 연동 | 동적 지식그래프 | 사업자 진위확인 | 재무 교차검증 6단계 | AI 근거\n"
+    },
+    {
+      "suite": "demo-and-data.ts",
+      "exitCode": 0,
+      "elapsedMs": 6255,
+      "output": "PASS: 체험 샌드박스(충전·투자·쿠폰·리뷰·기관연결) | 공유 원장 무변경 | 세션 간 격리 | 직접 업로드/제휴 출처 | 샘플 다운로드 | 역할별 지식그래프\n"
+    },
+    {
+      "suite": "admin-operations.ts",
+      "exitCode": 0,
+      "elapsedMs": 236,
+      "output": "PASS: admin authorization | unified dashboard | reversible user/store/review operations\n"
+    },
+    {
+      "suite": "ai-and-ui-audit.ts",
+      "exitCode": 0,
+      "elapsedMs": 240,
+      "output": "PASS: role-aware AI guide | live account ledger | owner store ledger | owner privacy boundary | how-to over ledger dump | investment advice hard block | coupon guidance | orderbook reserve/cancel click flow\n"
+    },
+    {
+      "suite": "owner-verification.ts",
+      "exitCode": 0,
+      "elapsedMs": 355,
+      "output": "PASS: owner consent details | admin AI/document review detail | application manual_review | approved publication | owner verification history\n"
+    },
+    {
+      "suite": "ai-analysis.ts",
+      "exitCode": 0,
+      "elapsedMs": 80,
+      "output": "AI 키 없음 — 규칙 폴백 경로를 검사합니다.\n✅ AI 경영 리포트·인사이트 해석 검증 통과\n"
+    },
+    {
+      "suite": "runtime-audit.ts",
+      "exitCode": 0,
+      "elapsedMs": 419,
+      "output": "Runtime audit: 64/64 checks passed\n"
+    },
+    {
+      "suite": "load-audit.ts",
+      "exitCode": 0,
+      "elapsedMs": 6396,
+      "output": "{\"name\":\"mixed reads\",\"concurrency\":10,\"total\":40,\"elapsedMs\":65,\"requestsPerSecond\":617.7,\"p50Ms\":9,\"p95Ms\":45,\"maxMs\":64,\"statuses\":{\"200\":40}}\n{\"name\":\"mixed reads\",\"concurrency\":50,\"total\":200,\"elapsedMs\":313,\"requestsPerSecond\":638.6,\"p50Ms\":25,\"p95Ms\":297,\"maxMs\":311,\"statuses\":{\"200\":200}}\n{\"name\":\"mixed reads\",\"concurrency\":100,\"total\":400,\"elapsedMs\":641,\"requestsPerSecond\":623.6,\"p50Ms\":80,\"p95Ms\":610,\"maxMs\":639,\"statuses\":{\"200\":400}}\n{\"name\":\"concurrent wallet writes\",\"concurrency\":10,\"total\":10,\"elapsedMs\":174,\"requestsPerSecond\":57.4,\"p50Ms\":98,\"p95Ms\":174,\"maxMs\":174,\"statuses\":{\"200\":10}}\n{\"name\":\"concurrent wallet writes\",\"concurrency\":50,\"total\":50,\"elapsedMs\":722,\"requestsPerSecond\":69.2,\"p50Ms\":357,\"p95Ms\":694,\"maxMs\":721,\"statuses\":{\"200\":50}}\n{\"name\":\"concurrent wallet writes\",\"concurrency\":100,\"total\":100,\"elapsedMs\":1464,\"requestsPerSecond\":68.3,\"p50Ms\":734,\"p95Ms\":1386,\"maxMs\":1462,\"statuses\":{\"200\":100}}\n{\"name\":\"concurrent investment\",\"concurrency\":20,\"total\":20,\"elapsedMs\":334,\"requestsPerSecond\":59.9,\"p50Ms\":169,\"p95Ms\":317,\"maxMs\":333,\"statuses\":{\"200\":20}}\n{\"name\":\"two-instance wallet writes\",\"concurrency\":40,\"total\":40,\"elapsedMs\":904,\"requestsPerSecond\":44.2,\"p50Ms\":289,\"p95Ms\":874,\"maxMs\":903,\"statuses\":{\"200\":40}}\nPASS: load audit monetary invariants and server recovery\n"
+    }
+  ]
+}

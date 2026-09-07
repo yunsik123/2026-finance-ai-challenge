@@ -250,6 +250,7 @@ async function main() {
   console.log(`문항 전체 통과: ${casesPass}/${cases.length}   개별 항목 통과: ${checksPass}/${checksTotal} (${Math.round(checksPass / checksTotal * 100)}%)`)
   console.log(`응답 모드 분포: ${[...modes.entries()].map(([m, n]) => `${m}×${n}`).join(' · ')}`)
   if (failures.length) {
+    process.exitCode = 1
     console.log('\n실패 항목')
     for (const line of failures) console.log(`  - ${line}`)
   }

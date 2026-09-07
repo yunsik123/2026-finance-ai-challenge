@@ -1,0 +1,112 @@
+{
+  "at": "2026-09-07T01:52:56.063Z",
+  "environment": "local isolated synthetic ledger; AI disabled; not production capacity",
+  "store": "postgres",
+  "results": [
+    {
+      "name": "mixed reads",
+      "concurrency": 10,
+      "total": 40,
+      "elapsedMs": 65,
+      "requestsPerSecond": 617.7,
+      "p50Ms": 9,
+      "p95Ms": 45,
+      "maxMs": 64,
+      "statuses": {
+        "200": 40
+      }
+    },
+    {
+      "name": "mixed reads",
+      "concurrency": 50,
+      "total": 200,
+      "elapsedMs": 313,
+      "requestsPerSecond": 638.6,
+      "p50Ms": 25,
+      "p95Ms": 297,
+      "maxMs": 311,
+      "statuses": {
+        "200": 200
+      }
+    },
+    {
+      "name": "mixed reads",
+      "concurrency": 100,
+      "total": 400,
+      "elapsedMs": 641,
+      "requestsPerSecond": 623.6,
+      "p50Ms": 80,
+      "p95Ms": 610,
+      "maxMs": 639,
+      "statuses": {
+        "200": 400
+      }
+    },
+    {
+      "name": "concurrent wallet writes",
+      "concurrency": 10,
+      "total": 10,
+      "elapsedMs": 174,
+      "requestsPerSecond": 57.4,
+      "p50Ms": 98,
+      "p95Ms": 174,
+      "maxMs": 174,
+      "statuses": {
+        "200": 10
+      }
+    },
+    {
+      "name": "concurrent wallet writes",
+      "concurrency": 50,
+      "total": 50,
+      "elapsedMs": 722,
+      "requestsPerSecond": 69.2,
+      "p50Ms": 357,
+      "p95Ms": 694,
+      "maxMs": 721,
+      "statuses": {
+        "200": 50
+      }
+    },
+    {
+      "name": "concurrent wallet writes",
+      "concurrency": 100,
+      "total": 100,
+      "elapsedMs": 1464,
+      "requestsPerSecond": 68.3,
+      "p50Ms": 734,
+      "p95Ms": 1386,
+      "maxMs": 1462,
+      "statuses": {
+        "200": 100
+      }
+    },
+    {
+      "name": "concurrent investment",
+      "concurrency": 20,
+      "total": 20,
+      "elapsedMs": 334,
+      "requestsPerSecond": 59.9,
+      "p50Ms": 169,
+      "p95Ms": 317,
+      "maxMs": 333,
+      "statuses": {
+        "200": 20
+      }
+    },
+    {
+      "name": "two-instance wallet writes",
+      "concurrency": 40,
+      "total": 40,
+      "elapsedMs": 904,
+      "requestsPerSecond": 44.2,
+      "p50Ms": 289,
+      "p95Ms": 874,
+      "maxMs": 903,
+      "statuses": {
+        "200": 40
+      }
+    }
+  ],
+  "invariants": "successful wallet writes and investments preserved exactly"
+}
