@@ -87,11 +87,24 @@ assert((await ok('/api/owner', {}, ownerAccount.token)).ocrAnalyses.length === b
 const demoConnection = await ok('/api/data-connections/pos', { method: 'POST', body: JSON.stringify({}) }, demoOwner.token)
 assert(demoConnection.ephemeral === true && demoConnection.connection.sourceId === 'pos', '체험 사장님은 기관 연결을 눌러볼 수 있어야 합니다.')
 assert((await ok('/api/owner', {}, ownerAccount.token)).dataConnections.every((item: any) => item.id !== demoConnection.connection.id), '체험 기관 연결이 실제 계정 원장에 남으면 안 됩니다.')
+const demoOwnerState = await ok('/api/owner', {}, demoOwner.token)
 const freshDemoOwner = await ok('/api/auth/demo', { method: 'POST', body: JSON.stringify({ role: 'owner' }) })
 const freshDemoOwnerState = await ok('/api/owner', {}, freshDemoOwner.token)
 assert(freshDemoOwner.token !== demoOwner.token, '사장님 체험에 다시 들어가면 새 세션이어야 합니다.')
-assert(freshDemoOwnerState.dataConnections.length === 0 && freshDemoOwnerState.applications.length === 0,
-  '새 사장님 체험에는 이전 체험의 기관 연결과 심사 기록이 남지 않아야 합니다.')
+assert(freshDemoOwnerState.dataConnections.length === 0,
+  '새 사장님 체험에는 이전 체험의 기관 연결이 남지 않아야 합니다.')
+/*
+ * 사장님 체험은 심사 중인 사업체 한 곳을 들고 시작한다(server/index.ts 의 seedDemoApplication).
+ * 그래서 "심사 기록 0건"으로는 세션 격리를 확인할 수 없다. 대신 새 세션이 자기 시드만
+ * 가지고 있고, 그 신청이 앞 세션의 것과 다른 id 인지를 본다.
+ */
+assert(freshDemoOwnerState.applications.length === demoOwnerState.applications.length,
+  '새 사장님 체험도 같은 시작 상태여야 합니다.')
+assert(freshDemoOwnerState.applications.every((item: any) =>
+  demoOwnerState.applications.every((before: any) => before.id !== item.id)),
+'새 사장님 체험에 이전 체험의 심사 기록이 남으면 안 됩니다.')
+assert(freshDemoOwnerState.applications.every((item: any) => item.status === 'manual_review'),
+  '체험 시작 신청도 실제와 같이 운영자 확인 대기로 시작해야 합니다.')
 const invalidDemoApplication = await request('/api/applications', { method: 'POST', body: '{}' }, demoOwner.token)
 assert(invalidDemoApplication.status === 400, '체험 심사도 실제와 같은 입력 검증을 거쳐야 합니다.')
 

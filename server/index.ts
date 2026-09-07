@@ -1261,9 +1261,179 @@ function seedDemoPositions(sandbox: DemoSandbox) {
 }
 
 /**
+ * 체험 사장님이 이미 낸 것으로 보여줄 두 번째 사업체.
+ *
+ * 체험 사장님에게는 원장의 첫 식당을 하나 빌려준다(`GET /api/owner`). 그런데 그
+ * 한 곳은 이미 운영 중인 펀드라서, 마이페이지에 "내 사업체" 전환 UI 도 회차별
+ * 검증 리포트도 뜨지 않는다. 사장님 화면의 핵심인 "여러 사업체를 나눠 관리한다"가
+ * 체험에서는 아예 보이지 않았다.
+ *
+ * 그래서 아직 가게로 등록되지 않은 신청 한 건을 함께 넣어 둔다. 빌려준 식당과
+ * 상호·사업자번호가 겹치지 않으므로 화면에서 별도 사업체로 묶인다.
+ * 값은 아래 seedDemoApplication() 에서 실제 심사 엔진에 그대로 태워 만든다.
+ * 점수와 등급을 손으로 적어 넣으면 화면에 보이는 근거와 숫자가 어긋나기 때문이다.
+ */
+const demoSeedApplication = {
+  restaurantName: '소반김밥 연남점',
+  category: '분식',
+  address: '서울시 마포구 연남로 32',
+  businessNumber: '214-86-90124',
+  licenseNumber: '제2024-서울마포-01882호',
+  ownerName: '사장님 체험자',
+  requestedLimit: 20_000_000,
+  /**
+   * 기관 연결로 들어온 것으로 두는 원천자료. 체험에서는 파일을 올리지 않는다.
+   * 어느 자료를 연결했는지가 곧 어느 지표를 산정할 수 있는지를 정한다(deriveCreditInput).
+   */
+  connectedSources: ['pos', 'account', 'card', 'delivery', 'customer', 'staff', 'debt'],
+  fundPurpose: '주방 설비 교체와 배달 포장재 선구매',
+  businessPlan: '점심 회전율이 높은 연남동 상권에서 포장·배달 비중을 늘리고 있어요.',
+  expectedEffect: '조리 시간을 줄여 점심 회전율을 20% 올리는 것이 목표예요.',
+  /** 원자료에서 계산해 낸 값. 실제 신청의 derivedMetrics 와 키를 맞춘다. */
+  metrics: {
+    // 신용·부채 (debt 연결)
+    delinquencyCount12m: 0,
+    maxDelinquencyDays: 0,
+    totalLoanBalance: 32_000_000,
+    numberOfLenders: 1,
+    debtServiceToCashflowRatio: 22.4,
+    // 매출·거래 (pos·card·delivery 연결)
+    recent12MonthAverageSales: 28_400_000,
+    recent12MonthSalesGrowth: 12.4,
+    recent3MonthSalesGrowth: 9.1,
+    salesVolatility: 14.8,
+    transactionCountGrowth: 8.3,
+    averageTicket: 9_800,
+    refundCancelRatio: 1.2,
+    relativeSalesGrowth: 7.2,
+    // 현금흐름 (account 연결)
+    estimatedMonthlyOperatingCashflow: 4_120_000,
+    averageCashBalance: 6_800_000,
+    minimumCashBalance: 2_150_000,
+    netCashflowRatio: 14.5,
+    // 운영 (staff 연결). staffTrend 는 'N→M' 문자열로 두어야 증가율이 계산된다.
+    operatingYears: 3.5,
+    staffTrend: '4→5',
+    districtSalesGrowth: 5.2,
+    // 고객 (customer·delivery 연결)
+    repeatRate: 47.2,
+    customerGrowth: 6.4,
+    deliverySalesShare: 31.5,
+    rentToSalesRatio: 8.6,
+    salesReconciliationRate: 96.4,
+  } as Record<string, unknown>,
+  /** 주소로 찾은 공개 상권 자료 자리. 상권 4개 지표가 여기서 나온다. */
+  commercialArea: { competitorDensity: 62, closureRate: 7.4, areaSalesGrowth: 5.2, footTrafficGrowth: 3.8 },
+  /** 먹투에 쌓인 리뷰 자리. 3건 이상이어야 평판 지표가 산정된다. */
+  reviews: [5, 4, 5, 4, 5, 4, 3, 5],
+  /** 상권 내 상대순위가 읽는 값. */
+  stabilityScore: 78,
+} as const
+
+/**
+ * 체험 사장님의 두 번째 사업체 신청을 샌드박스에 넣는다.
+ *
+ * 점수·등급·사업자 확인 결과는 실제 신청과 같은 함수(verifyBusiness, deriveCreditInput,
+ * assessCredit)로 계산한다. 그래야 체험 화면에 뜨는 등급과 그 아래 펼쳐지는 지표 근거가
+ * 서로 맞는다. 상태는 실제 신청과 똑같이 '운영자 확인 대기'로 두고, 자동 판정 결과는
+ * 권고(recommendedStatus)로만 남긴다.
+ */
+function seedDemoApplication(sandbox: DemoSandbox) {
+  const seed = demoSeedApplication
+  const metrics = { ...seed.metrics } as Record<string, unknown>
+  const businessVerification = verifyBusiness({
+    businessNumber: seed.businessNumber,
+    ownerName: seed.ownerName,
+    licenseNumber: seed.licenseNumber,
+    identityVerified: true,
+    applicantName: seed.ownerName,
+  })
+  const creditAssessment = assessCredit(deriveCreditInput({
+    industry: toIndustry(seed.category),
+    connectedSources: [...seed.connectedSources],
+    derivedMetrics: metrics,
+    restaurant: { stabilityScore: seed.stabilityScore },
+    commercialArea: { ...seed.commercialArea },
+    reviews: seed.reviews.map((rating) => ({ rating })),
+  }))
+  const monthlySales = Number(metrics.recent12MonthAverageSales)
+  const cashflow = Number(metrics.estimatedMonthlyOperatingCashflow)
+  // 한도 계산식은 실제 신청 경로와 같은 값을 쓴다. 한쪽만 바뀌면 체험과 실제가 어긋난다.
+  const capacity = Math.round((monthlySales * .42 + Math.max(0, cashflow) * 2.2) / 1000000) * 1000000
+  const recommendedStatus: NonNullable<Application['recommendedStatus']> =
+    !businessVerification.verified || creditAssessment.provisional || capacity < 5000000
+      ? 'manual_review'
+      : creditAssessment.score >= 75 ? 'approved'
+        : creditAssessment.score >= 55 ? 'conditional'
+          : creditAssessment.score >= 45 ? 'manual_review' : 'rejected'
+  const approvedLimit = (recommendedStatus === 'approved' || recommendedStatus === 'conditional') && capacity >= 5000000
+    ? Math.min(seed.requestedLimit, capacity, 100000000)
+    : 0
+
+  const application: Application = {
+    id: demoId('application'),
+    userId: sandbox.id,
+    restaurantName: seed.restaurantName,
+    // 빌려준 식당보다 나중에 낸 것으로 두어야 마이페이지가 이 건을 기본으로 펼친다.
+    submittedAt: new Date(Date.now() - 2 * 86400000).toISOString(),
+    status: 'manual_review',
+    recommendedStatus,
+    requestedLimit: seed.requestedLimit,
+    approvedLimit,
+    score: creditAssessment.score,
+    strengths: [
+      `${creditAssessment.industry} 업종 35개 후보 지표 중 ${creditAssessment.measuredCount}개를 산정해 먹투 성장성 예비평가 ${creditAssessment.grade}(${creditAssessment.score}점)이 나왔어요.`,
+      ...(creditAssessment.topDrivers.length
+        ? [`가장 크게 기여한 지표는 ${creditAssessment.topDrivers.slice(0, 2).map((item) => item.label).join(', ')}예요.`]
+        : []),
+      `기관 연결로 원천자료 ${seed.connectedSources.length}종이 들어와 매출·정산 값을 서로 맞춰봤어요.`,
+    ],
+    checks: [
+      `✅ 사업자 진위확인 — ${businessVerification.verified ? '통과' : '보완 필요'}`,
+      `✅ 매출 확인 자료 ${seed.connectedSources.length}종 · 매출 기준 POS 정산`,
+    ],
+    improvements: [
+      ...creditAssessment.topDrags.slice(0, 2).map((drag) =>
+        `${drag.label}이(가) ${creditAssessment.industry} 업종 기준으로 하위권(${drag.score}점)이라 예비평가 점수를 낮추고 있어요.`),
+      // 무엇이 비었는지는 평가 결과에서 그대로 읽는다. 문구를 손으로 적어 두면
+      // 이미 연결한 자료를 또 올리라고 하는 안내가 남는다.
+      ...(creditAssessment.missing.length
+        ? [`아직 산정하지 못한 지표가 ${creditAssessment.missing.length}개예요(${creditAssessment.missing.slice(0, 3).join(', ')} 등). 검증된 리뷰 원문이 연결되면 채워집니다.`]
+        : []),
+    ],
+    explanation: '자동 판정은 권고까지만 하고 최종 결정은 운영자가 합니다. 이 결과는 금융기관의 공식 신용평가가 아닌 먹투 성장성 예비평가예요.',
+    data: {
+      applicationKind: 'new-store',
+      applicationRound: 1,
+      category: seed.category,
+      businessNumber: seed.businessNumber,
+      licenseNumber: seed.licenseNumber,
+      address: seed.address,
+      fundPurpose: seed.fundPurpose,
+      businessPlan: seed.businessPlan,
+      expectedEffect: seed.expectedEffect,
+      salesBasis: 'POS 정산',
+      businessVerification,
+      creditAssessment,
+      derivedMetrics: metrics,
+      measuredMetrics: metrics,
+      // coverage 는 가중치 합이 100 이라 그대로 %다(credit.ts). 다시 곱하지 않는다.
+      dataConfidence: Math.round(creditAssessment.coverage),
+      sourceProvenance: {
+        partnerConnections: seed.connectedSources.map((sourceId) => ({
+          sourceId, provider: '체험 연결', recordCount: 0, lastSyncedAt: now(),
+        })),
+      },
+    },
+  }
+  sandbox.applications.unshift(application)
+}
+
+/**
  * 체험 세션의 원장. 처음 열릴 때 시작 투자분과 체험 시작 쿠폰을 넣어 준다.
  * 체험자도 회원과 똑같이 응원 중인 식당과 지갑 쿠폰을 들고 시작해야
  * MY 화면과 교환장이 무엇을 하는 곳인지 바로 보인다.
+ * 사장님 체험은 사업체 두 곳(빌려준 식당 + 심사 중인 신청)에서 시작한다.
  */
 function demoSandbox(id: string, role: Role) {
   const sandbox = sandboxFor(id, role)
@@ -1275,6 +1445,10 @@ function demoSandbox(id: string, role: Role) {
     if (coupons.length) {
       demoNotification(sandbox, 'coupon', `체험 시작 쿠폰 ${coupons.length}장이 도착했어요`, welcomeCouponMessage(coupons), '/market')
     }
+  }
+  if (!sandbox.welcomed && role === 'owner') {
+    sandbox.welcomed = true
+    seedDemoApplication(sandbox)
   }
   return sandbox
 }
